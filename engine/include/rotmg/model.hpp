@@ -128,6 +128,9 @@ struct Ability {
   std::vector<Projectile> projectiles;
   std::vector<Subattack> subattacks;
   std::vector<Activate> activates;
+  /// Projectiles of other items, by type, that activates name in their
+  /// `type` parameter.
+  std::map<int, Projectile> created_projectiles;
   std::vector<std::string> unsupported;
 
   /// The ability's projectiles and subattacks as a weapon, for the hit

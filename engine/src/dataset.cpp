@@ -153,6 +153,11 @@ Ability ReadAbility(const json& j) {
     }
   }
   a.activates = ReadActivates(j, "activates");
+  if (auto it = j.find("createdProjectiles"); it != j.end()) {
+    for (const json& c : *it) {
+      a.created_projectiles.emplace(c.at("type").get<int>(), ReadProjectile(c.at("projectile")));
+    }
+  }
   ReadDefault(j, "unsupported", a.unsupported);
   return a;
 }

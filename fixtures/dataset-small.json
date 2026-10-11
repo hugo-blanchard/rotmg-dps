@@ -660,6 +660,27 @@
             "offsetAngle": 0,
             "type": "0x6008"
           }
+        },
+        {
+          "type": "BulletCreate",
+          "params": {
+            "numShots": 1,
+            "offsetAngle": 0,
+            "type": "0x6009"
+          }
+        }
+      ],
+      "createdProjectiles": [
+        {
+          "type": 24584,
+          "projectile": {
+            "id": 0,
+            "objectId": "Example Afterimage",
+            "speed": 180,
+            "minDamage": 100,
+            "maxDamage": 200,
+            "lifetimeMs": 350
+          }
         }
       ]
     }

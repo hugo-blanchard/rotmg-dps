@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <set>
 #include <string>
 
@@ -115,13 +116,17 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
     } else if (a.type == "BulletCreate") {
       // Shots made around the cursor rather than fired from the player. On
       // wakizashis, the most common, the slash "is centered on the
-      // crosshair" (RealmEye: Wakizashi). Some create a different
-      // projectile, named by `type`, which the dataset doesn't have.
-      if (!a.Text("type").empty()) {
-        unsupported("BulletCreate shots of another projectile");
-        continue;
-      }
+      // crosshair" (RealmEye: Wakizashi). Some create another item's
+      // projectile, named by `type` as a hex string.
       const Projectile* p = shots.projectiles.empty() ? nullptr : &shots.projectiles[0];
+      if (const std::string type = a.Text("type"); !type.empty()) {
+        const auto it = ability.created_projectiles.find(static_cast<int>(std::strtol(type.c_str(), nullptr, 0)));
+        if (it == ability.created_projectiles.end()) {
+          unsupported("BulletCreate shots of another projectile");
+          continue;
+        }
+        p = &it->second;
+      }
       if (p == nullptr) {
         unsupported("BulletCreate without a projectile");
         continue;
