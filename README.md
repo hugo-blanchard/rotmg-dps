@@ -20,6 +20,12 @@ ctest --test-dir engine/build
 
 Pass `-DROTMG_SANITIZE=ON` to build with AddressSanitizer and UBSan (GCC or Clang).
 
+The build also produces `rotmg-dps`, which prints a weapon's DPS against a range of DEF from a dataset file. Run it with no arguments to see the options.
+
+```
+engine/build/rotmg-dps dataset.json "Doom Bow" --att 75 --dex 50 --target armored
+```
+
 The web app needs Node 24.
 
 ```
