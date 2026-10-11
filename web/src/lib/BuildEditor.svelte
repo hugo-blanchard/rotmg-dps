@@ -1,13 +1,15 @@
 <script lang="ts">
-  import { weaponsFor, type Dataset, type DatasetClass, type DatasetWeapon } from "./dataset";
+  import { abilitiesFor, weaponsFor, type Dataset, type DatasetClass, type DatasetWeapon } from "./dataset";
   import type { PlayerStatus, Target } from "./engine";
 
   let {
     dataset,
     classId = $bindable(),
     weaponName = $bindable(),
+    abilityName = $bindable(),
     attack = $bindable(),
     dexterity = $bindable(),
+    wisdom = $bindable(),
     status = $bindable(),
     target = $bindable(),
     distance = $bindable(),
@@ -16,8 +18,10 @@
     dataset: Dataset;
     classId: string;
     weaponName: string;
+    abilityName: string;
     attack: number;
     dexterity: number;
+    wisdom: number;
     status: PlayerStatus;
     target: Target;
     distance: number;
@@ -30,20 +34,31 @@
   const tiered = $derived(weapons.filter((w) => w.tier !== undefined));
   const untiered = $derived(weapons.filter((w) => w.tier === undefined));
   const weapon = $derived(weapons.find((w) => w.name === weaponName));
+  const abilities = $derived(abilitiesFor(dataset, cls));
+  const ability = $derived(abilities.find((a) => a.name === abilityName));
 
-  function bonus(w: DatasetWeapon | undefined, stat: string): number {
-    return w?.statBonuses?.filter((b) => b.stat === stat).reduce((sum, b) => sum + b.amount, 0) ?? 0;
+  function bonus(item: Pick<DatasetWeapon, "statBonuses"> | undefined, stat: string): number {
+    return item?.statBonuses?.filter((b) => b.stat === stat).reduce((sum, b) => sum + b.amount, 0) ?? 0;
   }
+
+  const gearBonuses = $derived(
+    ["ATT", "DEX", "WIS"]
+      .map((stat) => [stat, bonus(weapon, stat) + bonus(ability, stat)] as const)
+      .filter(([, amount]) => amount !== 0)
+      .map(([stat, amount]) => `${amount} ${stat}`),
+  );
 
   function pickClass(next: DatasetClass) {
     classId = next.id;
     weaponName = weaponsFor(dataset, next)[0]?.name ?? "";
+    abilityName = abilitiesFor(dataset, next)[0]?.name ?? "";
     useClassMax(next);
   }
 
   function useClassMax(c: DatasetClass) {
     attack = c.attack.max;
     dexterity = c.dexterity.max;
+    wisdom = c.wisdom?.max ?? 0;
   }
 
   const playerEffects: { key: keyof PlayerStatus; label: string }[] = [
@@ -91,10 +106,21 @@
         </optgroup>
       </select>
     </label>
+    {#if abilities.length}
+      <label>
+        Ability
+        <select bind:value={abilityName}>
+          <option value="">None</option>
+          {#each abilities as a (a.type)}
+            <option value={a.name}>{a.name}{a.tier !== undefined ? ` (T${a.tier})` : ""}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
   </fieldset>
 
   <fieldset>
-    <legend>Stats without the weapon</legend>
+    <legend>Stats without the weapon or ability</legend>
     <label class="stat">
       ATT
       <input type="range" min="0" max="150" bind:value={attack} />
@@ -105,15 +131,19 @@
       <input type="range" min="0" max="150" bind:value={dexterity} />
       <input type="number" min="0" max="999" bind:value={dexterity} />
     </label>
+    {#if cls.wisdom}
+      <label class="stat">
+        WIS
+        <input type="range" min="0" max="150" bind:value={wisdom} />
+        <input type="number" min="0" max="999" bind:value={wisdom} />
+      </label>
+    {/if}
     <p class="hint">
-      {#if bonus(weapon, "ATT") || bonus(weapon, "DEX")}
-        The weapon adds
-        {[bonus(weapon, "ATT") && `${bonus(weapon, "ATT")} ATT`, bonus(weapon, "DEX") && `${bonus(weapon, "DEX")} DEX`]
-          .filter(Boolean)
-          .join(" and ")}.
+      {#if gearBonuses.length}
+        Your gear adds {gearBonuses.join(", ")}.
       {/if}
       <button type="button" class="link" onclick={() => useClassMax(cls)}>
-        Use {cls.id} max ({cls.attack.max} ATT, {cls.dexterity.max} DEX)
+        Use {cls.id} max ({cls.attack.max} ATT, {cls.dexterity.max} DEX{cls.wisdom ? `, ${cls.wisdom.max} WIS` : ""})
       </button>
     </p>
   </fieldset>

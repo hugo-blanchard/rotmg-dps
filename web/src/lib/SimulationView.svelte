@@ -234,7 +234,7 @@
   <h2>Simulation</h2>
   <p class="hint">
     The engine fires the weapon at the target in real time, using the same motion as the hit estimate. Over time its
-    numbers settle on the ones above.
+    numbers settle on the weapon's numbers above. The ability isn't simulated.
   </p>
   <div class="controls">
     <button type="button" onclick={() => (playing = !playing)}>{playing ? "Pause" : "Play"}</button>

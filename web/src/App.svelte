@@ -4,7 +4,7 @@
   import LineChart from "./lib/LineChart.svelte";
   import Results from "./lib/Results.svelte";
   import SimulationView from "./lib/SimulationView.svelte";
-  import { loadDataset, weaponsFor, type Dataset } from "./lib/dataset";
+  import { abilitiesFor, loadDataset, maxStats, weaponsFor, type Dataset } from "./lib/dataset";
   import { Engine, type EvaluateRequest, type EvaluateResponse, type PlayerStatus, type Target } from "./lib/engine";
   import { loadSprites, type Sprites } from "./lib/sprites";
 
@@ -15,8 +15,10 @@
 
   let classId = $state("");
   let weaponName = $state("");
+  let abilityName = $state("");
   let attack = $state(0);
   let dexterity = $state(0);
+  let wisdom = $state(0);
   let status = $state<PlayerStatus>({ weak: false, damaging: false, berserk: false, dazed: false });
   let target = $state<Target>({ defense: 0, armored: false, armorBroken: false, exposed: false, cursed: false });
 
@@ -33,12 +35,17 @@
   );
 
   const weapon = $derived(dataset?.weapons.find((w) => w.name === weaponName));
+  const cls = $derived(dataset?.classes.find((c) => c.id === classId));
 
   // What evaluating and simulating share; evaluating adds the two charts.
   const request = $derived<EvaluateRequest>({
     weapon: weaponName,
+    ability: abilityName || undefined,
     attack: Number(attack) || 0,
     dexterity: Number(dexterity) || 0,
+    wisdom: Number(wisdom) || 0,
+    // Stats the editor doesn't show are at the class's max.
+    ...(cls ? maxStats(cls) : {}),
     status: { ...status },
     target: { ...target, defense },
     hitsPerVolley: [...hitOverrides],
@@ -63,8 +70,10 @@
       const start = d.classes.find((c) => c.id === "Wizard") ?? d.classes[0];
       classId = start.id;
       weaponName = weaponsFor(d, start)[0]?.name ?? "";
+      abilityName = abilitiesFor(d, start)[0]?.name ?? "";
       attack = start.attack.max;
       dexterity = start.dexterity.max;
+      wisdom = start.wisdom?.max ?? 0;
       dataset = d;
     } catch (e) {
       loadError = e instanceof Error ? e.message : String(e);
@@ -102,10 +111,12 @@
   {:else if !dataset}
     <p>Loading…</p>
   {:else}
-    <BuildEditor {dataset} bind:classId bind:weaponName bind:attack bind:dexterity bind:status bind:target bind:distance bind:radius />
+    <BuildEditor {dataset} bind:classId bind:weaponName bind:abilityName bind:attack bind:dexterity bind:wisdom bind:status bind:target bind:distance bind:radius />
     {#if result}
       <Results
         breakdown={result.breakdown}
+        build={result.build}
+        ability={result.ability}
         {defense}
         distance={hitDistance}
         {hitOverrides}

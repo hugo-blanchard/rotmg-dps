@@ -18,8 +18,15 @@ export interface Target {
 
 export interface EvaluateRequest {
   weapon: string;
+  ability?: string;
   attack: number;
   dexterity: number;
+  wisdom?: number;
+  vitality?: number;
+  defense?: number;
+  speed?: number;
+  maxHitPoints?: number;
+  maxMagicPoints?: number;
   status: PlayerStatus;
   target: Target;
   hitsPerVolley?: (number | null)[];
@@ -56,6 +63,34 @@ export interface Breakdown {
   unsupported: string[];
 }
 
+export interface Buff {
+  effect: string;
+  on: "player" | "target";
+  amount: number;
+  durationS: number;
+}
+
+export interface AbilityBreakdown {
+  mpCost: number;
+  cooldownS: number;
+  mpPerSecond: number;
+  castsPerSecond: number;
+  damagePerCast: number;
+  dps: number;
+  parts: { name: string; damage: number; reference: string }[];
+  buffs: Buff[];
+  terms: Term[];
+  assumptions: string[];
+  unsupported: string[];
+}
+
+export interface BuildBreakdown {
+  dps: number;
+  weaponDps: number;
+  uptimes: (Buff & { share: number })[];
+  assumptions: string[];
+}
+
 export interface CurvePoint {
   defense: number;
   dps: number;
@@ -70,6 +105,8 @@ export type EvaluateResponse =
   | {
       ok: true;
       breakdown: Breakdown;
+      build: BuildBreakdown;
+      ability?: AbilityBreakdown;
       curve?: CurvePoint[];
       hitCurve?: HitCurvePoint[];
       hitModelGaps?: string[];

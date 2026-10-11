@@ -1,9 +1,11 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import type { Breakdown, Source } from "./engine";
+  import type { AbilityBreakdown, Breakdown, BuildBreakdown, Source } from "./engine";
 
   let {
     breakdown,
+    build,
+    ability,
     defense,
     distance,
     hitOverrides,
@@ -11,6 +13,8 @@
     chart,
   }: {
     breakdown: Breakdown;
+    build: BuildBreakdown;
+    ability?: AbilityBreakdown;
     defense: number;
     distance: number;
     hitOverrides: (number | null)[];
@@ -39,15 +43,45 @@
     ProjectilePattern: "alternating shot patterns",
     DefaultAngleIncr: "shifting shot angles",
     Meter: "a charge meter",
+    DamageMultiplier: "Vulnerable (more damage taken)",
+    MpCostPerSecond: "an MP cost per second",
+    MpEndCost: "an MP cost when it ends",
+    MultiPhase: "several phases",
+    StartUse: "a hold to use",
+    EndUse: "a hold to use",
+    OnDetonateHexActivate: "hex effects",
+    OnConditionEndActivate: "effects when a status ends",
+    OnPlayerHitActivate: "a proc when hit",
+    OnPlayerHealActivate: "a proc when healed",
+    BulletCreate: "shots created around the cursor",
+    SpawnCreep: "summons",
+    RaiseDead: "summons",
+    DetonateHex: "hex detonation",
+    ShurikenAbility: "shuriken charges",
+    VampireBlast: "life-draining blasts",
+    DamageMultAura: "damage taken or dealt multipliers",
+    ObjectToss: "thrown objects",
+    ChannelDash: "dashes",
+    GenericActivate: "a scripted effect",
+    EffectBlast: "a blast effect",
   };
 
-  const unsupported = $derived([
+  const describe = (tags: string[]) => [
     ...new Set(
-      breakdown.unsupported.map((tag) =>
-        tag.startsWith("ActivateOnEquip ") ? "an on-equip effect" : (mechanicNames[tag] ?? tag),
-      ),
+      tags.map((tag) => (tag.startsWith("ActivateOnEquip ") ? "an on-equip effect" : (mechanicNames[tag] ?? tag))),
     ),
+  ];
+  const unsupported = $derived(describe(breakdown.unsupported));
+  const abilityUnsupported = $derived(ability ? describe(ability.unsupported) : []);
+  const percent = new Intl.NumberFormat("en", { style: "percent", maximumFractionDigits: 0 });
+
+  const allAssumptions = $derived([
+    ...new Set([...breakdown.assumptions, ...(ability?.assumptions ?? []), ...build.assumptions]),
   ]);
+
+  function buffName(b: { effect: string; amount: number }): string {
+    return b.amount ? `+${b.amount} ${b.effect}` : b.effect;
+  }
 
   const sourceLabels: Record<Source, string> = {
     wiki: "Wiki",
@@ -71,8 +105,11 @@
 
 <section class="results" aria-live="polite">
   <div class="hero">
-    <span class="value">{whole.format(breakdown.dps)}</span>
-    <span class="label">DPS against {defense} DEF, {distance} tiles away</span>
+    <span class="value">{whole.format(build.dps)}</span>
+    <span class="label">
+      DPS against {defense} DEF, {distance} tiles away{#if ability && ability.dps > 0}: {whole.format(build.weaponDps)}
+        from the weapon and {whole.format(ability.dps)} from the ability{/if}
+    </span>
   </div>
 
   {#if unsupported.length}
@@ -84,7 +121,39 @@
 
   {@render chart?.()}
 
-  <h2>How it adds up</h2>
+  {#if ability}
+    <h2>Ability</h2>
+    <dl class="figures">
+      <div><dt>Casts per second</dt><dd>{fine.format(ability.castsPerSecond)}</dd></div>
+      <div><dt>MP cost</dt><dd>{whole.format(ability.mpCost)}</dd></div>
+      <div><dt>MP per second</dt><dd>{fine.format(ability.mpPerSecond)}</dd></div>
+      <div><dt>Damage per cast</dt><dd>{whole.format(ability.damagePerCast)}</dd></div>
+    </dl>
+    {#if ability.parts.length}
+      <ul class="plain">
+        {#each ability.parts as p (p.name)}
+          <li>{p.name}: {whole.format(p.damage)} damage per cast</li>
+        {/each}
+      </ul>
+    {/if}
+    {#if build.uptimes.length}
+      <p class="buffs">
+        Weapon DPS goes from {whole.format(breakdown.dps)} to {whole.format(build.weaponDps)} with
+        {#each build.uptimes as u, i (i)}{i > 0 ? (i === build.uptimes.length - 1 ? " and " : ", ") : ""}{buffName(u)}{u.on ===
+          "target"
+            ? " on the target"
+            : ""} up {percent.format(u.share)} of the time{/each}.
+      </p>
+    {/if}
+    {#if abilityUnsupported.length}
+      <p class="notice">
+        <strong>Ability effects not modelled yet:</strong>
+        {abilityUnsupported.join(", ")}. The real damage can differ from what's shown here.
+      </p>
+    {/if}
+  {/if}
+
+  <h2>{ability ? "Weapon" : "How it adds up"}</h2>
   <div class="table-scroll">
     <table>
       <thead>
@@ -129,7 +198,7 @@
 
   <h2>Where the numbers come from</h2>
   <ul class="terms">
-    {#each breakdown.terms as t (t.name)}
+    {#each [...breakdown.terms, ...(ability?.terms ?? [])] as t (t.name)}
       <li>
         <span class="term-name">{t.name}</span>
         <span class="term-value">{fine.format(t.value)}</span>
@@ -143,10 +212,10 @@
       </li>
     {/each}
   </ul>
-  {#if breakdown.assumptions.length}
+  {#if allAssumptions.length}
     <p class="assumptions">
       <strong>Assumed, with no source yet:</strong>
-      {breakdown.assumptions.join("; ")}.
+      {allAssumptions.join("; ")}.
     </p>
   {/if}
 </section>
@@ -259,6 +328,30 @@
     margin: 0;
     font-size: 0.85rem;
     color: var(--text-2);
+  }
+  .figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+    gap: 0.5rem 1rem;
+    margin: 0;
+  }
+  .figures dt {
+    font-size: 0.8rem;
+    color: var(--text-2);
+  }
+  .figures dd {
+    margin: 0;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .plain {
+    margin: 0;
+    padding-left: 1.2rem;
+    font-size: 0.9rem;
+  }
+  .buffs {
+    margin: 0;
+    font-size: 0.9rem;
   }
   .assumptions {
     margin: 0;
