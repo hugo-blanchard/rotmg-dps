@@ -2,7 +2,7 @@
 
 A DPS calculator for Realm of the Mad God (Exalt). It works out how much damage a build does to a given target, using item data from the game client and formulas sourced from the RealmEye wiki. A small simulation shows the character firing at a dummy so the numbers are easy to check.
 
-Live at https://hugo-blanchard.github.io/rotmg-dps/. It covers weapons for now, including an estimate of how many shots land at a given distance. Abilities and a simulation view are still to come.
+Live at https://hugo-blanchard.github.io/rotmg-dps/. It covers weapons for now, including an estimate of how many shots land at a given distance and a simulation of the weapon firing at a target. Abilities are still to come.
 
 ## Notice
 
@@ -10,9 +10,9 @@ Unofficial fan tool, not affiliated with DECA. Game assets © DECA Live Operatio
 
 ## How it works
 
-- `engine/` (C++20) does all the math: damage per hit, fire rate, how many shots of a volley land on a round target, and DPS, with the source of every rule it applies. It builds natively for the tests and to WebAssembly for the site.
+- `engine/` (C++20) does all the math: damage per hit, fire rate, how many shots of a volley land on a round target, and DPS, with the source of every rule it applies. It also runs the step-by-step simulation the site animates, moving projectiles with the same code as the hit estimate. It builds natively for the tests and to WebAssembly for the site.
 - `web/` (Svelte and TypeScript) is the site. It runs the WebAssembly engine in a Web Worker.
-- Item data comes from the game client. An extractor that isn't part of this repo turns it into a dataset in the format below and publishes it as a `data-*` release, and the site deploys the newest one.
+- Item data and sprites come from the game client. An extractor that isn't part of this repo turns them into the files described below and publishes them as a `data-*` release, and the site deploys the newest one.
 
 ## Building
 
@@ -41,10 +41,10 @@ mkdir -p web/public/engine
 cp engine/build-wasm/engine.js engine/build-wasm/engine.wasm web/public/engine/
 ```
 
-Then get the newest dataset and start the dev server:
+Then get the newest dataset and sprites and start the dev server:
 
 ```
-gh release download --repo hugo-blanchard/rotmg-dps --pattern dataset.json --dir web/public/data
+gh release download --repo hugo-blanchard/rotmg-dps --pattern dataset.json --pattern 'sprites.*' --dir web/public/data
 cd web
 npm install
 npm run dev
@@ -146,9 +146,26 @@ Made-up values, trimmed to one class and one weapon:
 }
 ```
 
+## Sprites
+
+Sprites are optional: without them the simulation draws plain shapes. A release can include `sprites.png`, one image holding every sprite the site draws, and `sprites.json`, which says where each one is. Sprites come from the client's `characters` and `mapObjects` texture atlases, located through the `spritesheetf` TextAsset.
+
+Every rectangle is `[x, y, width, height]` in pixels in `sprites.png`.
+
+| Field | Meaning | Client source |
+|---|---|---|
+| `schemaVersion` | Format version, currently 1. Separate from the dataset's | |
+| `build` | Client build, as in the dataset | |
+| `projectiles` | By projectile `objectId`: `{"rect", "angleCorrection", "rotation"}` | the projectile object's `<Texture>` (or the first of its `<RandomTexture>`), `<AngleCorrection>` and `<Rotation>` |
+| `weapons` | By weapon `type`, as a string: the item's icon | the weapon's `<Texture>` |
+| `classes` | By class `id`: `{"stand", "attack": [...]}`, seen from behind | the class's `<AnimatedTexture>`, facing up, standing and attacking |
+| `target` | The target the simulation shoots at | the `Target Strong` object's `<Texture>` |
+
+Projectile sprites point right. When a shot is drawn along its heading, `angleCorrection` turns it by that many 45 degree steps, and `rotation` spins it in degrees per second.
+
 ## Deploying
 
-Pushing to `main`, or publishing a new `data-*` release, runs `.github/workflows/pages.yml`. It builds the engine and the site, downloads the newest dataset, checks that every weapon in it evaluates and that the hit estimate matches what the wiki says about tiered bows, longbows and the Torrential Staff, and deploys to GitHub Pages.
+Pushing to `main`, or publishing a new `data-*` release, runs `.github/workflows/pages.yml`. It builds the engine and the site, downloads the newest dataset, checks that every weapon in it evaluates, that the hit estimate matches what the wiki says about tiered bows, longbows and the Torrential Staff, and that the simulation lands exactly the estimated hits, then deploys to GitHub Pages.
 
 ## License
 
