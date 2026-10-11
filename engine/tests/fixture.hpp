@@ -7,13 +7,17 @@
 
 #include "rotmg/dataset.hpp"
 
-// fixtures/dataset-small.json, parsed. ROTMG_FIXTURES_DIR comes from CMake.
-inline rotmg::Dataset LoadSmallDataset() {
+// fixtures/dataset-small.json. ROTMG_FIXTURES_DIR comes from CMake.
+inline std::string ReadSmallDatasetText() {
   std::ifstream in(std::string(ROTMG_FIXTURES_DIR) + "/dataset-small.json", std::ios::binary);
   if (!in) {
     throw std::runtime_error("can't open fixtures/dataset-small.json");
   }
   std::ostringstream text;
   text << in.rdbuf();
-  return rotmg::ParseDataset(text.str());
+  return text.str();
+}
+
+inline rotmg::Dataset LoadSmallDataset() {
+  return rotmg::ParseDataset(ReadSmallDatasetText());
 }
