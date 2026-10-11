@@ -188,6 +188,15 @@
             <td>{whole.format(s.dps)}</td>
           </tr>
         {/each}
+        {#each breakdown.procs as p (p.name)}
+          <tr>
+            <td>{p.name}</td>
+            <td>{fine.format(p.perSecond)}</td>
+            <td class="hits">1</td>
+            <td>{fine.format(p.damage)}</td>
+            <td>{whole.format(p.dps)}</td>
+          </tr>
+        {/each}
       </tbody>
     </table>
   </div>

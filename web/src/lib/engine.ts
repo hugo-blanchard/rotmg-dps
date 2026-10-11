@@ -55,9 +55,19 @@ export interface SubattackResult {
   dps: number;
 }
 
+// Damage from an on-shoot effect, like a poison burst every few seconds.
+export interface ProcResult {
+  name: string;
+  perSecond: number;
+  damage: number;
+  dps: number;
+  reference: string;
+}
+
 export interface Breakdown {
   dps: number;
   subattacks: SubattackResult[];
+  procs: ProcResult[];
   terms: Term[];
   assumptions: string[];
   unsupported: string[];
