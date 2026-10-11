@@ -12,5 +12,12 @@
     "curatedHitsPerVolley": [0.5] },
   { "weapon": "Proc Wand", "attack": 50, "dexterity": 50, "hitModel": { "distance": 2 },
     "hitCurve": { "from": 0.5, "to": 11, "step": 0.5 } },
+  { "weapon": "Plain Sword", "ability": "Battle Seal", "attack": 60, "dexterity": 45, "wisdom": 55,
+    "target": { "defense": 25 }, "curve": { "from": 0, "to": 50, "step": 5 } },
+  { "weapon": "Burst Bow", "ability": "Plain Quiver", "attack": 70, "dexterity": 70, "wisdom": 50,
+    "hitModel": { "distance": 3.1 }, "target": { "defense": 10 } },
+  { "weapon": "Burst Bow", "ability": "Toxic Vial", "attack": 70, "dexterity": 70, "wisdom": 64,
+    "target": { "defense": 60, "cursed": true } },
+  { "weapon": "Proc Wand", "ability": "Curse Orb", "attack": 40, "dexterity": 60, "wisdom": 73 },
   { "weapon": "No Such Weapon" }
 ]
