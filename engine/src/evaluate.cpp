@@ -1,5 +1,6 @@
 #include "rotmg/evaluate.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <string>
 #include <utility>
@@ -29,6 +30,7 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
   bool all_hit_assumed = false;
   bool estimated = false;
   bool has_burst = false;
+  std::vector<std::pair<std::size_t, double>> burst_delays;
   for (std::size_t i = 0; i < weapon.subattacks.size(); ++i) {
     const Subattack& s = weapon.subattacks[i];
     const Projectile* projectile = weapon.FindProjectile(s.projectile_id);
@@ -57,19 +59,24 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
       r.hits_per_volley = s.num_projectiles;
       all_hit_assumed = true;
     }
-    if (r.hits_source != Source::kAssumed) {
-      out.terms.push_back(
-          {"Subattack " + std::to_string(i + 1) + " hits per volley", r.hits_per_volley, r.hits_source, ""});
-    }
     if (s.burst_count && s.burst_delay) {
       has_burst = true;
-      out.terms.push_back({"Subattack " + std::to_string(i + 1) + " burst delay",
-                           BurstDelay(s, dexterity, character.status), Source::kWiki,
-                           "RealmEye: Weapon Attributes"});
+      burst_delays.push_back({i, BurstDelay(s, dexterity, character.status)});
     }
     r.dps = r.volleys_per_second * r.hits_per_volley * r.damage_per_hit;
     out.dps += r.dps;
     out.subattacks.push_back(r);
+  }
+
+  // Most burst weapons share one delay across subattacks; list it once then.
+  const bool one_delay = std::ranges::all_of(
+      burst_delays, [&](const auto& d) { return d.second == burst_delays.front().second; });
+  for (const auto& [i, delay] : burst_delays) {
+    const std::string name = one_delay ? "Burst delay" : "Subattack " + std::to_string(i + 1) + " burst delay";
+    out.terms.push_back({name, delay, Source::kWiki, "RealmEye: Weapon Attributes"});
+    if (one_delay) {
+      break;
+    }
   }
 
   out.assumptions.push_back("damage after DEF and Curse is not rounded");

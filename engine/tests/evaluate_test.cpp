@@ -109,3 +109,10 @@ TEST_CASE("weapons the estimate can't follow fall back to every projectile hitti
   CHECK(b.subattacks[0].hits_per_volley == 1);
   CHECK(HasAssumption(b, "every projectile hits, since the hit estimate can't follow figure-eight (parametric) shots"));
 }
+
+TEST_CASE("a burst delay shared by every subattack is listed once") {
+  const auto b = EvaluateWeapon(Weapon("Burst Bow"), {.attack = 25, .dexterity = 75}, {});
+  const auto delays = std::ranges::count_if(b.terms, [](const rotmg::Term& t) { return t.name.ends_with("urst delay"); });
+  CHECK(delays == 1);
+  CHECK(std::ranges::find(b.terms, std::string("Burst delay"), &rotmg::Term::name) != b.terms.end());
+}
