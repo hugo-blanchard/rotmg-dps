@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import BuildEditor from "./lib/BuildEditor.svelte";
+  import DpsChart from "./lib/DpsChart.svelte";
   import Results from "./lib/Results.svelte";
   import { loadDataset, weaponsFor, type Dataset } from "./lib/dataset";
   import { Engine, type EvaluateResponse, type PlayerStatus, type Target } from "./lib/engine";
@@ -17,6 +18,8 @@
   let target = $state<Target>({ defense: 0, armored: false, armorBroken: false, exposed: false, cursed: false });
 
   let response = $state<EvaluateResponse | null>(null);
+  const result = $derived(response?.ok ? response : null);
+  const defense = $derived(Number(target.defense) || 0);
   let latest = 0;
 
   onMount(async () => {
@@ -44,7 +47,9 @@
       attack: Number(attack) || 0,
       dexterity: Number(dexterity) || 0,
       status: { ...status },
-      target: { ...target, defense: Number(target.defense) || 0 },
+      target: { ...target, defense },
+      // The chart covers 0-150 DEF, or further if the target's DEF is higher.
+      curve: { from: 0, to: Math.max(150, Math.ceil(defense / 10) * 10), step: 1 },
     };
     // Only the newest answer is shown, however the worker's replies interleave.
     const id = ++latest;
@@ -68,9 +73,15 @@
     <p>Loading…</p>
   {:else}
     <BuildEditor {dataset} bind:classId bind:weaponName bind:attack bind:dexterity bind:status bind:target />
-    {#if response?.ok}
-      <Results breakdown={response.breakdown} defense={Number(target.defense) || 0} />
-    {:else if response}
+    {#if result}
+      <Results breakdown={result.breakdown} {defense}>
+        {#snippet chart()}
+          {#if result.curve}
+            <DpsChart curve={result.curve} {defense} onpick={(d) => (target.defense = d)} />
+          {/if}
+        {/snippet}
+      </Results>
+    {:else if response && !response.ok}
       <p role="alert">{response.error}</p>
     {/if}
   {/if}
