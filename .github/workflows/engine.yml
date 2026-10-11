@@ -1,0 +1,25 @@
+name: engine
+
+on:
+  push:
+    branches: [main]
+    paths: [engine/**, .github/workflows/engine.yml]
+  pull_request:
+    paths: [engine/**, .github/workflows/engine.yml]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get install -y ninja-build
+      - name: Configure
+        run: >
+          cmake -S engine -B engine/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DROTMG_WERROR=ON
+          -DROTMG_SANITIZE=ON
+      - name: Build
+        run: cmake --build engine/build
+      - name: Test
+        run: ctest --test-dir engine/build --output-on-failure
