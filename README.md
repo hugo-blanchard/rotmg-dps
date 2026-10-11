@@ -2,11 +2,17 @@
 
 A DPS calculator for Realm of the Mad God (Exalt). It works out how much damage a build does to a given target, using item data from the game client and formulas sourced from the RealmEye wiki. A small simulation shows the character firing at a dummy so the numbers are easy to check.
 
-Work in progress. There's nothing to run yet.
+Live at https://hugo-blanchard.github.io/rotmg-dps/. It covers weapons for now. Abilities, hit estimates for multi-shot weapons and the simulation view are still to come.
 
 ## Notice
 
 Unofficial fan tool, not affiliated with DECA. Game assets © DECA Live Operations GmbH.
+
+## How it works
+
+- `engine/` (C++20) does all the math: damage per hit, fire rate and DPS, with the source of every rule it applies. It builds natively for the tests and to WebAssembly for the site.
+- `web/` (Svelte and TypeScript) is the site. It runs the WebAssembly engine in a Web Worker.
+- Item data comes from the game client. An extractor that isn't part of this repo turns it into a dataset in the format below and publishes it as a `data-*` release, and the site deploys the newest one.
 
 ## Building
 
@@ -26,9 +32,19 @@ The build also produces `rotmg-dps`, which prints a weapon's DPS against a range
 engine/build/rotmg-dps dataset.json "Doom Bow" --att 75 --dex 50 --target armored
 ```
 
-The web app needs Node 24.
+The web app needs Node 24, the WebAssembly engine and a dataset. Build the engine with Emscripten 6.0.12 and copy it into place:
 
 ```
+emcmake cmake -S engine -B engine/build-wasm -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build engine/build-wasm
+mkdir -p web/public/engine
+cp engine/build-wasm/engine.js engine/build-wasm/engine.wasm web/public/engine/
+```
+
+Then get the newest dataset and start the dev server:
+
+```
+gh release download --repo hugo-blanchard/rotmg-dps --pattern dataset.json --dir web/public/data
 cd web
 npm install
 npm run dev
@@ -129,6 +145,10 @@ Made-up values, trimmed to one class and one weapon:
   ]
 }
 ```
+
+## Deploying
+
+Pushing to `main`, or publishing a new `data-*` release, runs `.github/workflows/pages.yml`. It builds the engine and the site, downloads the newest dataset, checks that every weapon in it evaluates, and deploys to GitHub Pages.
 
 ## License
 
