@@ -6,5 +6,11 @@
   { "weapon": "Burst Bow", "attack": 60, "dexterity": 37, "status": { "damaging": true },
     "target": { "defense": 45, "cursed": true }, "hitsPerVolley": [1.5, null] },
   { "weapon": "Proc Wand", "attack": 33, "dexterity": 61, "status": { "weak": true, "dazed": true } },
+  { "weapon": "Burst Bow", "attack": 75, "dexterity": 75, "hitModel": { "distance": 3.3, "radius": 0.5 },
+    "hitCurve": { "from": 0.5, "to": 9, "step": 0.25 } },
+  { "weapon": "Plain Sword", "attack": 50, "dexterity": 50, "hitModel": { "distance": 3.8, "radius": 0.4 },
+    "curatedHitsPerVolley": [0.5] },
+  { "weapon": "Proc Wand", "attack": 50, "dexterity": 50, "hitModel": { "distance": 2 },
+    "hitCurve": { "from": 0.5, "to": 11, "step": 0.5 } },
   { "weapon": "No Such Weapon" }
 ]
