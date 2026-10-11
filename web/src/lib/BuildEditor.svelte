@@ -10,6 +10,8 @@
     dexterity = $bindable(),
     status = $bindable(),
     target = $bindable(),
+    distance = $bindable(),
+    radius = $bindable(),
   }: {
     dataset: Dataset;
     classId: string;
@@ -18,6 +20,8 @@
     dexterity: number;
     status: PlayerStatus;
     target: Target;
+    distance: number;
+    radius: number;
   } = $props();
 
   const classes = $derived([...dataset.classes].sort((a, b) => a.id.localeCompare(b.id)));
@@ -130,6 +134,17 @@
       <input type="range" min="0" max="150" bind:value={target.defense} />
       <input type="number" min="0" max="999" bind:value={target.defense} />
     </label>
+    <label class="stat">
+      Distance
+      <input type="range" min="0.5" max="10" step="0.25" bind:value={distance} />
+      <input type="number" min="0.5" max="20" step="0.25" bind:value={distance} />
+    </label>
+    <label class="stat">
+      Size
+      <input type="range" min="0.25" max="2" step="0.05" bind:value={radius} />
+      <input type="number" min="0.1" max="5" step="0.05" bind:value={radius} />
+    </label>
+    <p class="hint">Distance and size (the target's radius) are in tiles. They set how many shots the hit estimate lands.</p>
     <div class="checks">
       {#each targetEffects as effect (effect.key)}
         <label><input type="checkbox" bind:checked={target[effect.key]} /> {effect.label}</label>
@@ -173,7 +188,7 @@
     min-width: 0;
   }
   .stat {
-    grid-template-columns: 2.5rem 1fr 4.5rem;
+    grid-template-columns: 4.5rem 1fr 4.5rem;
     align-items: center;
     gap: 0.6rem;
   }

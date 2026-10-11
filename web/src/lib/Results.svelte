@@ -2,7 +2,22 @@
   import type { Snippet } from "svelte";
   import type { Breakdown, Source } from "./engine";
 
-  let { breakdown, defense, chart }: { breakdown: Breakdown; defense: number; chart?: Snippet } = $props();
+  let {
+    breakdown,
+    defense,
+    distance,
+    hitOverrides,
+    onhits,
+    chart,
+  }: {
+    breakdown: Breakdown;
+    defense: number;
+    distance: number;
+    hitOverrides: (number | null)[];
+    /** Sets a subattack's hits per volley by hand, or clears it with null. */
+    onhits: (index: number, hits: number | null) => void;
+    chart?: Snippet;
+  } = $props();
 
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
   const fine = new Intl.NumberFormat("en", { maximumFractionDigits: 2 });
@@ -37,9 +52,15 @@
   const sourceLabels: Record<Source, string> = {
     wiki: "Wiki",
     "client-data": "Game data",
+    "geometric-estimate": "Estimate",
+    curated: "Curated",
     user: "You",
     assumed: "Assumed",
   };
+
+  function setHits(index: number, input: HTMLInputElement) {
+    onhits(index, input.value === "" ? null : Math.max(0, Number(input.value)));
+  }
 
   const wikiPages: Record<string, string> = {
     "RealmEye: Character Stats": "https://www.realmeye.com/wiki/character-stats",
@@ -51,7 +72,7 @@
 <section class="results" aria-live="polite">
   <div class="hero">
     <span class="value">{whole.format(breakdown.dps)}</span>
-    <span class="label">DPS against {defense} DEF</span>
+    <span class="label">DPS against {defense} DEF, {distance} tiles away</span>
   </div>
 
   {#if unsupported.length}
@@ -80,7 +101,20 @@
           <tr>
             <td>{i + 1}</td>
             <td>{fine.format(s.volleysPerSecond)}</td>
-            <td>{fine.format(s.hitsPerVolley)}</td>
+            <td class="hits">
+              <input
+                type="number"
+                min="0"
+                max={s.projectilesPerVolley}
+                step="0.5"
+                aria-label="Hits per volley for subattack {i + 1}, out of {s.projectilesPerVolley}"
+                placeholder={fine.format(s.hitsPerVolley)}
+                value={hitOverrides[i] ?? ""}
+                onchange={(e) => setHits(i, e.currentTarget)}
+              />
+              <span class="of">of {s.projectilesPerVolley}</span>
+              <span class="hit-source">{sourceLabels[s.hitsSource]}</span>
+            </td>
             <td>{fine.format(s.damagePerHit)}</td>
             <td>{whole.format(s.dps)}</td>
           </tr>
@@ -88,6 +122,10 @@
       </tbody>
     </table>
   </div>
+
+  <p class="hint">
+    Type in the hits column to set hits per volley by hand; clear it to go back to the estimate.
+  </p>
 
   <h2>Where the numbers come from</h2>
   <ul class="terms">
@@ -191,6 +229,36 @@
   }
   .source a {
     color: var(--accent);
+  }
+  .hits {
+    white-space: nowrap;
+  }
+  .hits input {
+    width: 3.5rem;
+    font: inherit;
+    text-align: right;
+    color: var(--text);
+    background: var(--page);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.1rem 0.3rem;
+  }
+  .hits input::placeholder {
+    color: var(--text);
+  }
+  .of {
+    color: var(--text-2);
+    margin-left: 0.25rem;
+  }
+  .hit-source {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .hint {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-2);
   }
   .assumptions {
     margin: 0;

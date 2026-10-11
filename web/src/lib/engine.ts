@@ -23,10 +23,13 @@ export interface EvaluateRequest {
   status: PlayerStatus;
   target: Target;
   hitsPerVolley?: (number | null)[];
+  curatedHitsPerVolley?: (number | null)[];
+  hitModel?: { distance: number; radius: number };
   curve?: { from: number; to: number; step: number };
+  hitCurve?: { from: number; to: number; step: number };
 }
 
-export type Source = "wiki" | "client-data" | "user" | "assumed";
+export type Source = "wiki" | "client-data" | "geometric-estimate" | "curated" | "user" | "assumed";
 
 export interface Term {
   name: string;
@@ -37,8 +40,10 @@ export interface Term {
 
 export interface SubattackResult {
   projectileId: number;
+  projectilesPerVolley: number;
   volleysPerSecond: number;
   hitsPerVolley: number;
+  hitsSource: Source;
   damagePerHit: number;
   dps: number;
 }
@@ -56,8 +61,19 @@ export interface CurvePoint {
   dps: number;
 }
 
+export interface HitCurvePoint {
+  distance: number;
+  hits: number;
+}
+
 export type EvaluateResponse =
-  | { ok: true; breakdown: Breakdown; curve?: CurvePoint[] }
+  | {
+      ok: true;
+      breakdown: Breakdown;
+      curve?: CurvePoint[];
+      hitCurve?: HitCurvePoint[];
+      hitModelGaps?: string[];
+    }
   | { ok: false; error: string };
 
 export type WorkerRequest =

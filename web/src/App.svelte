@@ -17,9 +17,23 @@
   let status = $state<PlayerStatus>({ weak: false, damaging: false, berserk: false, dazed: false });
   let target = $state<Target>({ defense: 0, armored: false, armorBroken: false, exposed: false, cursed: false });
 
+  let distance = $state(4);
+  let radius = $state(0.5);
+  let hitOverrides = $state<(number | null)[]>([]);
+
   let response = $state<EvaluateResponse | null>(null);
   const result = $derived(response?.ok ? response : null);
   const defense = $derived(Number(target.defense) || 0);
+  const hitDistance = $derived(Math.max(0.5, Number(distance) || 0.5));
+  const totalProjectiles = $derived(
+    result ? result.breakdown.subattacks.reduce((n, s) => n + s.projectilesPerVolley, 0) : 1,
+  );
+
+  // Hits typed in for one weapon don't carry over to the next.
+  $effect(() => {
+    void weaponName;
+    hitOverrides = [];
+  });
   let latest = 0;
 
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
@@ -50,6 +64,9 @@
       dexterity: Number(dexterity) || 0,
       status: { ...status },
       target: { ...target, defense },
+      hitsPerVolley: [...hitOverrides],
+      hitModel: { distance: hitDistance, radius: Math.max(0.05, Number(radius) || 0.5) },
+      hitCurve: { from: 0.5, to: Math.max(10, Math.ceil(hitDistance)), step: 0.25 },
       // The chart covers 0-150 DEF, or further if the target's DEF is higher.
       curve: { from: 0, to: Math.max(150, Math.ceil(defense / 10) * 10), step: 1 },
     };
@@ -74,9 +91,19 @@
   {:else if !dataset}
     <p>Loading…</p>
   {:else}
-    <BuildEditor {dataset} bind:classId bind:weaponName bind:attack bind:dexterity bind:status bind:target />
+    <BuildEditor {dataset} bind:classId bind:weaponName bind:attack bind:dexterity bind:status bind:target bind:distance bind:radius />
     {#if result}
-      <Results breakdown={result.breakdown} {defense}>
+      <Results
+        breakdown={result.breakdown}
+        {defense}
+        distance={hitDistance}
+        {hitOverrides}
+        onhits={(i, hits) => {
+          const next = [...hitOverrides];
+          next[i] = hits;
+          hitOverrides = next;
+        }}
+      >
         {#snippet chart()}
           {#if result.curve}
             <LineChart
@@ -89,6 +116,26 @@
               sliderLabel="Target DEF on the DPS chart"
               keyStep={1}
               tableEvery={10}
+            />
+          {/if}
+          {#if result.hitModelGaps?.length}
+            <p class="note">
+              The hit estimate can't follow {result.hitModelGaps.join(" or ")}, so it assumes every shot hits.
+            </p>
+          {:else if result.hitCurve}
+            <LineChart
+              caption="Estimated hits per volley against distance"
+              points={result.hitCurve.map((p) => ({ x: p.distance, y: p.hits }))}
+              selected={hitDistance}
+              onpick={(d) => (distance = d)}
+              formatX={(d) => `${d} tiles`}
+              formatY={(h) => `${h} of ${totalProjectiles} hits`}
+              sliderLabel="Distance to the target on the hits chart"
+              keyStep={0.25}
+              stepped
+              integerY
+              yAtLeast={totalProjectiles}
+              tableEvery={1}
             />
           {/if}
         {/snippet}
@@ -135,6 +182,11 @@
     main {
       grid-template-columns: minmax(0, 1fr);
     }
+  }
+  .note {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--text-2);
   }
   footer {
     margin-top: 3rem;
