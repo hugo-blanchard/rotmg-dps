@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import BuildEditor from "./lib/BuildEditor.svelte";
-  import DpsChart from "./lib/DpsChart.svelte";
+  import LineChart from "./lib/LineChart.svelte";
   import Results from "./lib/Results.svelte";
   import { loadDataset, weaponsFor, type Dataset } from "./lib/dataset";
   import { Engine, type EvaluateResponse, type PlayerStatus, type Target } from "./lib/engine";
@@ -21,6 +21,8 @@
   const result = $derived(response?.ok ? response : null);
   const defense = $derived(Number(target.defense) || 0);
   let latest = 0;
+
+  const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
 
   onMount(async () => {
     try {
@@ -77,7 +79,17 @@
       <Results breakdown={result.breakdown} {defense}>
         {#snippet chart()}
           {#if result.curve}
-            <DpsChart curve={result.curve} {defense} onpick={(d) => (target.defense = d)} />
+            <LineChart
+              caption="DPS against target DEF"
+              points={result.curve.map((p) => ({ x: p.defense, y: p.dps }))}
+              selected={defense}
+              onpick={(d) => (target.defense = d)}
+              formatX={(d) => `${d} DEF`}
+              formatY={(v) => `${whole.format(v)} DPS`}
+              sliderLabel="Target DEF on the DPS chart"
+              keyStep={1}
+              tableEvery={10}
+            />
           {/if}
         {/snippet}
       </Results>
