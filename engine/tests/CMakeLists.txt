@@ -17,7 +17,8 @@ add_executable(rotmg_engine_tests
   wiki_test.cpp
   property_test.cpp
   api_test.cpp
-  hits_test.cpp)
+  hits_test.cpp
+  sim_test.cpp)
 target_link_libraries(rotmg_engine_tests PRIVATE rotmg_engine rotmg_warnings Catch2::Catch2WithMain
                                                  nlohmann_json::nlohmann_json)
 target_compile_definitions(rotmg_engine_tests PRIVATE ROTMG_FIXTURES_DIR="${PROJECT_SOURCE_DIR}/../fixtures")
