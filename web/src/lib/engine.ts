@@ -76,9 +76,43 @@ export type EvaluateResponse =
     }
   | { ok: false; error: string };
 
-export type WorkerRequest =
-  | { id: number; kind: "load"; dataset: string }
-  | { id: number; kind: "evaluate"; request: string };
+export interface SimShot {
+  subattack: number;
+  projectileId: number;
+  x: number;
+  y: number;
+  heading: number;
+  ageMs: number;
+  hit: boolean;
+}
+
+export interface SimCounters {
+  volleys: number;
+  projectiles: number;
+  hits: number;
+  damage: number;
+  resolvedVolleys: number;
+  resolvedHits: number;
+}
+
+export type SimState =
+  | {
+      ok: true;
+      timeMs: number;
+      target: { x: number; y: number; radius: number };
+      shots: SimShot[];
+      totals: SimCounters;
+      perSubattack: SimCounters[];
+    }
+  | { ok: false; error: string };
+
+type Message =
+  | { kind: "load"; dataset: string }
+  | { kind: "evaluate"; request: string }
+  | { kind: "simStart"; request: string }
+  | { kind: "simAdvance"; ms: number };
+
+export type WorkerRequest = Message & { id: number };
 
 export interface WorkerResponse {
   id: number;
@@ -117,7 +151,21 @@ export class Engine {
     return JSON.parse(res.result!) as EvaluateResponse;
   }
 
-  private send(message: { kind: "load"; dataset: string } | { kind: "evaluate"; request: string }) {
+  /** Starts a simulation, replacing any running one. Resolves to an error message, or "". */
+  async startSimulation(request: EvaluateRequest): Promise<string> {
+    const res = await this.send({ kind: "simStart", request: JSON.stringify(request) });
+    return res.error ?? "";
+  }
+
+  async advanceSimulation(ms: number): Promise<SimState> {
+    const res = await this.send({ kind: "simAdvance", ms });
+    if (res.error) {
+      return { ok: false, error: res.error };
+    }
+    return JSON.parse(res.result!) as SimState;
+  }
+
+  private send(message: Message) {
     const id = this.nextId++;
     return new Promise<WorkerResponse>((resolve) => {
       this.pending.set(id, resolve);

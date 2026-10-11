@@ -6,6 +6,8 @@ import type { WorkerRequest, WorkerResponse } from "./engine";
 interface Api {
   load(datasetJson: string): string;
   evaluate(requestJson: string): string;
+  startSimulation(requestJson: string): string;
+  advanceSimulation(ms: number): string;
 }
 
 // The worker global isn't in the DOM typings this project compiles against.
@@ -26,11 +28,20 @@ scope.onmessage = async (e) => {
   const message = e.data;
   try {
     const engine = await api;
-    if (message.kind === "load") {
-      const error = engine.load(message.dataset);
-      scope.postMessage(error ? { id: message.id, error } : { id: message.id });
-    } else {
-      scope.postMessage({ id: message.id, result: engine.evaluate(message.request) });
+    switch (message.kind) {
+      case "load":
+      case "simStart": {
+        const error =
+          message.kind === "load" ? engine.load(message.dataset) : engine.startSimulation(message.request);
+        scope.postMessage(error ? { id: message.id, error } : { id: message.id });
+        break;
+      }
+      case "evaluate":
+        scope.postMessage({ id: message.id, result: engine.evaluate(message.request) });
+        break;
+      case "simAdvance":
+        scope.postMessage({ id: message.id, result: engine.advanceSimulation(message.ms) });
+        break;
     }
   } catch (err) {
     scope.postMessage({ id: message.id, error: `engine failed to start: ${String(err)}` });
