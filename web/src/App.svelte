@@ -3,12 +3,15 @@
   import BuildEditor from "./lib/BuildEditor.svelte";
   import LineChart from "./lib/LineChart.svelte";
   import Results from "./lib/Results.svelte";
+  import SimulationView from "./lib/SimulationView.svelte";
   import { loadDataset, weaponsFor, type Dataset } from "./lib/dataset";
-  import { Engine, type EvaluateResponse, type PlayerStatus, type Target } from "./lib/engine";
+  import { Engine, type EvaluateRequest, type EvaluateResponse, type PlayerStatus, type Target } from "./lib/engine";
+  import { loadSprites, type Sprites } from "./lib/sprites";
 
   let dataset = $state<Dataset | null>(null);
   let engine = $state<Engine | null>(null);
   let loadError = $state("");
+  let sprites = $state<Sprites | null>(null);
 
   let classId = $state("");
   let weaponName = $state("");
@@ -29,6 +32,19 @@
     result ? result.breakdown.subattacks.reduce((n, s) => n + s.projectilesPerVolley, 0) : 1,
   );
 
+  const weapon = $derived(dataset?.weapons.find((w) => w.name === weaponName));
+
+  // What evaluating and simulating share; evaluating adds the two charts.
+  const request = $derived<EvaluateRequest>({
+    weapon: weaponName,
+    attack: Number(attack) || 0,
+    dexterity: Number(dexterity) || 0,
+    status: { ...status },
+    target: { ...target, defense },
+    hitsPerVolley: [...hitOverrides],
+    hitModel: { distance: hitDistance, radius: Math.max(0.05, Number(radius) || 0.5) },
+  });
+
   // Hits typed in for one weapon don't carry over to the next.
   $effect(() => {
     void weaponName;
@@ -39,6 +55,7 @@
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
 
   onMount(async () => {
+    loadSprites().then((s) => (sprites = s));
     try {
       const loaded = await loadDataset();
       engine = await Engine.start(loaded.text);
@@ -58,21 +75,15 @@
     if (!engine || !weaponName) {
       return;
     }
-    const request = {
-      weapon: weaponName,
-      attack: Number(attack) || 0,
-      dexterity: Number(dexterity) || 0,
-      status: { ...status },
-      target: { ...target, defense },
-      hitsPerVolley: [...hitOverrides],
-      hitModel: { distance: hitDistance, radius: Math.max(0.05, Number(radius) || 0.5) },
+    const withCharts = {
+      ...request,
       hitCurve: { from: 0.5, to: Math.max(10, Math.ceil(hitDistance)), step: 0.25 },
       // The chart covers 0-150 DEF, or further if the target's DEF is higher.
       curve: { from: 0, to: Math.max(150, Math.ceil(defense / 10) * 10), step: 1 },
     };
     // Only the newest answer is shown, however the worker's replies interleave.
     const id = ++latest;
-    engine.evaluate(request).then((r) => {
+    engine.evaluate(withCharts).then((r) => {
       if (id === latest) {
         response = r;
       }
@@ -140,6 +151,19 @@
           {/if}
         {/snippet}
       </Results>
+      {#if engine && weapon}
+        <div class="sim-row">
+          <SimulationView
+            {engine}
+            {request}
+            {weapon}
+            className={classId}
+            {sprites}
+            expectedDps={result.breakdown.dps}
+            expectedHits={result.breakdown.subattacks.reduce((n, s) => n + s.hitsPerVolley, 0)}
+          />
+        </div>
+      {/if}
     {:else if response && !response.ok}
       <p role="alert">{response.error}</p>
     {/if}
@@ -181,6 +205,15 @@
   @media (max-width: 760px) {
     main {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .sim-row {
+    grid-column: 2;
+    min-width: 0;
+  }
+  @media (max-width: 760px) {
+    .sim-row {
+      grid-column: 1;
     }
   }
   .note {

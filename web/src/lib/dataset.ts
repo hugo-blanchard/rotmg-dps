@@ -21,6 +21,7 @@ export interface DatasetWeapon {
   slotType: number;
   tier?: number;
   statBonuses?: { stat: string; amount: number }[];
+  projectiles?: { id: number; objectId: string; size?: number }[];
   unsupported?: string[];
 }
 
