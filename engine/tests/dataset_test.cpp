@@ -1,25 +1,12 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <fstream>
-#include <sstream>
 #include <string>
 
+#include "fixture.hpp"
 #include "rotmg/dataset.hpp"
 
-namespace {
-
-std::string ReadFixture(const std::string& name) {
-  std::ifstream in(std::string(ROTMG_FIXTURES_DIR) + "/" + name, std::ios::binary);
-  REQUIRE(in);
-  std::ostringstream text;
-  text << in.rdbuf();
-  return text.str();
-}
-
-}  // namespace
-
 TEST_CASE("loads the small fixture dataset") {
-  const rotmg::Dataset d = rotmg::ParseDataset(ReadFixture("dataset-small.json"));
+  const rotmg::Dataset d = LoadSmallDataset();
   CHECK(d.build == "fixture");
   REQUIRE(d.classes.size() == 2);
   CHECK(d.classes[1].id == "Bowman");
