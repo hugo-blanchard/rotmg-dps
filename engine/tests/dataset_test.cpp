@@ -12,7 +12,7 @@ TEST_CASE("loads the small fixture dataset") {
   CHECK(d.classes[1].id == "Bowman");
   CHECK(d.classes[1].weapon_slot_type == 3);
   CHECK(d.classes[1].dexterity.max == 75);
-  REQUIRE(d.weapons.size() == 3);
+  REQUIRE(d.weapons.size() == 4);
 
   const rotmg::Weapon* sword = rotmg::FindWeapon(d, "Plain Sword");
   REQUIRE(sword != nullptr);

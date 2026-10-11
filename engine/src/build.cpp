@@ -41,8 +41,10 @@ BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const
     return out;
   }
 
-  // The ability sees the weapon's stat bonuses too, as in game.
-  out.ability = EvaluateAbility(*ability, character.With(weapon.stat_bonuses), target, assumptions);
+  // The ability sees the weapon's stat bonuses too, as in game, and its
+  // on-shoot stat changes, since the weapon is firing.
+  out.ability =
+      EvaluateAbility(*ability, character.With(weapon.stat_bonuses).With(WhileShooting(weapon)), target, assumptions);
   const AbilityBreakdown& a = *out.ability;
   out.dps += a.dps;
   if (a.buffs.empty() || a.casts_per_second <= 0) {

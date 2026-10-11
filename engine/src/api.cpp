@@ -65,12 +65,21 @@ json ToJson(const Breakdown& b) {
                           {"damagePerHit", s.damage_per_hit},
                           {"dps", s.dps}});
   }
+  json procs = json::array();
+  for (const ProcResult& p : b.procs) {
+    procs.push_back({{"name", p.name},
+                     {"perSecond", p.per_second},
+                     {"damage", p.damage},
+                     {"dps", p.dps},
+                     {"reference", p.reference}});
+  }
   json terms = json::array();
   for (const Term& t : b.terms) {
     terms.push_back({{"name", t.name}, {"value", t.value}, {"source", SourceName(t.source)}, {"reference", t.reference}});
   }
   return {{"dps", b.dps},
           {"subattacks", subattacks},
+          {"procs", procs},
           {"terms", terms},
           {"assumptions", b.assumptions},
           {"unsupported", b.unsupported}};

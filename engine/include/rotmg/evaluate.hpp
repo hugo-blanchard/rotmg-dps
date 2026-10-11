@@ -72,15 +72,30 @@ struct SubattackResult {
   double dps = 0;
 };
 
+/// Damage from an on-shoot effect rather than the weapon's projectiles.
+struct ProcResult {
+  std::string name;
+  double per_second = 0;
+  double damage = 0;
+  double dps = 0;
+  std::string reference;
+};
+
 struct Breakdown {
+  /// Projectiles plus procs.
   double dps = 0;
   std::vector<SubattackResult> subattacks;
+  std::vector<ProcResult> procs;
   std::vector<Term> terms;
   /// Rules applied without a source, in plain words.
   std::vector<std::string> assumptions;
   /// Mechanics on this weapon the engine doesn't model, from the dataset.
   std::vector<std::string> unsupported;
 };
+
+/// Stat changes a weapon's on-shoot effects keep up while it fires, like
+/// Valor's -10 ATT. Only the ones the engine can model.
+std::vector<StatBonus> WhileShooting(const Weapon& weapon);
 
 /// Single-target DPS of a weapon. Each subattack fires on its own at its own
 /// rate (RealmEye: Weapon Attributes), so the total is their sum.

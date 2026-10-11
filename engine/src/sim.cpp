@@ -4,6 +4,7 @@
 #include <cstddef>
 
 #include "rotmg/damage.hpp"
+#include "rotmg/evaluate.hpp"
 #include "rotmg/fire_rate.hpp"
 
 namespace rotmg {
@@ -11,8 +12,9 @@ namespace rotmg {
 Simulation::Simulation(const Weapon& weapon, const Character& character, const Target& target,
                        double distance, double radius)
     : weapon_(weapon), distance_(distance), radius_(radius), per_subattack_(weapon.subattacks.size()) {
-  const int attack = character.attack + weapon_.StatBonusFor("ATT");
-  const int dexterity = character.dexterity + weapon_.StatBonusFor("DEX");
+  const Character geared = character.With(weapon_.stat_bonuses).With(WhileShooting(weapon_));
+  const int attack = geared.attack;
+  const int dexterity = geared.dexterity;
   const Multiplier multiplier = DamageMultiplier(attack, character.status);
   const double attacks_per_second = AttacksPerSecond(dexterity, character.status);
 

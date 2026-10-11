@@ -81,6 +81,20 @@ struct Subattack {
   std::optional<double> burst_min_delay;
 };
 
+/// One effect of using an item, with the client's parameters as they are:
+/// numbers, booleans or strings.
+struct Activate {
+  using Value = std::variant<double, bool, std::string>;
+
+  std::string type;
+  std::map<std::string, Value, std::less<>> params;
+
+  std::optional<double> Number(std::string_view key) const;
+  std::string Text(std::string_view key) const;
+  /// False when the parameter is missing or isn't a boolean.
+  bool Flag(std::string_view key) const;
+};
+
 struct Weapon {
   int type = 0;
   std::string id;
@@ -92,26 +106,14 @@ struct Weapon {
   std::vector<StatBonus> stat_bonuses;
   std::vector<Projectile> projectiles;
   std::vector<Subattack> subattacks;
+  /// OnPlayerShootActivate effects, with the client's parameters.
+  std::vector<Activate> on_shoot;
   std::vector<std::string> unsupported;
 
   /// Null if the weapon has no projectile with that id.
   const Projectile* FindProjectile(int projectile_id) const;
   /// Sum of the weapon's IncrementStat bonuses for a client stat name like "ATT".
   int StatBonusFor(std::string_view stat) const;
-};
-
-/// One effect of using an ability, with the client's parameters as they
-/// are: numbers, booleans or strings.
-struct Activate {
-  using Value = std::variant<double, bool, std::string>;
-
-  std::string type;
-  std::map<std::string, Value, std::less<>> params;
-
-  std::optional<double> Number(std::string_view key) const;
-  std::string Text(std::string_view key) const;
-  /// False when the parameter is missing or isn't a boolean.
-  bool Flag(std::string_view key) const;
 };
 
 struct Ability {

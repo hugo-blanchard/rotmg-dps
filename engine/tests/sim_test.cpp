@@ -20,7 +20,7 @@ const rotmg::Weapon& Weapon(const char* name) {
   return *w;
 }
 
-const char* const kWeapons[] = {"Plain Sword", "Burst Bow", "Proc Wand"};
+const char* const kWeapons[] = {"Plain Sword", "Burst Bow", "Proc Wand", "Venom Katana"};
 const double kDistances[] = {0.5, 1.5, 3.0, 4.2, 6.0, 7.4, 9.0};
 
 }  // namespace
@@ -50,7 +50,11 @@ TEST_CASE("simulated DPS settles on the evaluated DPS") {
         const rotmg::Target target{.defense = 20};
         rotmg::Assumptions a;
         a.distance = 3;
-        const double expected = rotmg::EvaluateWeapon(Weapon(name), character, target, a).dps;
+        // The simulation fires projectiles only, not procs.
+        double expected = 0;
+        for (const rotmg::SubattackResult& s : rotmg::EvaluateWeapon(Weapon(name), character, target, a).subattacks) {
+          expected += s.dps;
+        }
 
         Simulation sim(Weapon(name), character, target, 3, 0.5);
         sim.Advance(120'000);

@@ -206,6 +206,78 @@
       "unsupported": [
         "OnPlayerShootActivate"
       ]
+    },
+    {
+      "type": 12290,
+      "id": "Venom Katana",
+      "name": "Venom Katana",
+      "slotType": 24,
+      "texture": {
+        "file": "exampleSheet",
+        "index": 49
+      },
+      "projectiles": [
+        {
+          "id": 0,
+          "objectId": "Example Slash",
+          "speed": 150,
+          "minDamage": 100,
+          "maxDamage": 140,
+          "lifetimeMs": 300
+        }
+      ],
+      "subattacks": [
+        {
+          "projectileId": 0,
+          "numProjectiles": 1,
+          "rateOfFire": 1
+        }
+      ],
+      "onShoot": [
+        {
+          "type": "StatBoostSelf",
+          "params": {
+            "proc": 1,
+            "cooldown": 0,
+            "stat": "ATT",
+            "amount": -10,
+            "duration": 1,
+            "requiredConditions": "In Combat",
+            "channel": "noStackItm"
+          }
+        },
+        {
+          "type": "PoisonGrenade",
+          "params": {
+            "proc": 1,
+            "cooldown": 3,
+            "radius": 6,
+            "impactDamage": 0,
+            "totalDamage": 1000,
+            "duration": 6,
+            "throwTime": 0
+          }
+        },
+        {
+          "type": "ConditionEffectSelf",
+          "params": {
+            "proc": 1,
+            "effect": "Slowed",
+            "cooldown": 0,
+            "duration": 0.5
+          }
+        },
+        {
+          "type": "BulletCreate",
+          "params": {
+            "proc": 1,
+            "cooldown": 0.4,
+            "numShots": 1,
+            "type": "0x3001",
+            "mustWear": "0x3002"
+          }
+        }
+      ]
     }
   ],
   "abilities": [

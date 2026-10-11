@@ -107,6 +107,31 @@ std::vector<StatBonus> ReadStatBonuses(const json& j) {
   return out;
 }
 
+std::vector<Activate> ReadActivates(const json& j, std::string_view key) {
+  std::vector<Activate> out;
+  auto it = j.find(key);
+  if (it == j.end()) {
+    return out;
+  }
+  for (const json& act : *it) {
+    Activate a;
+    act.at("type").get_to(a.type);
+    if (auto params = act.find("params"); params != act.end()) {
+      for (const auto& [name, value] : params->items()) {
+        if (value.is_number()) {
+          a.params.emplace(name, value.get<double>());
+        } else if (value.is_boolean()) {
+          a.params.emplace(name, value.get<bool>());
+        } else if (value.is_string()) {
+          a.params.emplace(name, value.get<std::string>());
+        }
+      }
+    }
+    out.push_back(std::move(a));
+  }
+  return out;
+}
+
 Ability ReadAbility(const json& j) {
   Ability a;
   j.at("type").get_to(a.type);
@@ -127,24 +152,7 @@ Ability ReadAbility(const json& j) {
       a.subattacks.push_back(ReadSubattack(s));
     }
   }
-  if (auto it = j.find("activates"); it != j.end()) {
-    for (const json& act : *it) {
-      Activate out;
-      act.at("type").get_to(out.type);
-      if (auto params = act.find("params"); params != act.end()) {
-        for (const auto& [key, value] : params->items()) {
-          if (value.is_number()) {
-            out.params.emplace(key, value.get<double>());
-          } else if (value.is_boolean()) {
-            out.params.emplace(key, value.get<bool>());
-          } else if (value.is_string()) {
-            out.params.emplace(key, value.get<std::string>());
-          }
-        }
-      }
-      a.activates.push_back(std::move(out));
-    }
-  }
+  a.activates = ReadActivates(j, "activates");
   ReadDefault(j, "unsupported", a.unsupported);
   return a;
 }
@@ -166,6 +174,7 @@ Weapon ReadWeapon(const json& j) {
   for (const json& s : j.at("subattacks")) {
     w.subattacks.push_back(ReadSubattack(s));
   }
+  w.on_shoot = ReadActivates(j, "onShoot");
   ReadDefault(j, "unsupported", w.unsupported);
   return w;
 }

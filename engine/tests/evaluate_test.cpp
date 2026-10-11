@@ -126,3 +126,38 @@ TEST_CASE("characters add gear bonuses to any stat") {
   CHECK(geared.Stat("MAXHP") == 20);
   CHECK(geared.Stat("LUCK") == 0);
 }
+
+TEST_CASE("an on-shoot stat penalty stays up while firing") {
+  // Venom Katana: -10 ATT for 1 s on every shot in combat, never stacking.
+  const auto& katana = Weapon("Venom Katana");
+  const auto changes = rotmg::WhileShooting(katana);
+  REQUIRE(changes.size() == 1);
+  CHECK(changes[0].stat == "ATT");
+  CHECK(changes[0].amount == -10);
+  rotmg::Weapon without = katana;
+  without.on_shoot.clear();
+  const auto b = EvaluateWeapon(katana, {.attack = 50, .dexterity = 50}, {});
+  const auto plain = EvaluateWeapon(without, {.attack = 40, .dexterity = 50}, {});
+  CHECK(b.subattacks[0].damage_per_hit == Approx(plain.subattacks[0].damage_per_hit));
+  CHECK(HasAssumption(b, "you're in combat, so on-shoot stat changes that need it stay up while you fire"));
+}
+
+TEST_CASE("a poison burst on shoot adds its damage once per cooldown") {
+  // 50 DEX: 1.5 + 6.5 * 50 / 75 = 5.83 shots a second. A 3 s cooldown is
+  // 17.5 shots, so a burst goes off every 18th shot, for 1000 ignoring DEF.
+  const auto b = EvaluateWeapon(Weapon("Venom Katana"), {.attack = 50, .dexterity = 50}, {.defense = 60});
+  const double shots = 1.5 + 6.5 * 50 / 75.0;
+  REQUIRE(b.procs.size() == 1);
+  CHECK(b.procs[0].per_second == Approx(shots / 18));
+  CHECK(b.procs[0].damage == Approx(1000));
+  CHECK(b.dps == Approx(b.subattacks[0].dps + shots / 18 * 1000));
+
+  const auto cursed = EvaluateWeapon(Weapon("Venom Katana"), {.attack = 50, .dexterity = 50}, {.cursed = true});
+  CHECK(cursed.procs[0].damage == Approx(1250));
+}
+
+TEST_CASE("on-shoot effects that aren't modelled are flagged, harmless ones aren't") {
+  // The katana's set-bonus shot isn't modelled; slowing yourself is harmless.
+  const auto b = EvaluateWeapon(Weapon("Venom Katana"), {.attack = 50, .dexterity = 50}, {});
+  CHECK(b.unsupported == std::vector<std::string>{"OnPlayerShootActivate"});
+}

@@ -35,11 +35,17 @@ TEST_CASE("more ATT never lowers DPS") {
   }
 }
 
-TEST_CASE("more DEX never lowers DPS") {
+TEST_CASE("more DEX never lowers the projectiles' DPS") {
+  // Procs are left out: a burst waits for the first shot after its
+  // cooldown, so a little more DEX can mean slightly fewer bursts a second.
   for (const rotmg::Weapon& w : Data().weapons) {
     double previous = 0;
     for (int dex = 0; dex <= 100; ++dex) {
-      const double dps = EvaluateWeapon(w, {.attack = 50, .dexterity = dex}, {.defense = 20}).dps;
+      const auto b = EvaluateWeapon(w, {.attack = 50, .dexterity = dex}, {.defense = 20});
+      double dps = 0;
+      for (const rotmg::SubattackResult& s : b.subattacks) {
+        dps += s.dps;
+      }
       INFO(w.name << ", DEX " << dex);
       CHECK(dps >= previous);
       previous = dps;
