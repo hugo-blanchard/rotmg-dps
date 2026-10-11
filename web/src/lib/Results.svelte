@@ -64,28 +64,30 @@
   {@render chart?.()}
 
   <h2>How it adds up</h2>
-  <table>
-    <thead>
-      <tr>
-        <th scope="col">Shot</th>
-        <th scope="col">Volleys/s</th>
-        <th scope="col">Hits/volley</th>
-        <th scope="col">Damage/hit</th>
-        <th scope="col">DPS</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each breakdown.subattacks as s, i (i)}
+  <div class="table-scroll">
+    <table>
+      <thead>
         <tr>
-          <td>Subattack {i + 1}</td>
-          <td>{fine.format(s.volleysPerSecond)}</td>
-          <td>{fine.format(s.hitsPerVolley)}</td>
-          <td>{fine.format(s.damagePerHit)}</td>
-          <td>{whole.format(s.dps)}</td>
+          <th scope="col">Subattack</th>
+          <th scope="col">Volleys/s</th>
+          <th scope="col">Hits/volley</th>
+          <th scope="col">Damage/hit</th>
+          <th scope="col">DPS</th>
         </tr>
-      {/each}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {#each breakdown.subattacks as s, i (i)}
+          <tr>
+            <td>{i + 1}</td>
+            <td>{fine.format(s.volleysPerSecond)}</td>
+            <td>{fine.format(s.hitsPerVolley)}</td>
+            <td>{fine.format(s.damagePerHit)}</td>
+            <td>{whole.format(s.dps)}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
 
   <h2>Where the numbers come from</h2>
   <ul class="terms">
@@ -114,6 +116,7 @@
 <style>
   .results {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 1rem;
     align-content: start;
     min-width: 0;
@@ -140,6 +143,9 @@
     margin: 0.5rem 0 0;
     font-size: 1rem;
   }
+  .table-scroll {
+    overflow-x: auto;
+  }
   table {
     border-collapse: collapse;
     width: 100%;
@@ -159,6 +165,7 @@
   th {
     font-weight: 600;
     color: var(--text-2);
+    white-space: nowrap;
   }
   .terms {
     list-style: none;
