@@ -22,9 +22,16 @@ else()
                                                   $<$<BOOL:${ROTMG_WERROR}>:-Werror>)
 endif()
 
-add_library(rotmg_engine src/schema.cpp)
+include(FetchContent)
+FetchContent_Declare(
+  nlohmann_json
+  URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+  SYSTEM)
+FetchContent_MakeAvailable(nlohmann_json)
+
+add_library(rotmg_engine src/schema.cpp src/dataset.cpp)
 target_include_directories(rotmg_engine PUBLIC include)
-target_link_libraries(rotmg_engine PRIVATE rotmg_warnings)
+target_link_libraries(rotmg_engine PRIVATE rotmg_warnings nlohmann_json::nlohmann_json)
 
 if(ROTMG_BUILD_TESTS)
   enable_testing()
