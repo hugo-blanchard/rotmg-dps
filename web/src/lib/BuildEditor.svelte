@@ -1,0 +1,212 @@
+<script lang="ts">
+  import { weaponsFor, type Dataset, type DatasetClass, type DatasetWeapon } from "./dataset";
+  import type { PlayerStatus, Target } from "./engine";
+
+  let {
+    dataset,
+    classId = $bindable(),
+    weaponName = $bindable(),
+    attack = $bindable(),
+    dexterity = $bindable(),
+    status = $bindable(),
+    target = $bindable(),
+  }: {
+    dataset: Dataset;
+    classId: string;
+    weaponName: string;
+    attack: number;
+    dexterity: number;
+    status: PlayerStatus;
+    target: Target;
+  } = $props();
+
+  const classes = $derived([...dataset.classes].sort((a, b) => a.id.localeCompare(b.id)));
+  const cls = $derived(dataset.classes.find((c) => c.id === classId)!);
+  const weapons = $derived(weaponsFor(dataset, cls));
+  const tiered = $derived(weapons.filter((w) => w.tier !== undefined));
+  const untiered = $derived(weapons.filter((w) => w.tier === undefined));
+  const weapon = $derived(weapons.find((w) => w.name === weaponName));
+
+  function bonus(w: DatasetWeapon | undefined, stat: string): number {
+    return w?.statBonuses?.filter((b) => b.stat === stat).reduce((sum, b) => sum + b.amount, 0) ?? 0;
+  }
+
+  function pickClass(next: DatasetClass) {
+    classId = next.id;
+    weaponName = weaponsFor(dataset, next)[0]?.name ?? "";
+    useClassMax(next);
+  }
+
+  function useClassMax(c: DatasetClass) {
+    attack = c.attack.max;
+    dexterity = c.dexterity.max;
+  }
+
+  const playerEffects: { key: keyof PlayerStatus; label: string }[] = [
+    { key: "weak", label: "Weak" },
+    { key: "damaging", label: "Damaging" },
+    { key: "berserk", label: "Berserk" },
+    { key: "dazed", label: "Dazed" },
+  ];
+  const targetEffects: { key: Exclude<keyof Target, "defense">; label: string }[] = [
+    { key: "armored", label: "Armored" },
+    { key: "armorBroken", label: "Armor Broken" },
+    { key: "exposed", label: "Exposed" },
+    { key: "cursed", label: "Cursed" },
+  ];
+</script>
+
+<form class="editor" onsubmit={(e) => e.preventDefault()}>
+  <fieldset>
+    <legend>Build</legend>
+    <label>
+      Class
+      <select
+        value={classId}
+        onchange={(e) => pickClass(dataset.classes.find((c) => c.id === e.currentTarget.value)!)}
+      >
+        {#each classes as c (c.id)}
+          <option value={c.id}>{c.id}</option>
+        {/each}
+      </select>
+    </label>
+    <label>
+      Weapon
+      <select bind:value={weaponName}>
+        {#if tiered.length}
+          <optgroup label="Tiered">
+            {#each tiered as w (w.type)}
+              <option value={w.name}>{w.name} (T{w.tier})</option>
+            {/each}
+          </optgroup>
+        {/if}
+        <optgroup label="Untiered and set items">
+          {#each untiered as w (w.type)}
+            <option value={w.name}>{w.name}</option>
+          {/each}
+        </optgroup>
+      </select>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Stats without the weapon</legend>
+    <label class="stat">
+      ATT
+      <input type="range" min="0" max="150" bind:value={attack} />
+      <input type="number" min="0" max="999" bind:value={attack} />
+    </label>
+    <label class="stat">
+      DEX
+      <input type="range" min="0" max="150" bind:value={dexterity} />
+      <input type="number" min="0" max="999" bind:value={dexterity} />
+    </label>
+    <p class="hint">
+      {#if bonus(weapon, "ATT") || bonus(weapon, "DEX")}
+        The weapon adds
+        {[bonus(weapon, "ATT") && `${bonus(weapon, "ATT")} ATT`, bonus(weapon, "DEX") && `${bonus(weapon, "DEX")} DEX`]
+          .filter(Boolean)
+          .join(" and ")}.
+      {/if}
+      <button type="button" class="link" onclick={() => useClassMax(cls)}>
+        Use {cls.id} max ({cls.attack.max} ATT, {cls.dexterity.max} DEX)
+      </button>
+    </p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Your status effects</legend>
+    <div class="checks">
+      {#each playerEffects as effect (effect.key)}
+        <label><input type="checkbox" bind:checked={status[effect.key]} /> {effect.label}</label>
+      {/each}
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Target</legend>
+    <label class="stat">
+      DEF
+      <input type="range" min="0" max="150" bind:value={target.defense} />
+      <input type="number" min="0" max="999" bind:value={target.defense} />
+    </label>
+    <div class="checks">
+      {#each targetEffects as effect (effect.key)}
+        <label><input type="checkbox" bind:checked={target[effect.key]} /> {effect.label}</label>
+      {/each}
+    </div>
+  </fieldset>
+</form>
+
+<style>
+  .editor {
+    display: grid;
+    gap: 1rem;
+  }
+  fieldset {
+    margin: 0;
+    padding: 0.75rem 1rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    display: grid;
+    gap: 0.6rem;
+  }
+  legend {
+    padding: 0 0.25rem;
+    font-weight: 600;
+  }
+  label {
+    display: grid;
+    gap: 0.25rem;
+    font-size: 0.9rem;
+    color: var(--text-2);
+  }
+  select,
+  input[type="number"] {
+    font: inherit;
+    color: var(--text);
+    background: var(--page);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.35rem 0.5rem;
+    min-width: 0;
+  }
+  .stat {
+    grid-template-columns: 2.5rem 1fr 4.5rem;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  input[type="range"] {
+    accent-color: var(--accent);
+    min-width: 0;
+  }
+  .checks {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem 1rem;
+  }
+  .checks label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text);
+  }
+  .hint {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-2);
+  }
+  .link {
+    font: inherit;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    cursor: pointer;
+    text-align: left;
+  }
+  .link:hover {
+    text-decoration: underline;
+  }
+</style>
