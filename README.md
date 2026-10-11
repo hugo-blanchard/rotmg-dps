@@ -2,7 +2,7 @@
 
 A DPS calculator for Realm of the Mad God (Exalt). It works out how much damage a build does to a given target, using item data from the game client and formulas sourced from the RealmEye wiki. A small simulation shows the character firing at a dummy so the numbers are easy to check.
 
-Live at https://hugo-blanchard.github.io/rotmg-dps/. It covers weapons for now, including an estimate of how many shots land at a given distance and a simulation of the weapon firing at a target. Abilities are still to come.
+Live at https://hugo-blanchard.github.io/rotmg-dps/. It covers weapons, including an estimate of how many shots land at a given distance and a simulation of the weapon firing at a target, and abilities: their own damage and the buffs and debuffs they keep up. Ability effects it can't model yet, like summons and hexes, are named on the page.
 
 ## Notice
 
@@ -10,7 +10,7 @@ Unofficial fan tool, not affiliated with DECA. Game assets © DECA Live Operatio
 
 ## How it works
 
-- `engine/` (C++20) does all the math: damage per hit, fire rate, how many shots of a volley land on a round target, and DPS, with the source of every rule it applies. It also runs the step-by-step simulation the site animates, moving projectiles with the same code as the hit estimate. It builds natively for the tests and to WebAssembly for the site.
+- `engine/` (C++20) does all the math: damage per hit, fire rate, how many shots of a volley land on a round target, ability damage, MP and buff uptime, and DPS, with the source of every rule it applies. It also runs the step-by-step simulation the site animates, moving projectiles with the same code as the hit estimate. It builds natively for the tests and to WebAssembly for the site.
 - `web/` (Svelte and TypeScript) is the site. It runs the WebAssembly engine in a Web Worker.
 - Item data and sprites come from the game client. An extractor that isn't part of this repo turns them into the files described below and publishes them as a `data-*` release, and the site deploys the newest one.
 
@@ -66,6 +66,7 @@ This section is enough to write your own extractor. Values keep the client's uni
 | `build` | Client build the data came from | `build-guid` in `RotMG Exalt_Data/boot.config` |
 | `classes` | Player classes, sorted by `type` | `<Object>` elements with `<Player/>` in `players.xml` |
 | `weapons` | Weapons, sorted by `type` | object XML files listed under `objects` in the client's `manifest` |
+| `abilities` | Abilities, sorted by `type`. Missing from datasets made before abilities were added | the same object XML files |
 
 ### Classes
 
@@ -75,6 +76,10 @@ This section is enough to write your own extractor. Values keep the client's uni
 | `id` | `id` attribute |
 | `weaponSlotType` | first value of `<SlotTypes>` |
 | `attack`, `dexterity` | `{"base", "max"}` from `<Attack max="60">23</Attack>` and `<Dexterity>` |
+| `abilitySlotType` | second value of `<SlotTypes>` |
+| `maxHitPoints`, `maxMagicPoints`, `defense`, `speed`, `vitality`, `wisdom` | `{"base", "max"}` from `<MaxHitPoints>`, `<MaxMagicPoints>`, `<Defense>`, `<Speed>`, `<HpRegen>` and `<MpRegen>` |
+
+The fields from `abilitySlotType` down were added with abilities and are missing from older datasets.
 
 ### Weapons
 
@@ -120,6 +125,20 @@ Older weapons have no `<Subattack>` and set their firing values on the item itse
 | `arcGap`, `defaultAngle` | `<ArcGap>`, `<DefaultAngle>` (sometimes spelled `defaultAngle`), in degrees |
 | `posOffset` | `[x, y]` from `<PosOffset>-.5,0</PosOffset>` |
 | `burstCount`, `burstDelay`, `burstMinDelay` | the element of the same name |
+
+### Abilities
+
+An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is some class's ability slot, and it has `<Usable/>`. Items without it sit in ability slots only to hold a proc's projectiles. Admin-only items, test files and enchantment procs are left out, and reskins are merged, as with weapons.
+
+| Field | Client source |
+|---|---|
+| `type`, `id`, `name`, `slotType`, `tier`, `texture`, `statBonuses` | as for weapons |
+| `mpCost`, `cooldown` | `<MpCost>`, `<Cooldown>` in seconds, when set |
+| `projectiles`, `subattacks` | as for weapons, when the ability fires any |
+| `activates` | one `{"type", "params"}` per `<Activate>`: its text, like `BulletNova`, and its attributes |
+| `unsupported` | names of tags on the item that change how it's used but aren't modelled, e.g. `MpCostPerSecond` |
+
+`params` keeps the attributes as the client has them: numbers where they parse as numbers, `true` and `false` as booleans, everything else, including hex colours, as strings. The engine reads the ones it understands and lists every effect type it doesn't model.
 
 ### Example
 
