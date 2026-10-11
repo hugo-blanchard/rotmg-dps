@@ -15,7 +15,8 @@ namespace {
 constexpr double kDefaultCooldownS = 0.5;
 
 // Effects that can't change single-target DPS: healing, movement, stealth,
-// pets and the like.
+// pets and the like. DamageMultAura is the shields' "you receive 75% damage"
+// (wiki, Golden Shield): every use in the client lowers damage taken.
 const std::set<std::string, std::less<>> kNoDamageEffects = {
     "Heal",           "Teleport",
     "Decoy",          "Sneak",
@@ -23,6 +24,7 @@ const std::set<std::string, std::less<>> kNoDamageEffects = {
     "Create",         "ClearConditionEffectSelf",
     "SelfTransform",  "RemoveNegativeConditionsSelf",
     "StasisBlast",    "MarkAndTeleport",
+    "DamageMultAura",
 };
 
 // Status effects that change weapon DPS, by the side they land on.

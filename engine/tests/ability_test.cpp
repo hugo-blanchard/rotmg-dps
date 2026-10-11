@@ -173,5 +173,6 @@ TEST_CASE("effects that aren't modelled are listed, harmless ones aren't") {
   CHECK(Has(b.unsupported, "MpCostPerSecond"));
   CHECK(Has(b.unsupported, "SpawnCreep"));
   CHECK_FALSE(Has(b.unsupported, "Sneak"));
+  CHECK_FALSE(Has(b.unsupported, "DamageMultAura"));
   CHECK(b.casts_per_second == Approx(7.7 / 100));
 }

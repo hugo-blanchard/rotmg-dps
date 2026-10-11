@@ -519,6 +519,14 @@
           "params": {
             "objectId": "Summon Bear"
           }
+        },
+        {
+          "type": "DamageMultAura",
+          "params": {
+            "type": "self",
+            "mult": 0.75,
+            "duration": 5
+          }
         }
       ],
       "unsupported": [
