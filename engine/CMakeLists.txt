@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(ROTMG_BUILD_TESTS "Build the engine tests" ON)
+option(ROTMG_BUILD_TOOLS "Build the rotmg-dps command line tool" ON)
 option(ROTMG_WERROR "Treat warnings as errors" OFF)
 option(ROTMG_SANITIZE "Build with AddressSanitizer and UBSan" OFF)
 
@@ -32,6 +33,11 @@ FetchContent_MakeAvailable(nlohmann_json)
 add_library(rotmg_engine src/schema.cpp src/dataset.cpp src/damage.cpp src/fire_rate.cpp src/evaluate.cpp)
 target_include_directories(rotmg_engine PUBLIC include)
 target_link_libraries(rotmg_engine PRIVATE rotmg_warnings nlohmann_json::nlohmann_json)
+
+if(ROTMG_BUILD_TOOLS)
+  add_executable(rotmg-dps tools/dps.cpp)
+  target_link_libraries(rotmg-dps PRIVATE rotmg_engine rotmg_warnings)
+endif()
 
 if(ROTMG_BUILD_TESTS)
   enable_testing()
