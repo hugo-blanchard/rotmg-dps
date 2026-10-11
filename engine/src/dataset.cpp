@@ -244,6 +244,15 @@ std::string Activate::Text(std::string_view key) const {
   return "";
 }
 
+bool Activate::Flag(std::string_view key) const {
+  auto it = params.find(key);
+  if (it == params.end()) {
+    return false;
+  }
+  const bool* v = std::get_if<bool>(&it->second);
+  return v != nullptr && *v;
+}
+
 Weapon Ability::AsWeapon() const {
   Weapon w;
   w.type = type;

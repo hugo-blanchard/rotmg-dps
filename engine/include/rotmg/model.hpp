@@ -107,6 +107,8 @@ struct Activate {
 
   std::optional<double> Number(std::string_view key) const;
   std::string Text(std::string_view key) const;
+  /// False when the parameter is missing or isn't a boolean.
+  bool Flag(std::string_view key) const;
 };
 
 struct Ability {
