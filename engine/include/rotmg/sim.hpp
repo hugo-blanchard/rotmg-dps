@@ -47,7 +47,7 @@ class Simulation {
   /// the next call, so many small calls add up to the same as one big one.
   void Advance(double ms);
 
-  double TimeMs() const { return steps_ * kStepMs; }
+  double TimeMs() const { return static_cast<double>(steps_) * kStepMs; }
   const std::vector<Shot>& Shots() const { return shots_; }
   const Counters& Totals() const { return totals_; }
   const std::vector<Counters>& PerSubattack() const { return per_subattack_; }
