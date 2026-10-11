@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "build": "fixture",
+  "classes": [
+    { "type": 768, "id": "Swordsman", "weaponSlotType": 1,
+      "attack": { "base": 15, "max": 75 }, "dexterity": { "base": 15, "max": 50 } },
+    { "type": 769, "id": "Bowman", "weaponSlotType": 3,
+      "attack": { "base": 12, "max": 75 }, "dexterity": { "base": 12, "max": 75 } }
+  ],
+  "weapons": [
+    { "type": 4097, "id": "Plain Sword", "name": "Plain Sword", "slotType": 1, "tier": 5,
+      "texture": { "file": "exampleSheet", "index": 16 },
+      "statBonuses": [ { "stat": "DEX", "amount": 4 } ],
+      "projectiles": [
+        { "id": 0, "objectId": "Plain Bolt", "speed": 100,
+          "minDamage": 50, "maxDamage": 80, "lifetimeMs": 350 }
+      ],
+      "subattacks": [ { "projectileId": 0, "numProjectiles": 1, "rateOfFire": 1 } ] },
+    { "type": 8193, "id": "Burst Bow", "name": "Burst Bow", "slotType": 3,
+      "texture": { "file": "exampleSheet", "index": 32 },
+      "projectiles": [
+        { "id": 0, "objectId": "Plain Arrow", "speed": 160,
+          "minDamage": 100, "maxDamage": 130, "lifetimeMs": 440, "multiHit": true, "size": 80 },
+        { "id": 1, "objectId": "Piercing Arrow", "speed": 160,
+          "minDamage": 40, "maxDamage": 50, "lifetimeMs": 440, "armorPiercing": true,
+          "conditionEffects": [ { "effect": "Slowed", "duration": 2 } ] }
+      ],
+      "subattacks": [
+        { "projectileId": 0, "numProjectiles": 2, "rateOfFire": 0.9, "arcGap": 8,
+          "posOffset": [ -0.5, 0 ], "burstCount": 4, "burstDelay": 1.8, "burstMinDelay": 0.8 },
+        { "projectileId": 1, "numProjectiles": 1, "rateOfFire": 0.9, "defaultAngle": 6,
+          "burstCount": 4, "burstDelay": 1.8, "burstMinDelay": 0.8 }
+      ] },
+    { "type": 12289, "id": "Proc Wand", "name": "Proc Wand", "slotType": 8,
+      "texture": { "file": "exampleSheet", "index": 48 },
+      "projectiles": [
+        { "id": 0, "objectId": "Spark", "speed": 120,
+          "minDamage": 30, "maxDamage": 40, "lifetimeMs": 800, "amplitude": 0.5, "frequency": 2 }
+      ],
+      "subattacks": [ { "projectileId": 0, "numProjectiles": 1, "rateOfFire": 1 } ],
+      "unsupported": [ "OnPlayerShootActivate" ] }
+  ]
+}
