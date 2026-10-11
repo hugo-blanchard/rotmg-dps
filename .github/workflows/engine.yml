@@ -23,3 +23,28 @@ jobs:
         run: cmake --build engine/build
       - name: Test
         run: ctest --test-dir engine/build --output-on-failure
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 6.0.12
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: sudo apt-get install -y ninja-build
+      - name: Build native rotmg-eval
+        run: |
+          cmake -S engine -B engine/build -G Ninja -DROTMG_BUILD_TESTS=OFF
+          cmake --build engine/build --target rotmg-eval
+      - name: Build WebAssembly
+        run: |
+          emcmake cmake -S engine -B engine/build-wasm -G Ninja -DCMAKE_BUILD_TYPE=Release -DROTMG_WERROR=ON
+          cmake --build engine/build-wasm
+      - name: Compare with native
+        run: |
+          engine/build/rotmg-eval fixtures/dataset-small.json fixtures/requests.json > native.txt
+          node engine/wasm/check.mjs engine/build-wasm/engine.js fixtures/dataset-small.json fixtures/requests.json > wasm.txt
+          diff native.txt wasm.txt
