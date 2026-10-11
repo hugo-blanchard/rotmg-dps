@@ -1,0 +1,73 @@
+name: pages
+
+# Builds the engine and the web app, adds the newest dataset release, and
+# deploys the site. A data release from the pipeline triggers it too.
+on:
+  push:
+    branches: [main]
+    paths: [engine/**, web/**, .github/workflows/pages.yml]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 6.0.12
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: sudo apt-get install -y ninja-build
+      - name: Build the engine
+        run: |
+          emcmake cmake -S engine -B engine/build-wasm -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build engine/build-wasm
+          mkdir -p web/public/engine
+          cp engine/build-wasm/engine.js engine/build-wasm/engine.wasm web/public/engine/
+      - name: Download the newest dataset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release list --limit 100 --json tagName --jq '[.[] | select(.tagName | startswith("data-"))][0].tagName')
+          if [ -z "$tag" ]; then
+            echo "no data-* release to deploy"
+            exit 1
+          fi
+          echo "deploying dataset $tag"
+          mkdir -p web/public/data
+          gh release download "$tag" --pattern dataset.json --dir web/public/data
+      - name: Check the engine reads the dataset
+        run: node engine/wasm/smoke.mjs web/public/engine/engine.js web/public/data/dataset.json
+      - name: Build the site
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
