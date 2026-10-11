@@ -269,7 +269,9 @@ std::string Api::StartSimulation(std::string_view request_json) {
     if (r.weapon == nullptr) {
       return "no weapon named \"" + req.at("weapon").get<std::string>() + "\"";
     }
-    simulation_ = std::make_unique<Simulation>(*r.weapon, r.character, r.target, r.assumptions.distance.value_or(4.0),
+    // The ability isn't simulated, but its stat bonuses are part of the build.
+    const Character character = r.ability ? r.character.With(r.ability->stat_bonuses) : r.character;
+    simulation_ = std::make_unique<Simulation>(*r.weapon, character, r.target, r.assumptions.distance.value_or(4.0),
                                                r.assumptions.target_radius);
     return "";
   } catch (const std::exception& e) {

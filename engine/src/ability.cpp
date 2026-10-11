@@ -187,7 +187,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   if (out.mp_cost > 0) {
     out.casts_per_second = std::min(out.casts_per_second, out.mp_per_second / out.mp_cost);
   }
-  assume("the ability is used as often as MP regeneration and its cooldown allow; the MP you start with isn't counted");
+  assume("the ability is used as often as MP regeneration and its cooldown allow, not counting the MP you start with");
 
   for (const AbilityPart& p : out.parts) {
     out.damage_per_cast += p.damage;
