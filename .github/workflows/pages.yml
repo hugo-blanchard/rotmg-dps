@@ -39,7 +39,7 @@ jobs:
           cmake --build engine/build-wasm
           mkdir -p web/public/engine
           cp engine/build-wasm/engine.js engine/build-wasm/engine.wasm web/public/engine/
-      - name: Download the newest dataset
+      - name: Download the newest dataset and sprites
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -50,7 +50,8 @@ jobs:
           fi
           echo "deploying dataset $tag"
           mkdir -p web/public/data
-          gh release download "$tag" --pattern dataset.json --dir web/public/data
+          # Sprites are optional; the site draws plain shapes without them.
+          gh release download "$tag" --pattern dataset.json --pattern 'sprites.*' --dir web/public/data
       - name: Check the engine reads the dataset
         run: node engine/wasm/smoke.mjs web/public/engine/engine.js web/public/data/dataset.json
       - name: Build the site
