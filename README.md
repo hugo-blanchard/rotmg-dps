@@ -138,6 +138,7 @@ An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is som
 | `mpCost`, `cooldown` | `<MpCost>`, `<Cooldown>` in seconds, when set |
 | `projectiles`, `subattacks` | as for weapons, when the ability fires any |
 | `activates` | one `{"type", "params"}` per `<Activate>`: its text, like `BulletNova`, and its attributes |
+| `createdProjectiles` | `{"type", "projectile"}` for each item an activate names in its `type` attribute (e.g. `type="0xD866"` on Midnight Star's afterimages): that item's `type` as a number and its first `<Projectile>`. Missing when no such item has one |
 | `unsupported` | names of tags on the item that change how it's used but aren't modelled, e.g. `MpCostPerSecond` |
 
 `params` keeps the attributes as the client has them: numbers where they parse as numbers, `true` and `false` as booleans, everything else, including hex colours, as strings. The engine reads the ones it understands and lists every effect type it doesn't model.
