@@ -114,3 +114,8 @@ TEST_CASE("weapons whose movement isn't modelled are reported") {
   w.unsupported.push_back("TurnRate");
   CHECK(rotmg::HitModelGaps(w).size() == 1);
 }
+
+TEST_CASE("placeholder projectiles with no lifetime never hit") {
+  const Weapon w = Single(0, 0);
+  CHECK(Hits(w, 0.3) == 0);
+}

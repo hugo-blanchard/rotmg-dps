@@ -98,7 +98,9 @@ std::vector<std::string> HitModelGaps(const Weapon& weapon) {
 
 int HitsPerVolley(const Weapon& weapon, const Subattack& subattack, double distance, double radius) {
   const Projectile* p = weapon.FindProjectile(subattack.projectile_id);
-  if (p == nullptr || subattack.num_projectiles <= 0) {
+  // Placeholder projectiles have no lifetime; they never exist long enough
+  // to hit anything, even a target right next to the player.
+  if (p == nullptr || subattack.num_projectiles <= 0 || p->lifetime_ms <= 0) {
     return 0;
   }
   const int steps = std::max(1, static_cast<int>(std::ceil(p->lifetime_ms / kStepMs)));
