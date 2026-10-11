@@ -29,7 +29,7 @@ FetchContent_Declare(
   SYSTEM)
 FetchContent_MakeAvailable(nlohmann_json)
 
-add_library(rotmg_engine src/schema.cpp src/dataset.cpp src/damage.cpp)
+add_library(rotmg_engine src/schema.cpp src/dataset.cpp src/damage.cpp src/fire_rate.cpp)
 target_include_directories(rotmg_engine PUBLIC include)
 target_link_libraries(rotmg_engine PRIVATE rotmg_warnings nlohmann_json::nlohmann_json)
 
