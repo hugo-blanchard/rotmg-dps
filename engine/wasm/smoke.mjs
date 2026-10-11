@@ -99,10 +99,40 @@ for (const w of weapons.filter((x) => x.slotType === 3 && (x.name.includes("Long
 }
 find("Hama Yumi");
 
+// The simulation view must agree with the numbers next to it: once every
+// shot of a volley has landed or expired, it must have counted exactly the
+// hits the estimate predicts.
+let simulated = 0;
+for (const w of weapons) {
+  for (const distance of [2, 5]) {
+    const request = { weapon: w.name, attack: 50, dexterity: 50, hitModel: { distance, radius: 0.5 } };
+    const estimate = evaluate(request);
+    if (!estimate.ok || estimate.breakdown.subattacks.some((s) => s.hitsSource !== "geometric-estimate")) {
+      continue;
+    }
+    const error = api.startSimulation(JSON.stringify(request));
+    if (error) {
+      failures.push(`${w.name}: simulation didn't start: ${error}`);
+      continue;
+    }
+    const state = JSON.parse(api.advanceSimulation(10_000));
+    state.perSubattack.forEach((c, i) => {
+      const expected = estimate.breakdown.subattacks[i].hitsPerVolley * c.resolvedVolleys;
+      if (c.resolvedHits !== expected) {
+        failures.push(
+          `${w.name} at ${distance} tiles, subattack ${i + 1}: simulated ${c.resolvedHits} hits ` +
+            `in ${c.resolvedVolleys} volleys, the estimate gives ${expected}`,
+        );
+      }
+    });
+    simulated++;
+  }
+}
+
 api.delete();
 
 if (failures.length) {
   console.error(failures.join("\n"));
   process.exit(1);
 }
-console.log(`${weapons.length} weapons evaluated, hit estimate checks passed`);
+console.log(`${weapons.length} weapons evaluated, hit estimate checks passed, ${simulated} simulations agree with the estimate`);
