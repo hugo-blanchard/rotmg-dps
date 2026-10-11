@@ -2,42 +2,528 @@
   "schemaVersion": 1,
   "build": "fixture",
   "classes": [
-    { "type": 768, "id": "Swordsman", "weaponSlotType": 1,
-      "attack": { "base": 15, "max": 75 }, "dexterity": { "base": 15, "max": 50 } },
-    { "type": 769, "id": "Bowman", "weaponSlotType": 3,
-      "attack": { "base": 12, "max": 75 }, "dexterity": { "base": 12, "max": 75 } }
+    {
+      "type": 768,
+      "id": "Swordsman",
+      "weaponSlotType": 1,
+      "attack": {
+        "base": 15,
+        "max": 75
+      },
+      "dexterity": {
+        "base": 15,
+        "max": 50
+      },
+      "abilitySlotType": 10,
+      "maxHitPoints": {
+        "base": 100,
+        "max": 700
+      },
+      "maxMagicPoints": {
+        "base": 100,
+        "max": 300
+      },
+      "defense": {
+        "base": 0,
+        "max": 25
+      },
+      "speed": {
+        "base": 10,
+        "max": 50
+      },
+      "vitality": {
+        "base": 5,
+        "max": 40
+      },
+      "wisdom": {
+        "base": 10,
+        "max": 60
+      }
+    },
+    {
+      "type": 769,
+      "id": "Bowman",
+      "weaponSlotType": 3,
+      "attack": {
+        "base": 12,
+        "max": 75
+      },
+      "dexterity": {
+        "base": 12,
+        "max": 75
+      },
+      "abilitySlotType": 15,
+      "maxHitPoints": {
+        "base": 100,
+        "max": 700
+      },
+      "maxMagicPoints": {
+        "base": 100,
+        "max": 300
+      },
+      "defense": {
+        "base": 0,
+        "max": 25
+      },
+      "speed": {
+        "base": 10,
+        "max": 50
+      },
+      "vitality": {
+        "base": 5,
+        "max": 40
+      },
+      "wisdom": {
+        "base": 10,
+        "max": 60
+      }
+    }
   ],
   "weapons": [
-    { "type": 4097, "id": "Plain Sword", "name": "Plain Sword", "slotType": 1, "tier": 5,
-      "texture": { "file": "exampleSheet", "index": 16 },
-      "statBonuses": [ { "stat": "DEX", "amount": 4 } ],
-      "projectiles": [
-        { "id": 0, "objectId": "Plain Bolt", "speed": 100,
-          "minDamage": 50, "maxDamage": 80, "lifetimeMs": 350 }
+    {
+      "type": 4097,
+      "id": "Plain Sword",
+      "name": "Plain Sword",
+      "slotType": 1,
+      "tier": 5,
+      "texture": {
+        "file": "exampleSheet",
+        "index": 16
+      },
+      "statBonuses": [
+        {
+          "stat": "DEX",
+          "amount": 4
+        }
       ],
-      "subattacks": [ { "projectileId": 0, "numProjectiles": 1, "rateOfFire": 1 } ] },
-    { "type": 8193, "id": "Burst Bow", "name": "Burst Bow", "slotType": 3,
-      "texture": { "file": "exampleSheet", "index": 32 },
       "projectiles": [
-        { "id": 0, "objectId": "Plain Arrow", "speed": 160,
-          "minDamage": 100, "maxDamage": 130, "lifetimeMs": 440, "multiHit": true, "size": 80 },
-        { "id": 1, "objectId": "Piercing Arrow", "speed": 160,
-          "minDamage": 40, "maxDamage": 50, "lifetimeMs": 440, "armorPiercing": true,
-          "conditionEffects": [ { "effect": "Slowed", "duration": 2 } ] }
+        {
+          "id": 0,
+          "objectId": "Plain Bolt",
+          "speed": 100,
+          "minDamage": 50,
+          "maxDamage": 80,
+          "lifetimeMs": 350
+        }
       ],
       "subattacks": [
-        { "projectileId": 0, "numProjectiles": 2, "rateOfFire": 0.9, "arcGap": 8,
-          "posOffset": [ -0.5, 0 ], "burstCount": 4, "burstDelay": 1.8, "burstMinDelay": 0.8 },
-        { "projectileId": 1, "numProjectiles": 1, "rateOfFire": 0.9, "defaultAngle": 6,
-          "burstCount": 4, "burstDelay": 1.8, "burstMinDelay": 0.8 }
-      ] },
-    { "type": 12289, "id": "Proc Wand", "name": "Proc Wand", "slotType": 8,
-      "texture": { "file": "exampleSheet", "index": 48 },
+        {
+          "projectileId": 0,
+          "numProjectiles": 1,
+          "rateOfFire": 1
+        }
+      ]
+    },
+    {
+      "type": 8193,
+      "id": "Burst Bow",
+      "name": "Burst Bow",
+      "slotType": 3,
+      "texture": {
+        "file": "exampleSheet",
+        "index": 32
+      },
       "projectiles": [
-        { "id": 0, "objectId": "Spark", "speed": 120,
-          "minDamage": 30, "maxDamage": 40, "lifetimeMs": 800, "amplitude": 0.5, "frequency": 2 }
+        {
+          "id": 0,
+          "objectId": "Plain Arrow",
+          "speed": 160,
+          "minDamage": 100,
+          "maxDamage": 130,
+          "lifetimeMs": 440,
+          "multiHit": true,
+          "size": 80
+        },
+        {
+          "id": 1,
+          "objectId": "Piercing Arrow",
+          "speed": 160,
+          "minDamage": 40,
+          "maxDamage": 50,
+          "lifetimeMs": 440,
+          "armorPiercing": true,
+          "conditionEffects": [
+            {
+              "effect": "Slowed",
+              "duration": 2
+            }
+          ]
+        }
       ],
-      "subattacks": [ { "projectileId": 0, "numProjectiles": 1, "rateOfFire": 1 } ],
-      "unsupported": [ "OnPlayerShootActivate" ] }
+      "subattacks": [
+        {
+          "projectileId": 0,
+          "numProjectiles": 2,
+          "rateOfFire": 0.9,
+          "arcGap": 8,
+          "posOffset": [
+            -0.5,
+            0
+          ],
+          "burstCount": 4,
+          "burstDelay": 1.8,
+          "burstMinDelay": 0.8
+        },
+        {
+          "projectileId": 1,
+          "numProjectiles": 1,
+          "rateOfFire": 0.9,
+          "defaultAngle": 6,
+          "burstCount": 4,
+          "burstDelay": 1.8,
+          "burstMinDelay": 0.8
+        }
+      ]
+    },
+    {
+      "type": 12289,
+      "id": "Proc Wand",
+      "name": "Proc Wand",
+      "slotType": 8,
+      "texture": {
+        "file": "exampleSheet",
+        "index": 48
+      },
+      "projectiles": [
+        {
+          "id": 0,
+          "objectId": "Spark",
+          "speed": 120,
+          "minDamage": 30,
+          "maxDamage": 40,
+          "lifetimeMs": 800,
+          "amplitude": 0.5,
+          "frequency": 2
+        }
+      ],
+      "subattacks": [
+        {
+          "projectileId": 0,
+          "numProjectiles": 1,
+          "rateOfFire": 1
+        }
+      ],
+      "unsupported": [
+        "OnPlayerShootActivate"
+      ]
+    }
+  ],
+  "abilities": [
+    {
+      "type": 20481,
+      "id": "Plain Spell",
+      "name": "Plain Spell",
+      "slotType": 10,
+      "texture": {
+        "file": "exampleSheet",
+        "index": 64
+      },
+      "mpCost": 80,
+      "projectiles": [
+        {
+          "id": 0,
+          "objectId": "Spark",
+          "speed": 160,
+          "minDamage": 95,
+          "maxDamage": 200,
+          "lifetimeMs": 1000
+        }
+      ],
+      "subattacks": [
+        {
+          "projectileId": 0,
+          "numProjectiles": 1,
+          "rateOfFire": 1
+        }
+      ],
+      "activates": [
+        {
+          "type": "BulletNova",
+          "params": {
+            "numShots": 16,
+            "scalingStat": "WIS",
+            "statModScalingMin": 42,
+            "statModDamage": 2,
+            "statModNumShots": 0.0667
+          }
+        }
+      ]
+    },
+    {
+      "type": 20482,
+      "id": "War Helm",
+      "name": "War Helm",
+      "slotType": 10,
+      "texture": {
+        "file": "exampleSheet",
+        "index": 65
+      },
+      "mpCost": 90,
+      "activates": [
+        {
+          "type": "ConditionEffectAura",
+          "params": {
+            "effect": "Berserk",
+            "duration": 4,
+            "range": 4.5,
+            "scalingStat": "WIS",
+            "statModScalingMin": 30,
+            "statModDuration": 0.1
+          }
+        },
+        {
+          "type": "ConditionEffectSelf",
+          "params": {
+            "effect": "Speedy",
+            "duration": 4
+          }
+        }
+      ]
+    },
+    {
+      "type": 20483,
+      "id": "Battle Seal",
+      "name": "Battle Seal",
+      "slotType": 10,
+      "texture": {
+        "file": "exampleSheet",
+        "index": 66
+      },
+      "mpCost": 90,
+      "statBonuses": [
+        {
+          "stat": "WIS",
+          "amount": 4
+        }
+      ],
+      "activates": [
+        {
+          "type": "ConditionEffectAura",
+          "params": {
+            "effect": "Damaging",
+            "duration": 4,
+            "scalingStat": "WIS",
+            "statModScalingMin": 50,
+            "statModDuration": 0.1
+          }
+        },
+        {
+          "type": "StatBoostAura",
+          "params": {
+            "stat": "ATT",
+            "amount": 10,
+            "duration": 3
+          }
+        }
+      ]
+    },
+    {
+      "type": 20484,
+      "id": "Curse Orb",
+      "name": "Curse Orb",
+      "slotType": 10,
+      "texture": {
+        "file": "exampleSheet",
+        "index": 67
+      },
+      "mpCost": 90,
+      "activates": [
+        {
+          "type": "EffectBlast",
+          "params": {
+            "condEffect": "Curse",
+            "condDuration": 3.5,
+            "radius": 3.5,
+            "wisMin": 50,
+            "wisPerDuration": 10
+          }
+        }
+      ]
+    },
+    {
+      "type": 24577,
+      "id": "Plain Quiver",
+      "name": "Plain Quiver",
+      "slotType": 15,
+      "texture": {
+        "file": "exampleSheet",
+        "index": 68
+      },
+      "mpCost": 75,
+      "projectiles": [
+        {
+          "id": 0,
+          "objectId": "Big Arrow",
+          "speed": 150,
+          "minDamage": 295,
+          "maxDamage": 335,
+          "lifetimeMs": 1000,
+          "multiHit": true,
+          "conditionEffects": [
+            {
+              "effect": "Exposed",
+              "duration": 3
+            }
+          ]
+        }
+      ],
+      "subattacks": [
+        {
+          "projectileId": 0,
+          "numProjectiles": 4,
+          "rateOfFire": 1,
+          "arcGap": 7
+        }
+      ],
+      "activates": [
+        {
+          "type": "Shoot",
+          "params": {
+            "scalingStat": "WIS",
+            "statModScalingMin": 34,
+            "statModDamage": 3.88
+          }
+        }
+      ]
+    },
+    {
+      "type": 24578,
+      "id": "Toxic Vial",
+      "name": "Toxic Vial",
+      "slotType": 15,
+      "texture": {
+        "file": "exampleSheet",
+        "index": 69
+      },
+      "mpCost": 100,
+      "activates": [
+        {
+          "type": "PoisonGrenade",
+          "params": {
+            "impactDamage": 350,
+            "totalDamage": 1050,
+            "duration": 4.5,
+            "damageBoost": 1.095,
+            "scalingStat": "WIS",
+            "statModScalingMin": 50,
+            "statModDamage": 18,
+            "statModImpactDamage": 3
+          }
+        }
+      ]
+    },
+    {
+      "type": 24579,
+      "id": "Shock Scepter",
+      "name": "Shock Scepter",
+      "slotType": 15,
+      "texture": {
+        "file": "exampleSheet",
+        "index": 70
+      },
+      "mpCost": 90,
+      "activates": [
+        {
+          "type": "Lightning",
+          "params": {
+            "totalDamage": 300,
+            "maxTargets": 5,
+            "aoeDamage": 75,
+            "aoeActivationCount": 3,
+            "scalingStat": "WIS",
+            "statModScalingMin": 50,
+            "statModDamage": 22
+          }
+        }
+      ]
+    },
+    {
+      "type": 24580,
+      "id": "Snare Trap",
+      "name": "Snare Trap",
+      "slotType": 15,
+      "texture": {
+        "file": "exampleSheet",
+        "index": 71
+      },
+      "mpCost": 105,
+      "cooldown": 1,
+      "activates": [
+        {
+          "type": "Trap",
+          "params": {
+            "totalDamage": 460,
+            "radius": 4.5,
+            "condEffect": "Slowed",
+            "condDuration": 5,
+            "scalingStat": "WIS",
+            "statModScalingMin": 34,
+            "statModTrapDamage": 5
+          }
+        }
+      ]
+    },
+    {
+      "type": 24581,
+      "id": "Holy Tome",
+      "name": "Holy Tome",
+      "slotType": 15,
+      "texture": {
+        "file": "exampleSheet",
+        "index": 72
+      },
+      "mpCost": 180,
+      "activates": [
+        {
+          "type": "Heal",
+          "params": {
+            "amount": 140
+          }
+        },
+        {
+          "type": "DamageNova",
+          "params": {
+            "minDamage": 600,
+            "maxDamage": 680,
+            "activationCount": 2,
+            "radius": 2.5,
+            "scalingStat": "WIS",
+            "statModScalingMin": 70,
+            "statModDamage": 7.2,
+            "statModActivationCount": 0
+          }
+        }
+      ]
+    },
+    {
+      "type": 24582,
+      "id": "Odd Cloak",
+      "name": "Odd Cloak",
+      "slotType": 15,
+      "texture": {
+        "file": "exampleSheet",
+        "index": 73
+      },
+      "mpCost": 100,
+      "cooldown": 5.5,
+      "activates": [
+        {
+          "type": "Sneak",
+          "params": {
+            "conditionEffect": "Invisible",
+            "duration": 5
+          }
+        },
+        {
+          "type": "SpawnCreep",
+          "params": {
+            "objectId": "Summon Bear"
+          }
+        }
+      ],
+      "unsupported": [
+        "MpCostPerSecond"
+      ]
+    }
   ]
 }
