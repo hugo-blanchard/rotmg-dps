@@ -91,3 +91,26 @@ TEST_CASE("runs a simulation and reports its state") {
   CHECK_FALSE(api.StartSimulation(R"({"weapon": "Nope"})").empty());
   CHECK(json::parse(api.AdvanceSimulation(10))["ok"] == false);
 }
+
+TEST_CASE("evaluates a build with an ability") {
+  const rotmg::Api api = LoadedApi();
+  const json res = json::parse(api.Evaluate(R"({
+    "weapon": "Plain Sword", "ability": "War Helm", "attack": 50, "dexterity": 50, "wisdom": 60,
+    "curve": {"from": 0, "to": 10, "step": 10}
+  })"));
+  REQUIRE(res["ok"] == true);
+  const double build = res["build"]["dps"].get<double>();
+  CHECK(build > res["breakdown"]["dps"].get<double>());
+  CHECK(res["build"]["uptimes"][0]["effect"] == "Berserk");
+  CHECK(res["build"]["uptimes"][0]["on"] == "player");
+  CHECK(res["ability"]["buffs"][0]["durationS"].get<double>() == Catch::Approx(7));
+  CHECK(res["ability"]["castsPerSecond"].get<double>() == Catch::Approx(7.7 / 90));
+  CHECK(res["curve"][0]["dps"].get<double>() == Catch::Approx(build));
+
+  const json none = json::parse(api.Evaluate(R"({"weapon": "Plain Sword"})"));
+  CHECK_FALSE(none.contains("ability"));
+  CHECK(none["build"]["dps"] == none["breakdown"]["dps"]);
+
+  CHECK(json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "ability": "Nope"})"))["error"] ==
+        "no ability named \"Nope\"");
+}

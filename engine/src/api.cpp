@@ -5,25 +5,31 @@
 
 #include <nlohmann/json.hpp>
 
+#include "rotmg/build.hpp"
 #include "rotmg/dataset.hpp"
 #include "rotmg/evaluate.hpp"
 #include "rotmg/hits.hpp"
 
 // Request:
-//   {"weapon": "Doom Bow", "attack": 50, "dexterity": 50,
+//   {"weapon": "Doom Bow", "ability": "Magic Quiver",
+//    "attack": 50, "dexterity": 50, "wisdom": 50, "vitality": 40,
+//    "defense": 25, "speed": 50, "maxHitPoints": 700, "maxMagicPoints": 300,
 //    "status": {"weak", "damaging", "berserk", "dazed"},
 //    "target": {"defense", "armored", "armorBroken", "exposed", "cursed"},
 //    "hitsPerVolley": [null, 1.5], "curatedHitsPerVolley": [2, null],
 //    "hitModel": {"distance": 4, "radius": 0.5},
 //    "curve": {"from": 0, "to": 150, "step": 5},
 //    "hitCurve": {"from": 0.5, "to": 10, "step": 0.25}}
-// Only "weapon" is required. "curve" adds DPS at each DEF in the range,
-// with everything else in the request unchanged. "hitCurve" adds the
-// geometric estimate's total hits per volley at each distance.
+// Only "weapon" is required. "curve" adds the build's DPS at each DEF in
+// the range, with everything else in the request unchanged. "hitCurve"
+// adds the geometric estimate's total hits per volley at each distance.
 //
 // Response:
-//   {"ok": true, "breakdown": {...}, "curve": [{"defense", "dps"}],
+//   {"ok": true, "breakdown": {...the weapon on its own...},
+//    "build": {"dps", "weaponDps", "uptimes": [...], "assumptions": [...]},
+//    "ability": {...}, "curve": [{"defense", "dps"}],
 //    "hitCurve": [{"distance", "hits"}], "hitModelGaps": ["..."]}
+// "ability" is only there when the request names one.
 //   {"ok": false, "error": "..."}
 namespace rotmg {
 namespace {
@@ -70,12 +76,57 @@ json ToJson(const Breakdown& b) {
           {"unsupported", b.unsupported}};
 }
 
+json ToJson(const Buff& b) {
+  return {{"effect", b.effect},
+          {"on", b.on == Buff::On::kPlayer ? "player" : "target"},
+          {"amount", b.amount},
+          {"durationS", b.duration_s}};
+}
+
+json ToJson(const AbilityBreakdown& a) {
+  json parts = json::array();
+  for (const AbilityPart& p : a.parts) {
+    parts.push_back({{"name", p.name}, {"damage", p.damage}, {"reference", p.reference}});
+  }
+  json buffs = json::array();
+  for (const Buff& b : a.buffs) {
+    buffs.push_back(ToJson(b));
+  }
+  json terms = json::array();
+  for (const Term& t : a.terms) {
+    terms.push_back({{"name", t.name}, {"value", t.value}, {"source", SourceName(t.source)}, {"reference", t.reference}});
+  }
+  return {{"mpCost", a.mp_cost},
+          {"cooldownS", a.cooldown_s},
+          {"mpPerSecond", a.mp_per_second},
+          {"castsPerSecond", a.casts_per_second},
+          {"damagePerCast", a.damage_per_cast},
+          {"dps", a.dps},
+          {"parts", parts},
+          {"buffs", buffs},
+          {"terms", terms},
+          {"assumptions", a.assumptions},
+          {"unsupported", a.unsupported}};
+}
+
+json ToJson(const BuildBreakdown& b) {
+  json uptimes = json::array();
+  for (const Uptime& u : b.uptimes) {
+    json entry = ToJson(u.buff);
+    entry["share"] = u.share;
+    uptimes.push_back(entry);
+  }
+  return {{"dps", b.dps}, {"weaponDps", b.weapon_dps}, {"uptimes", uptimes}, {"assumptions", b.assumptions}};
+}
+
 json Error(const std::string& message) {
   return {{"ok", false}, {"error", message}};
 }
 
 struct Request {
   const Weapon* weapon = nullptr;
+  const Ability* ability = nullptr;
+  bool unknown_ability = false;
   Character character;
   Target target;
   Assumptions assumptions;
@@ -86,8 +137,18 @@ struct Request {
 Request ParseRequest(const json& req, const Dataset& dataset) {
   Request r;
   r.weapon = FindWeapon(dataset, req.at("weapon").get<std::string>());
+  if (auto it = req.find("ability"); it != req.end() && !it->is_null()) {
+    r.ability = FindAbility(dataset, it->get<std::string>());
+    r.unknown_ability = r.ability == nullptr;
+  }
   r.character.attack = req.value("attack", 0);
   r.character.dexterity = req.value("dexterity", 0);
+  r.character.wisdom = req.value("wisdom", 0);
+  r.character.vitality = req.value("vitality", 0);
+  r.character.defense = req.value("defense", 0);
+  r.character.speed = req.value("speed", 0);
+  r.character.max_hit_points = req.value("maxHitPoints", 0);
+  r.character.max_magic_points = req.value("maxMagicPoints", 0);
   if (auto it = req.find("status"); it != req.end()) {
     r.character.status.weak = it->value("weak", false);
     r.character.status.damaging = it->value("damaging", false);
@@ -144,12 +205,19 @@ std::string Api::Evaluate(std::string_view request_json) const {
   }
   try {
     const json req = json::parse(request_json);
-    const auto [weapon, character, target, assumptions] = ParseRequest(req, *dataset_);
+    const auto [weapon, ability, unknown_ability, character, target, assumptions] = ParseRequest(req, *dataset_);
     if (weapon == nullptr) {
       return Error("no weapon named \"" + req.at("weapon").get<std::string>() + "\"").dump();
     }
+    if (unknown_ability) {
+      return Error("no ability named \"" + req.at("ability").get<std::string>() + "\"").dump();
+    }
 
-    json res = {{"ok", true}, {"breakdown", ToJson(EvaluateWeapon(*weapon, character, target, assumptions))}};
+    const BuildBreakdown build = EvaluateBuild(*weapon, ability, character, target, assumptions);
+    json res = {{"ok", true}, {"breakdown", ToJson(build.weapon)}, {"build", ToJson(build)}};
+    if (build.ability) {
+      res["ability"] = ToJson(*build.ability);
+    }
     if (auto it = req.find("curve"); it != req.end()) {
       const int from = it->value("from", 0);
       const int to = it->value("to", 150);
@@ -161,7 +229,7 @@ std::string Api::Evaluate(std::string_view request_json) const {
       for (int def = from; def <= to; def += step) {
         Target t = target;
         t.defense = def;
-        curve.push_back({{"defense", def}, {"dps", EvaluateWeapon(*weapon, character, t, assumptions).dps}});
+        curve.push_back({{"defense", def}, {"dps", EvaluateBuild(*weapon, ability, character, t, assumptions).dps}});
       }
       res["curve"] = curve;
     }
