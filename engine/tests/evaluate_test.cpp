@@ -80,3 +80,32 @@ TEST_CASE("Berserk on a burst weapon notes the burst delay assumption") {
   const auto b = EvaluateWeapon(Weapon("Burst Bow"), {.attack = 25, .dexterity = 75, .status = {.berserk = true}}, {});
   CHECK(HasAssumption(b, "Berserk multiplies burst delay by 0.67"));
 }
+
+TEST_CASE("hits come from the user, then a curated default, then the estimate") {
+  rotmg::Assumptions a;
+  a.distance = 3;
+  a.curated_hits_per_volley = {std::nullopt, 0.5};
+  a.hits_per_volley = {1.0};
+  const auto both = EvaluateWeapon(Weapon("Burst Bow"), {.attack = 25, .dexterity = 75}, {}, a);
+  CHECK(both.subattacks[0].hits_source == rotmg::Source::kUser);
+  CHECK(both.subattacks[1].hits_source == rotmg::Source::kCurated);
+  CHECK(both.subattacks[1].hits_per_volley == 0.5);
+
+  a.hits_per_volley.clear();
+  const auto estimated = EvaluateWeapon(Weapon("Burst Bow"), {.attack = 25, .dexterity = 75}, {}, a);
+  CHECK(estimated.subattacks[0].hits_source == rotmg::Source::kGeometricEstimate);
+  CHECK(estimated.subattacks[0].hits_per_volley <= 2);
+  CHECK(HasAssumption(estimated, "the hit estimate aims perfectly at a target that doesn't move"));
+  CHECK_FALSE(HasAssumption(estimated, "every projectile hits"));
+}
+
+TEST_CASE("weapons the estimate can't follow fall back to every projectile hitting") {
+  rotmg::Weapon w = Weapon("Plain Sword");
+  w.projectiles[0].parametric = true;
+  rotmg::Assumptions a;
+  a.distance = 3;
+  const auto b = EvaluateWeapon(w, {.attack = 25, .dexterity = 50}, {}, a);
+  CHECK(b.subattacks[0].hits_source == rotmg::Source::kAssumed);
+  CHECK(b.subattacks[0].hits_per_volley == 1);
+  CHECK(HasAssumption(b, "every projectile hits, since the hit estimate can't follow figure-eight (parametric) shots"));
+}

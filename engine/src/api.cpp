@@ -6,18 +6,23 @@
 
 #include "rotmg/dataset.hpp"
 #include "rotmg/evaluate.hpp"
+#include "rotmg/hits.hpp"
 
 // Request:
 //   {"weapon": "Doom Bow", "attack": 50, "dexterity": 50,
 //    "status": {"weak", "damaging", "berserk", "dazed"},
 //    "target": {"defense", "armored", "armorBroken", "exposed", "cursed"},
-//    "hitsPerVolley": [null, 1.5],
-//    "curve": {"from": 0, "to": 150, "step": 5}}
+//    "hitsPerVolley": [null, 1.5], "curatedHitsPerVolley": [2, null],
+//    "hitModel": {"distance": 4, "radius": 0.5},
+//    "curve": {"from": 0, "to": 150, "step": 5},
+//    "hitCurve": {"from": 0.5, "to": 10, "step": 0.25}}
 // Only "weapon" is required. "curve" adds DPS at each DEF in the range,
-// with everything else in the request unchanged.
+// with everything else in the request unchanged. "hitCurve" adds the
+// geometric estimate's total hits per volley at each distance.
 //
 // Response:
-//   {"ok": true, "breakdown": {...}, "curve": [{"defense", "dps"}]}
+//   {"ok": true, "breakdown": {...}, "curve": [{"defense", "dps"}],
+//    "hitCurve": [{"distance", "hits"}], "hitModelGaps": ["..."]}
 //   {"ok": false, "error": "..."}
 namespace rotmg {
 namespace {
@@ -30,6 +35,10 @@ const char* SourceName(Source source) {
       return "wiki";
     case Source::kClientData:
       return "client-data";
+    case Source::kGeometricEstimate:
+      return "geometric-estimate";
+    case Source::kCurated:
+      return "curated";
     case Source::kUser:
       return "user";
     case Source::kAssumed:
@@ -42,8 +51,10 @@ json ToJson(const Breakdown& b) {
   json subattacks = json::array();
   for (const SubattackResult& s : b.subattacks) {
     subattacks.push_back({{"projectileId", s.projectile_id},
+                          {"projectilesPerVolley", s.projectiles_per_volley},
                           {"volleysPerSecond", s.volleys_per_second},
                           {"hitsPerVolley", s.hits_per_volley},
+                          {"hitsSource", SourceName(s.hits_source)},
                           {"damagePerHit", s.damage_per_hit},
                           {"dps", s.dps}});
   }
@@ -104,10 +115,18 @@ std::string Api::Evaluate(std::string_view request_json) const {
       target.cursed = it->value("cursed", false);
     }
     Assumptions assumptions;
-    if (auto it = req.find("hitsPerVolley"); it != req.end()) {
-      for (const json& h : *it) {
-        assumptions.hits_per_volley.push_back(h.is_null() ? std::nullopt : std::optional<double>(h.get<double>()));
+    const auto read_hits = [&req](const char* key, std::vector<std::optional<double>>& out) {
+      if (auto it = req.find(key); it != req.end()) {
+        for (const json& h : *it) {
+          out.push_back(h.is_null() ? std::nullopt : std::optional<double>(h.get<double>()));
+        }
       }
+    };
+    read_hits("hitsPerVolley", assumptions.hits_per_volley);
+    read_hits("curatedHitsPerVolley", assumptions.curated_hits_per_volley);
+    if (auto it = req.find("hitModel"); it != req.end()) {
+      assumptions.distance = it->value("distance", 4.0);
+      assumptions.target_radius = it->value("radius", kDefaultTargetRadius);
     }
 
     json res = {{"ok", true}, {"breakdown", ToJson(EvaluateWeapon(*weapon, character, target, assumptions))}};
@@ -125,6 +144,25 @@ std::string Api::Evaluate(std::string_view request_json) const {
         curve.push_back({{"defense", def}, {"dps", EvaluateWeapon(*weapon, character, t, assumptions).dps}});
       }
       res["curve"] = curve;
+    }
+    if (auto it = req.find("hitCurve"); it != req.end()) {
+      const double from = it->value("from", 0.5);
+      const double to = it->value("to", 10.0);
+      const double step = it->value("step", 0.25);
+      if (step <= 0 || to < from || (to - from) / step > 10000) {
+        return Error("bad hit curve range").dump();
+      }
+      json points = json::array();
+      for (int k = 0; from + k * step <= to + 1e-9; ++k) {
+        const double distance = from + k * step;
+        int hits = 0;
+        for (const Subattack& s : weapon->subattacks) {
+          hits += HitsPerVolley(*weapon, s, distance, assumptions.target_radius);
+        }
+        points.push_back({{"distance", distance}, {"hits", hits}});
+      }
+      res["hitCurve"] = points;
+      res["hitModelGaps"] = HitModelGaps(*weapon);
     }
     return res.dump();
   } catch (const std::exception& e) {

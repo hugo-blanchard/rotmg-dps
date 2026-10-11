@@ -58,3 +58,18 @@ TEST_CASE("reports errors instead of throwing") {
   CHECK(json::parse(api.Evaluate(R"({"attack": 50})"))["ok"] == false);
   CHECK(json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "curve": {"step": 0}})"))["error"] == "bad curve range");
 }
+
+TEST_CASE("returns the hit estimate over distance") {
+  const rotmg::Api api = LoadedApi();
+  const json res = json::parse(api.Evaluate(R"({
+    "weapon": "Burst Bow", "hitModel": {"distance": 3},
+    "hitCurve": {"from": 1, "to": 9, "step": 1}
+  })"));
+  REQUIRE(res["ok"] == true);
+  REQUIRE(res["hitCurve"].size() == 9);
+  CHECK(res["hitCurve"][0]["distance"] == 1.0);
+  CHECK(res["hitCurve"][8]["hits"] == 0);  // past the 7 tile range
+  CHECK(res["hitModelGaps"].empty());
+  CHECK(res["breakdown"]["subattacks"][0]["hitsSource"] == "geometric-estimate");
+  CHECK(res["breakdown"]["subattacks"][0]["projectilesPerVolley"] == 2);
+}

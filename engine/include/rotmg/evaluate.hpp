@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "rotmg/damage.hpp"
+#include "rotmg/hits.hpp"
 #include "rotmg/model.hpp"
 
 namespace rotmg {
@@ -17,17 +18,26 @@ struct Character {
   PlayerStatus status{};
 };
 
+/// Where each subattack's hits per volley come from, first match wins: the
+/// user's value, a curated default, the geometric estimate at `distance`,
+/// and finally every projectile hitting.
 struct Assumptions {
-  /// Hits per volley for each subattack, by index. A missing entry means
-  /// every projectile in the volley hits.
+  /// Set by the user, by subattack index.
   std::vector<std::optional<double>> hits_per_volley;
+  /// Reviewed defaults from curated/hit-defaults.json, by subattack index.
+  std::vector<std::optional<double>> curated_hits_per_volley;
+  /// Distance to the target in tiles. Unset means no geometric estimate.
+  std::optional<double> distance;
+  double target_radius = kDefaultTargetRadius;
 };
 
 enum class Source {
-  kWiki,        // a rule from the RealmEye wiki
-  kClientData,  // a value read straight from the dataset
-  kUser,        // set by the user
-  kAssumed,     // no source yet; listed so the UI can say so
+  kWiki,               // a rule from the RealmEye wiki
+  kClientData,         // a value read straight from the dataset
+  kGeometricEstimate,  // the hit model in hits.hpp
+  kCurated,            // a reviewed default with its own source
+  kUser,               // set by the user
+  kAssumed,            // no source yet; listed so the UI can say so
 };
 
 /// One number in the breakdown, with where it comes from.
@@ -40,8 +50,10 @@ struct Term {
 
 struct SubattackResult {
   int projectile_id = 0;
+  int projectiles_per_volley = 0;
   double volleys_per_second = 0;
   double hits_per_volley = 0;
+  Source hits_source = Source::kAssumed;
   double damage_per_hit = 0;
   double dps = 0;
 };

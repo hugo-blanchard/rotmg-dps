@@ -1,6 +1,8 @@
 #include "rotmg/evaluate.hpp"
 
 #include <cstddef>
+#include <string>
+#include <utility>
 
 #include "rotmg/fire_rate.hpp"
 
@@ -22,7 +24,10 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
   out.terms.push_back({"Target DEF", static_cast<double>(EffectiveDefense(target, false)), Source::kWiki,
                        "RealmEye: Status Effects"});
 
+  const std::vector<std::string> gaps = HitModelGaps(weapon);
+  const bool estimate = assumptions.distance.has_value() && gaps.empty();
   bool all_hit_assumed = false;
+  bool estimated = false;
   bool has_burst = false;
   for (std::size_t i = 0; i < weapon.subattacks.size(); ++i) {
     const Subattack& s = weapon.subattacks[i];
@@ -32,14 +37,29 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
     }
     SubattackResult r;
     r.projectile_id = s.projectile_id;
+    r.projectiles_per_volley = s.num_projectiles;
     r.volleys_per_second = VolleysPerSecond(s, dexterity, character.status);
     r.damage_per_hit = ExpectedHitDamage(*projectile, multiplier, target);
-    if (i < assumptions.hits_per_volley.size() && assumptions.hits_per_volley[i]) {
+    const auto set = [i](const std::vector<std::optional<double>>& values) {
+      return i < values.size() && values[i].has_value();
+    };
+    if (set(assumptions.hits_per_volley)) {
       r.hits_per_volley = *assumptions.hits_per_volley[i];
-      out.terms.push_back({"Subattack " + std::to_string(i + 1) + " hits per volley", r.hits_per_volley, Source::kUser, ""});
+      r.hits_source = Source::kUser;
+    } else if (set(assumptions.curated_hits_per_volley)) {
+      r.hits_per_volley = *assumptions.curated_hits_per_volley[i];
+      r.hits_source = Source::kCurated;
+    } else if (estimate) {
+      r.hits_per_volley = HitsPerVolley(weapon, s, *assumptions.distance, assumptions.target_radius);
+      r.hits_source = Source::kGeometricEstimate;
+      estimated = true;
     } else {
       r.hits_per_volley = s.num_projectiles;
       all_hit_assumed = true;
+    }
+    if (r.hits_source != Source::kAssumed) {
+      out.terms.push_back(
+          {"Subattack " + std::to_string(i + 1) + " hits per volley", r.hits_per_volley, r.hits_source, ""});
     }
     if (s.burst_count && s.burst_delay) {
       has_burst = true;
@@ -54,7 +74,21 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
 
   out.assumptions.push_back("damage after DEF and Curse is not rounded");
   if (all_hit_assumed) {
-    out.assumptions.push_back("every projectile hits");
+    if (assumptions.distance && !gaps.empty()) {
+      std::string list;
+      for (const std::string& gap : gaps) {
+        list += (list.empty() ? "" : " and ") + gap;
+      }
+      out.assumptions.push_back("every projectile hits, since the hit estimate can't follow " + list);
+    } else {
+      out.assumptions.push_back("every projectile hits");
+    }
+  }
+  if (estimated) {
+    out.assumptions.push_back("the hit estimate aims perfectly at a target that doesn't move");
+    for (std::string& a : HitModelAssumptions(weapon)) {
+      out.assumptions.push_back(std::move(a));
+    }
   }
   if (target.armored && target.exposed) {
     out.assumptions.push_back("Armored applies before Exposed");
