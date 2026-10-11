@@ -99,6 +99,39 @@ for (const w of weapons.filter((x) => x.slotType === 3 && (x.name.includes("Long
 }
 find("Hama Yumi");
 
+// Every ability evaluates with a weapon of its class, and the build adds up:
+// weapon (with buffs) plus ability, never below the weapon on its own.
+const { classes, abilities = [] } = JSON.parse(text);
+let abilityBuilds = 0;
+for (const a of abilities) {
+  const cls = classes.find((c) => c.abilitySlotType === a.slotType);
+  const weapon = cls && weapons.find((w) => w.slotType === cls.weaponSlotType);
+  if (!weapon) {
+    failures.push(`${a.name}: no class and weapon to evaluate it with`);
+    continue;
+  }
+  const res = evaluate({
+    weapon: weapon.name,
+    ability: a.name,
+    attack: cls.attack.max,
+    dexterity: cls.dexterity.max,
+    wisdom: cls.wisdom?.max ?? 0,
+    hitModel: { distance: 4 },
+    target: { defense: 20 },
+  });
+  if (!res.ok) {
+    failures.push(`${a.name}: ${res.error}`);
+    continue;
+  }
+  const { dps, weaponDps } = res.build;
+  if (![dps, weaponDps, res.ability.dps].every(Number.isFinite)) {
+    failures.push(`${a.name}: DPS ${dps}, weapon ${weaponDps}, ability ${res.ability.dps}`);
+  } else if (Math.abs(dps - weaponDps - res.ability.dps) > 1e-6 * Math.max(1, dps)) {
+    failures.push(`${a.name}: build ${dps} isn't weapon ${weaponDps} plus ability ${res.ability.dps}`);
+  }
+  abilityBuilds++;
+}
+
 // The simulation view must agree with the numbers next to it: once every
 // shot of a volley has landed or expired, it must have counted exactly the
 // hits the estimate predicts.
@@ -135,4 +168,7 @@ if (failures.length) {
   console.error(failures.join("\n"));
   process.exit(1);
 }
-console.log(`${weapons.length} weapons evaluated, hit estimate checks passed, ${simulated} simulations agree with the estimate`);
+console.log(
+  `${weapons.length} weapons and ${abilityBuilds} abilities evaluated, hit estimate checks passed, ` +
+    `${simulated} simulations agree with the estimate`,
+);
