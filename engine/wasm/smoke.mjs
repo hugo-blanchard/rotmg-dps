@@ -84,6 +84,18 @@ if (find("Torrential Staff")) {
   }
 }
 
+// Earthen Ward: its shots circle out to a ring, and "it is technically
+// possible to hit at least two shots at full range", but all three only
+// when "sitting on top of enemies". Datasets from before circleTurnDelay
+// existed fire it in straight lines.
+if (find("Earthen Ward")?.projectiles.some((p) => p.circleTurnDelay !== undefined)) {
+  const [atRing] = hitCurve("Earthen Ward", 6, 6, 1);
+  const most = Math.max(...hitCurve("Earthen Ward", 1, 7, 0.25).map((p) => p.hits));
+  if (!(atRing?.hits >= 2) || most > 2) {
+    failures.push(`Earthen Ward: ${atRing?.hits} hits at 6 tiles and at most ${most} from 1 tile out, the wiki says 2 and 2`);
+  }
+}
+
 // Longbows: "more accurate as you get further away, as their shots start
 // offset but converge". Hits must never drop as the target moves away,
 // from 1 tile (any closer and the target overlaps where shots spawn) to
