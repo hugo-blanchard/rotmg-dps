@@ -85,7 +85,7 @@ The fields from `abilitySlotType` down were added with abilities and are missing
 
 An item is a weapon when its `<Class>` is `Equipment`, its `<SlotType>` is some class's weapon slot, and it has at least one `<Projectile>`. Admin-only items, test files (`testing/*.xml`, `equipTest.xml`) and enchantment procs (`equipSubs.xml`) are left out.
 
-Many weapons have Shiny or Retro reskins with the same `<DisplayId>`. A reskin with the same stats as the base item is dropped. One with different stats is kept, with its `id` as its name so names stay unique.
+Many weapons have Shiny or Retro reskins with the same `<DisplayId>`. A reskin with the same stats as the base item is dropped; a different projectile `<ObjectId>`, or a different `color`, `objectId` or `type` in an on-shoot effect, counts as looks, not stats. One with different stats is kept, with its `id` as its name so names stay unique.
 
 | Field | Client source |
 |---|---|
@@ -96,7 +96,8 @@ Many weapons have Shiny or Retro reskins with the same `<DisplayId>`. A reskin w
 | `statBonuses` | `{"stat", "amount"}` from each `<ActivateOnEquip>IncrementStat</ActivateOnEquip>` |
 | `projectiles` | one per `<Projectile>` |
 | `subattacks` | one per `<Subattack>` |
-| `unsupported` | names of tags on the item that can change its damage but aren't modelled yet, e.g. `OnPlayerShootActivate` or `TurnRate` |
+| `onShoot` | one `{"type", "params"}` per `<OnPlayerShootActivate>`, read like an ability's `activates` (below) |
+| `unsupported` | names of tags on the item that can change its damage but aren't modelled yet, e.g. `OnEnemyHitActivate` or `TurnRate` |
 
 ### Projectiles
 
