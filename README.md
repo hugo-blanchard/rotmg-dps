@@ -109,6 +109,7 @@ Many weapons have Shiny or Retro reskins with the same `<DisplayId>`. A reskin w
 | `lifetimeMs` | `<LifetimeMS>` |
 | `armorPiercing`, `multiHit`, `boomerang`, `wavy`, `parametric` | `true` when the empty element is present |
 | `size`, `amplitude`, `frequency`, `magnitude`, `acceleration`, `accelerationDelay`, `speedClamp` | the element of the same name |
+| `circleTurnDelay`, `circleTurnAngle` | `<CircleTurnDelay>` in ms and `<CircleTurnAngle>` in degrees. After the delay the shot turns by the angle and keeps that angle to the line from its spawn point: a circle at 90, an outward spiral below |
 | `conditionEffects` | `{"effect", "duration"}` from `<ConditionEffect duration="3">Stunned</ConditionEffect>` |
 
 Some weapons carry placeholder projectiles with zero speed, damage and lifetime. They're kept as they are.
