@@ -1,7 +1,8 @@
 name: pages
 
 # Builds the engine and the web app, adds the newest dataset release, and
-# deploys the site. A data release from the pipeline triggers it too.
+# deploys the site. A data release from the pipeline triggers it too. Run it
+# by hand with an older data-* tag to roll the data back.
 on:
   push:
     branches: [main]
@@ -9,6 +10,10 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      data:
+        description: Data release to deploy, like data-6eae0101 (newest when empty)
+        required: false
 
 permissions:
   contents: read
@@ -39,19 +44,23 @@ jobs:
           cmake --build engine/build-wasm
           mkdir -p web/public/engine
           cp engine/build-wasm/engine.js engine/build-wasm/engine.wasm web/public/engine/
-      - name: Download the newest dataset and sprites
+      - name: Download the dataset and sprites
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.data }}
         run: |
-          tag=$(gh release list --limit 100 --json tagName --jq '[.[] | select(.tagName | startswith("data-"))][0].tagName')
+          tag="$TAG"
           if [ -z "$tag" ]; then
+            tag=$(gh release list --limit 100 --json tagName --jq '[.[] | select(.tagName | startswith("data-"))][0].tagName')
+          fi
+          if [[ "$tag" != data-* ]]; then
             echo "no data-* release to deploy"
             exit 1
           fi
           echo "deploying dataset $tag"
           mkdir -p web/public/data
-          # Sprites are optional; the site draws plain shapes without them.
-          gh release download "$tag" --pattern dataset.json --pattern 'sprites.*' --dir web/public/data
+          # Sprites and status are optional; the site does without them.
+          gh release download "$tag" --pattern dataset.json --pattern 'sprites.*' --pattern status.json --dir web/public/data
       - name: Check the engine reads the dataset
         run: node engine/wasm/smoke.mjs web/public/engine/engine.js web/public/data/dataset.json
       - name: Build the site
