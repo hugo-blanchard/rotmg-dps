@@ -16,10 +16,10 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
   const Multiplier multiplier = DamageMultiplier(attack, character.status);
   out.terms.push_back({"ATT with weapon", static_cast<double>(attack), Source::kClientData, "weapon stat bonuses"});
   out.terms.push_back({"DEX with weapon", static_cast<double>(dexterity), Source::kClientData, "weapon stat bonuses"});
-  out.terms.push_back({"damage multiplier", multiplier.Value(), Source::kWiki, "RealmEye: Character Stats"});
-  out.terms.push_back({"attacks per second", AttacksPerSecond(dexterity, character.status), Source::kWiki,
+  out.terms.push_back({"Damage multiplier", multiplier.Value(), Source::kWiki, "RealmEye: Character Stats"});
+  out.terms.push_back({"Attacks per second", AttacksPerSecond(dexterity, character.status), Source::kWiki,
                        "RealmEye: Character Stats"});
-  out.terms.push_back({"target DEF", static_cast<double>(EffectiveDefense(target, false)), Source::kWiki,
+  out.terms.push_back({"Target DEF", static_cast<double>(EffectiveDefense(target, false)), Source::kWiki,
                        "RealmEye: Status Effects"});
 
   bool all_hit_assumed = false;
@@ -36,14 +36,14 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
     r.damage_per_hit = ExpectedHitDamage(*projectile, multiplier, target);
     if (i < assumptions.hits_per_volley.size() && assumptions.hits_per_volley[i]) {
       r.hits_per_volley = *assumptions.hits_per_volley[i];
-      out.terms.push_back({"subattack " + std::to_string(i) + " hits per volley", r.hits_per_volley, Source::kUser, ""});
+      out.terms.push_back({"Subattack " + std::to_string(i + 1) + " hits per volley", r.hits_per_volley, Source::kUser, ""});
     } else {
       r.hits_per_volley = s.num_projectiles;
       all_hit_assumed = true;
     }
     if (s.burst_count && s.burst_delay) {
       has_burst = true;
-      out.terms.push_back({"subattack " + std::to_string(i) + " burst delay",
+      out.terms.push_back({"Subattack " + std::to_string(i + 1) + " burst delay",
                            BurstDelay(s, dexterity, character.status), Source::kWiki,
                            "RealmEye: Weapon Attributes"});
     }
