@@ -1,0 +1,10 @@
+[
+  { "weapon": "Plain Sword", "attack": 50, "dexterity": 50, "curve": { "from": 0, "to": 100, "step": 10 } },
+  { "weapon": "Plain Sword", "attack": 4, "dexterity": 0, "target": { "defense": 7 } },
+  { "weapon": "Burst Bow", "attack": 75, "dexterity": 75, "status": { "berserk": true },
+    "target": { "defense": 30, "armored": true, "exposed": true }, "curve": { "from": 0, "to": 150, "step": 5 } },
+  { "weapon": "Burst Bow", "attack": 60, "dexterity": 37, "status": { "damaging": true },
+    "target": { "defense": 45, "cursed": true }, "hitsPerVolley": [1.5, null] },
+  { "weapon": "Proc Wand", "attack": 33, "dexterity": 61, "status": { "weak": true, "dazed": true } },
+  { "weapon": "No Such Weapon" }
+]
