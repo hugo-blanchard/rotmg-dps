@@ -1,6 +1,8 @@
-// Loads a real dataset into the WebAssembly engine and evaluates every
-// weapon once. Fails if the dataset doesn't load or any weapon errors or
-// comes out as a non-finite or negative DPS. Run before deploying the site.
+// Loads a real dataset into the WebAssembly engine and checks it before the
+// site deploys it:
+//
+// - every weapon evaluates to a finite, non-negative DPS
+// - the hit estimate agrees with what the wiki documents about real weapons
 //
 // Usage: node smoke.mjs <engine.js> <dataset.json>
 
@@ -22,20 +24,85 @@ if (error) {
   process.exit(1);
 }
 
+const evaluate = (request) => JSON.parse(api.evaluate(JSON.stringify(request)));
 const failures = [];
 const weapons = JSON.parse(text).weapons;
+
 for (const w of weapons) {
-  const res = JSON.parse(api.evaluate(JSON.stringify({ weapon: w.name, attack: 50, dexterity: 50 })));
+  const res = evaluate({ weapon: w.name, attack: 50, dexterity: 50, hitModel: { distance: 4 } });
   if (!res.ok) {
     failures.push(`${w.name}: ${res.error}`);
   } else if (!Number.isFinite(res.breakdown.dps) || res.breakdown.dps < 0) {
     failures.push(`${w.name}: DPS ${res.breakdown.dps}`);
   }
 }
+
+// Total hits per volley at each distance from `from` to `to`.
+function hitCurve(name, from, to, step) {
+  const res = evaluate({ weapon: name, hitCurve: { from, to, step } });
+  if (!res.ok) {
+    failures.push(`${name}: ${res.error}`);
+    return [];
+  }
+  return res.hitCurve;
+}
+
+function find(name) {
+  const w = weapons.find((x) => x.name === name);
+  if (!w) {
+    failures.push(`${name} is missing from the dataset; update the checks in smoke.mjs`);
+  }
+  return w;
+}
+
+// Weapon Attributes: a spread's side shots stop hitting at its "true range",
+// where the target's 0.5 tile radius no longer covers the angle. Today's
+// tiered bows fire a center shot and a pair 14 degrees apart.
+for (const w of weapons.filter((x) => x.slotType === 3 && x.tier !== undefined && !x.name.includes("Longbow"))) {
+  const spread = w.subattacks.filter((s) => s.numProjectiles > 1 && !s.posOffset);
+  if (spread.length === 0) continue;
+  const halfAngle = Math.max(
+    ...spread.map((s) => ((s.numProjectiles - 1) / 2) * (s.arcGap ?? 11.25) + Math.abs(s.defaultAngle ?? 0)),
+  );
+  const trueRange = 0.5 / Math.sin((halfAngle * Math.PI) / 180);
+  const total = w.subattacks.reduce((n, s) => n + s.numProjectiles, 0);
+  const [inside] = hitCurve(w.name, trueRange - 0.15, trueRange - 0.15, 1);
+  const [outside] = hitCurve(w.name, trueRange + 0.15, trueRange + 0.15, 1);
+  if (inside?.hits !== total || !(outside?.hits < total)) {
+    failures.push(
+      `${w.name}: expected all ${total} shots to hit inside ${trueRange.toFixed(2)} tiles and fewer outside, ` +
+        `got ${inside?.hits} and ${outside?.hits}`,
+    );
+  }
+}
+
+// Torrential Staff: "practically impossible to land more than 2" of its 5 shots.
+if (find("Torrential Staff")) {
+  const most = Math.max(...hitCurve("Torrential Staff", 0.5, 10, 0.25).map((p) => p.hits));
+  if (most > 2) {
+    failures.push(`Torrential Staff: ${most} hits per volley at some distance, the wiki says at most 2`);
+  }
+}
+
+// Longbows: "more accurate as you get further away, as their shots start
+// offset but converge". Hits must never drop as the target moves away,
+// from 1 tile (any closer and the target overlaps where shots spawn) to
+// half a tile short of their 7.04 tile range.
+for (const w of weapons.filter((x) => x.slotType === 3 && (x.name.includes("Longbow") || x.name === "Hama Yumi"))) {
+  const curve = hitCurve(w.name, 1, 6.5, 0.25);
+  for (let i = 1; i < curve.length; i++) {
+    if (curve[i].hits < curve[i - 1].hits) {
+      failures.push(`${w.name}: hits drop from ${curve[i - 1].hits} to ${curve[i].hits} at ${curve[i].distance} tiles`);
+      break;
+    }
+  }
+}
+find("Hama Yumi");
+
 api.delete();
 
 if (failures.length) {
   console.error(failures.join("\n"));
   process.exit(1);
 }
-console.log(`${weapons.length} weapons evaluated`);
+console.log(`${weapons.length} weapons evaluated, hit estimate checks passed`);
