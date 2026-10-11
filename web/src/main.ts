@@ -1,4 +1,4 @@
-const app = document.querySelector<HTMLElement>('#app')
-if (app) {
-  app.textContent = 'Nothing to calculate yet.'
-}
+import { mount } from "svelte";
+import App from "./App.svelte";
+
+mount(App, { target: document.getElementById("app")! });
