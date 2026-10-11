@@ -186,6 +186,25 @@ Projectile sprites point right. When a shot is drawn along its heading, `angleCo
 
 Pushing to `main`, or publishing a new `data-*` release, runs `.github/workflows/pages.yml`. It builds the engine and the site, downloads the newest dataset, checks that every weapon in it evaluates, that the hit estimate matches what the wiki says about tiered bows, longbows and the Torrential Staff, and that the simulation lands exactly the estimated hits, then deploys to GitHub Pages.
 
+To roll the data back, run the workflow by hand with an older release:
+
+```
+gh workflow run pages.yml -f data=data-6eae0101
+```
+
+The site keeps that dataset until the next push or data release.
+
+A release can also include `status.json`, which the site uses to show how old its data is:
+
+| Field | Meaning |
+|---|---|
+| `schemaVersion` | Format version, currently 1 |
+| `build` | Client build, as in the dataset |
+| `extractedAt` | When the data was read from the client, UTC |
+| `pipeline` | Commit of the tool that made the dataset |
+| `classes`, `weapons`, `abilities` | How many of each the dataset has |
+| `coverage` | `weaponsWithGaps`: weapons with something the engine ignores; `unknownTags`: client tags the tool hasn't seen before |
+
 ## License
 
 AGPL-3.0. See [LICENSE](LICENSE).
