@@ -50,6 +50,27 @@ export interface Dataset {
   abilities?: DatasetAbility[];
 }
 
+// Written by the pipeline next to the dataset. Older releases don't have one.
+export interface DatasetStatus {
+  schemaVersion: number;
+  build: string;
+  extractedAt: string;
+}
+
+/** Null when the release has no status.json. */
+export async function loadStatus(): Promise<DatasetStatus | null> {
+  try {
+    const response = await fetch(`${import.meta.env.BASE_URL}data/status.json`);
+    if (!response.ok) {
+      return null;
+    }
+    const status = (await response.json()) as DatasetStatus;
+    return status.schemaVersion === 1 ? status : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Fetches the dataset deployed next to the site. `text` goes to the engine as is. */
 export async function loadDataset(): Promise<{ text: string; dataset: Dataset }> {
   const response = await fetch(`${import.meta.env.BASE_URL}data/dataset.json`);

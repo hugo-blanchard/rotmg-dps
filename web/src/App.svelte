@@ -4,11 +4,12 @@
   import LineChart from "./lib/LineChart.svelte";
   import Results from "./lib/Results.svelte";
   import SimulationView from "./lib/SimulationView.svelte";
-  import { abilitiesFor, loadDataset, maxStats, weaponsFor, type Dataset } from "./lib/dataset";
+  import { abilitiesFor, loadDataset, loadStatus, maxStats, weaponsFor, type Dataset, type DatasetStatus } from "./lib/dataset";
   import { Engine, type EvaluateRequest, type EvaluateResponse, type PlayerStatus, type Target } from "./lib/engine";
   import { loadSprites, type Sprites } from "./lib/sprites";
 
   let dataset = $state<Dataset | null>(null);
+  let dataStatus = $state<DatasetStatus | null>(null);
   let engine = $state<Engine | null>(null);
   let loadError = $state("");
   let sprites = $state<Sprites | null>(null);
@@ -61,8 +62,23 @@
 
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
 
+  // "3 days ago (Oct 8, 2026)", from the status.json of the deployed dataset.
+  const extracted = $derived.by(() => {
+    if (!dataStatus || dataStatus.build !== dataset?.build) {
+      return "";
+    }
+    const at = new Date(dataStatus.extractedAt);
+    if (Number.isNaN(at.getTime())) {
+      return "";
+    }
+    const days = Math.floor((Date.now() - at.getTime()) / 86_400_000);
+    const ago = days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
+    return `${ago} (${at.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric" })})`;
+  });
+
   onMount(async () => {
     loadSprites().then((s) => (sprites = s));
+    loadStatus().then((s) => (dataStatus = s));
     try {
       const loaded = await loadDataset();
       engine = await Engine.start(loaded.text);
@@ -184,7 +200,9 @@
 <footer>
   <p>Unofficial fan tool, not affiliated with DECA. Game assets © DECA Live Operations GmbH.</p>
   {#if dataset}
-    <p>Game data from client build {dataset.build.slice(0, 8)}.</p>
+    <p>
+      Game data from client build {dataset.build.slice(0, 8)}{#if extracted}, extracted {extracted}{/if}.
+    </p>
   {/if}
 </footer>
 
