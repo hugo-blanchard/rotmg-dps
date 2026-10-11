@@ -73,3 +73,21 @@ TEST_CASE("returns the hit estimate over distance") {
   CHECK(res["breakdown"]["subattacks"][0]["hitsSource"] == "geometric-estimate");
   CHECK(res["breakdown"]["subattacks"][0]["projectilesPerVolley"] == 2);
 }
+
+TEST_CASE("runs a simulation and reports its state") {
+  rotmg::Api api = LoadedApi();
+  CHECK(json::parse(api.AdvanceSimulation(10))["error"] == "no simulation running");
+  REQUIRE(api.StartSimulation(R"({"weapon": "Burst Bow", "attack": 50, "dexterity": 75, "hitModel": {"distance": 3}})")
+              .empty());
+  const json state = json::parse(api.AdvanceSimulation(1000));
+  REQUIRE(state["ok"] == true);
+  CHECK(state["timeMs"] == 1000.0);
+  CHECK(state["target"]["y"] == 3.0);
+  CHECK(state["perSubattack"].size() == 2);
+  CHECK(state["totals"]["volleys"].get<int>() > 0);
+  CHECK(state["totals"]["hits"].get<int>() > 0);
+  CHECK(state["shots"].is_array());
+
+  CHECK_FALSE(api.StartSimulation(R"({"weapon": "Nope"})").empty());
+  CHECK(json::parse(api.AdvanceSimulation(10))["ok"] == false);
+}

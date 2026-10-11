@@ -12,5 +12,8 @@ EMSCRIPTEN_BINDINGS(rotmg) {
       .constructor<>()
       .function("load", optional_override([](rotmg::Api& api, const std::string& json) { return api.Load(json); }))
       .function("evaluate",
-                optional_override([](const rotmg::Api& api, const std::string& json) { return api.Evaluate(json); }));
+                optional_override([](const rotmg::Api& api, const std::string& json) { return api.Evaluate(json); }))
+      .function("startSimulation",
+                optional_override([](rotmg::Api& api, const std::string& json) { return api.StartSimulation(json); }))
+      .function("advanceSimulation", &rotmg::Api::AdvanceSimulation);
 }

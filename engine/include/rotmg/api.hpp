@@ -1,10 +1,12 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 
 #include "rotmg/model.hpp"
+#include "rotmg/sim.hpp"
 
 namespace rotmg {
 
@@ -18,8 +20,17 @@ class Api {
   /// Never throws: errors come back as {"ok": false, "error": "..."}.
   std::string Evaluate(std::string_view request_json) const;
 
+  /// Starts a simulation for the same kind of request as Evaluate, replacing
+  /// any running one. The target sits at the hit model's distance. Returns an
+  /// empty string on success, otherwise the error.
+  std::string StartSimulation(std::string_view request_json);
+
+  /// Moves the running simulation forward and returns its state as JSON.
+  std::string AdvanceSimulation(double ms);
+
  private:
   std::optional<Dataset> dataset_;
+  std::unique_ptr<Simulation> simulation_;
 };
 
 }  // namespace rotmg

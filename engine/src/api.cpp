@@ -1,5 +1,6 @@
 #include "rotmg/api.hpp"
 
+#include <algorithm>
 #include <exception>
 
 #include <nlohmann/json.hpp>
@@ -73,6 +74,58 @@ json Error(const std::string& message) {
   return {{"ok", false}, {"error", message}};
 }
 
+struct Request {
+  const Weapon* weapon = nullptr;
+  Character character;
+  Target target;
+  Assumptions assumptions;
+};
+
+// Reads the parts of a request Evaluate and StartSimulation share. Throws on
+// malformed JSON; an unknown weapon leaves `weapon` null.
+Request ParseRequest(const json& req, const Dataset& dataset) {
+  Request r;
+  r.weapon = FindWeapon(dataset, req.at("weapon").get<std::string>());
+  r.character.attack = req.value("attack", 0);
+  r.character.dexterity = req.value("dexterity", 0);
+  if (auto it = req.find("status"); it != req.end()) {
+    r.character.status.weak = it->value("weak", false);
+    r.character.status.damaging = it->value("damaging", false);
+    r.character.status.berserk = it->value("berserk", false);
+    r.character.status.dazed = it->value("dazed", false);
+  }
+  if (auto it = req.find("target"); it != req.end()) {
+    r.target.defense = it->value("defense", 0);
+    r.target.armored = it->value("armored", false);
+    r.target.armor_broken = it->value("armorBroken", false);
+    r.target.exposed = it->value("exposed", false);
+    r.target.cursed = it->value("cursed", false);
+  }
+  const auto read_hits = [&req](const char* key, std::vector<std::optional<double>>& out) {
+    if (auto it = req.find(key); it != req.end()) {
+      for (const json& h : *it) {
+        out.push_back(h.is_null() ? std::nullopt : std::optional<double>(h.get<double>()));
+      }
+    }
+  };
+  read_hits("hitsPerVolley", r.assumptions.hits_per_volley);
+  read_hits("curatedHitsPerVolley", r.assumptions.curated_hits_per_volley);
+  if (auto it = req.find("hitModel"); it != req.end()) {
+    r.assumptions.distance = it->value("distance", 4.0);
+    r.assumptions.target_radius = it->value("radius", kDefaultTargetRadius);
+  }
+  return r;
+}
+
+json ToJson(const Simulation::Counters& c) {
+  return {{"volleys", c.volleys},
+          {"projectiles", c.projectiles},
+          {"hits", c.hits},
+          {"damage", c.damage},
+          {"resolvedVolleys", c.resolved_volleys},
+          {"resolvedHits", c.resolved_hits}};
+}
+
 }  // namespace
 
 std::string Api::Load(std::string_view dataset_json) {
@@ -91,42 +144,9 @@ std::string Api::Evaluate(std::string_view request_json) const {
   }
   try {
     const json req = json::parse(request_json);
-    const std::string name = req.at("weapon").get<std::string>();
-    const Weapon* weapon = FindWeapon(*dataset_, name);
+    const auto [weapon, character, target, assumptions] = ParseRequest(req, *dataset_);
     if (weapon == nullptr) {
-      return Error("no weapon named \"" + name + "\"").dump();
-    }
-
-    Character character;
-    character.attack = req.value("attack", 0);
-    character.dexterity = req.value("dexterity", 0);
-    if (auto it = req.find("status"); it != req.end()) {
-      character.status.weak = it->value("weak", false);
-      character.status.damaging = it->value("damaging", false);
-      character.status.berserk = it->value("berserk", false);
-      character.status.dazed = it->value("dazed", false);
-    }
-    Target target;
-    if (auto it = req.find("target"); it != req.end()) {
-      target.defense = it->value("defense", 0);
-      target.armored = it->value("armored", false);
-      target.armor_broken = it->value("armorBroken", false);
-      target.exposed = it->value("exposed", false);
-      target.cursed = it->value("cursed", false);
-    }
-    Assumptions assumptions;
-    const auto read_hits = [&req](const char* key, std::vector<std::optional<double>>& out) {
-      if (auto it = req.find(key); it != req.end()) {
-        for (const json& h : *it) {
-          out.push_back(h.is_null() ? std::nullopt : std::optional<double>(h.get<double>()));
-        }
-      }
-    };
-    read_hits("hitsPerVolley", assumptions.hits_per_volley);
-    read_hits("curatedHitsPerVolley", assumptions.curated_hits_per_volley);
-    if (auto it = req.find("hitModel"); it != req.end()) {
-      assumptions.distance = it->value("distance", 4.0);
-      assumptions.target_radius = it->value("radius", kDefaultTargetRadius);
+      return Error("no weapon named \"" + req.at("weapon").get<std::string>() + "\"").dump();
     }
 
     json res = {{"ok", true}, {"breakdown", ToJson(EvaluateWeapon(*weapon, character, target, assumptions))}};
@@ -168,6 +188,60 @@ std::string Api::Evaluate(std::string_view request_json) const {
   } catch (const std::exception& e) {
     return Error(std::string("bad request: ") + e.what()).dump();
   }
+}
+
+std::string Api::StartSimulation(std::string_view request_json) {
+  simulation_.reset();
+  if (!dataset_) {
+    return "no dataset loaded";
+  }
+  try {
+    const json req = json::parse(request_json);
+    const Request r = ParseRequest(req, *dataset_);
+    if (r.weapon == nullptr) {
+      return "no weapon named \"" + req.at("weapon").get<std::string>() + "\"";
+    }
+    simulation_ = std::make_unique<Simulation>(*r.weapon, r.character, r.target, r.assumptions.distance.value_or(4.0),
+                                               r.assumptions.target_radius);
+    return "";
+  } catch (const std::exception& e) {
+    return std::string("bad request: ") + e.what();
+  }
+}
+
+// State:
+//   {"ok": true, "timeMs", "target": {"x", "y", "radius"},
+//    "shots": [{"subattack", "projectileId", "x", "y", "heading", "ageMs", "hit"}],
+//    "totals": {...}, "perSubattack": [{...}]}
+// with counters {"volleys", "projectiles", "hits", "damage",
+// "resolvedVolleys", "resolvedHits"}.
+std::string Api::AdvanceSimulation(double ms) {
+  if (!simulation_) {
+    return Error("no simulation running").dump();
+  }
+  simulation_->Advance(std::max(0.0, ms));
+  json shots = json::array();
+  for (const Simulation::Shot& s : simulation_->Shots()) {
+    shots.push_back({{"subattack", s.subattack},
+                     {"projectileId", s.projectile_id},
+                     {"x", s.position.x},
+                     {"y", s.position.y},
+                     {"heading", s.heading_degrees},
+                     {"ageMs", s.age_ms},
+                     {"hit", s.hit}});
+  }
+  json per = json::array();
+  for (const Simulation::Counters& c : simulation_->PerSubattack()) {
+    per.push_back(ToJson(c));
+  }
+  const Point target = simulation_->TargetCenter();
+  return json{{"ok", true},
+              {"timeMs", simulation_->TimeMs()},
+              {"target", {{"x", target.x}, {"y", target.y}, {"radius", simulation_->Radius()}}},
+              {"shots", shots},
+              {"totals", ToJson(simulation_->Totals())},
+              {"perSubattack", per}}
+      .dump();
 }
 
 }  // namespace rotmg
