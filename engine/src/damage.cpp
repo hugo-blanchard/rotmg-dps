@@ -36,8 +36,8 @@ int EffectiveDefense(const Target& target, bool armor_piercing) {
   return defense;
 }
 
-double DamageAfterDefense(int damage, int defense, bool cursed) {
-  double after = std::max(static_cast<double>(damage - defense), 0.1 * damage);
+double DamageAfterDefense(double damage, int defense, bool cursed) {
+  double after = std::max(damage - defense, 0.1 * damage);
   return cursed ? after * 1.25 : after;
 }
 
@@ -49,6 +49,16 @@ double ExpectedHitDamage(const Projectile& projectile, Multiplier multiplier, co
   double total = 0;
   for (int roll = low; roll <= high; ++roll) {
     total += DamageAfterDefense(HitDamage(roll, multiplier), defense, target.cursed);
+  }
+  return total / (high - low + 1);
+}
+
+double ExpectedAbilityDamage(int low, int high, double bonus, const Target& target, bool armor_piercing) {
+  const int defense = EffectiveDefense(target, armor_piercing);
+  high = std::max(low, high);
+  double total = 0;
+  for (int roll = low; roll <= high; ++roll) {
+    total += DamageAfterDefense(roll + bonus, defense, target.cursed);
   }
   return total / (high - low + 1);
 }

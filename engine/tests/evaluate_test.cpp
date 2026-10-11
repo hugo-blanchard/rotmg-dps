@@ -116,3 +116,13 @@ TEST_CASE("a burst delay shared by every subattack is listed once") {
   CHECK(delays == 1);
   CHECK(std::ranges::find(b.terms, std::string("Burst delay"), &rotmg::Term::name) != b.terms.end());
 }
+
+TEST_CASE("characters add gear bonuses to any stat") {
+  const rotmg::Character c{.attack = 50, .dexterity = 40, .wisdom = 30};
+  const rotmg::Character geared = c.With({{"WIS", 6}, {"ATT", 2}, {"MAXHP", 20}, {"LUCK", 9}});
+  CHECK(geared.Stat("WIS") == 36);
+  CHECK(geared.Stat("ATT") == 52);
+  CHECK(geared.Stat("DEX") == 40);
+  CHECK(geared.Stat("MAXHP") == 20);
+  CHECK(geared.Stat("LUCK") == 0);
+}

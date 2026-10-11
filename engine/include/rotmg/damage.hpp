@@ -46,10 +46,15 @@ int EffectiveDefense(const Target& target, bool armor_piercing);
 
 /// Damage after DEF, which can't take a hit below 10% of its damage, then
 /// Curse's 25%. Not rounded, see the assumptions in EvaluateWeapon.
-double DamageAfterDefense(int damage, int defense, bool cursed);
+double DamageAfterDefense(double damage, int defense, bool cursed);
 
 /// Average damage of one hit over every roll from min to max - 1. The listed
 /// max is never rolled (RealmEye: Weapon Attributes).
 double ExpectedHitDamage(const Projectile& projectile, Multiplier multiplier, const Target& target);
+
+/// Average damage of one ability hit: a roll from `low` to `high`, both
+/// included, plus a flat StatMod bonus, through DEF unless it pierces armor,
+/// then Curse. ATT doesn't apply to abilities (RealmEye: Character Stats).
+double ExpectedAbilityDamage(int low, int high, double bonus, const Target& target, bool armor_piercing);
 
 }  // namespace rotmg

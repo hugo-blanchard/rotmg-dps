@@ -9,13 +9,41 @@
 
 namespace rotmg {
 
+int Character::Stat(std::string_view client_name) const {
+  if (client_name == "ATT") return attack;
+  if (client_name == "DEX") return dexterity;
+  if (client_name == "WIS") return wisdom;
+  if (client_name == "VIT") return vitality;
+  if (client_name == "DEF") return defense;
+  if (client_name == "SPD") return speed;
+  if (client_name == "MAXHP") return max_hit_points;
+  if (client_name == "MAXMP") return max_magic_points;
+  return 0;
+}
+
+Character Character::With(const std::vector<StatBonus>& bonuses) const {
+  Character out = *this;
+  for (const StatBonus& b : bonuses) {
+    if (b.stat == "ATT") out.attack += b.amount;
+    if (b.stat == "DEX") out.dexterity += b.amount;
+    if (b.stat == "WIS") out.wisdom += b.amount;
+    if (b.stat == "VIT") out.vitality += b.amount;
+    if (b.stat == "DEF") out.defense += b.amount;
+    if (b.stat == "SPD") out.speed += b.amount;
+    if (b.stat == "MAXHP") out.max_hit_points += b.amount;
+    if (b.stat == "MAXMP") out.max_magic_points += b.amount;
+  }
+  return out;
+}
+
 Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const Target& target,
                          const Assumptions& assumptions) {
   Breakdown out;
   out.unsupported = weapon.unsupported;
 
-  const int attack = character.attack + weapon.StatBonusFor("ATT");
-  const int dexterity = character.dexterity + weapon.StatBonusFor("DEX");
+  const Character geared = character.With(weapon.stat_bonuses);
+  const int attack = geared.attack;
+  const int dexterity = geared.dexterity;
   const Multiplier multiplier = DamageMultiplier(attack, character.status);
   out.terms.push_back({"ATT with weapon", static_cast<double>(attack), Source::kClientData, "weapon stat bonuses"});
   out.terms.push_back({"DEX with weapon", static_cast<double>(dexterity), Source::kClientData, "weapon stat bonuses"});

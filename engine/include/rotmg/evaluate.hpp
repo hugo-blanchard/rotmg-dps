@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "rotmg/damage.hpp"
@@ -10,12 +11,25 @@
 
 namespace rotmg {
 
-/// ATT and DEX from everything except the weapon. The weapon's own stat
-/// bonuses are added during evaluation, so swapping weapons compares fairly.
+/// Stats from everything except the item being evaluated. Its own stat
+/// bonuses are added during evaluation, so swapping items compares fairly.
 struct Character {
   int attack = 0;
   int dexterity = 0;
+  int wisdom = 0;
+  int vitality = 0;
+  int defense = 0;
+  int speed = 0;
+  int max_hit_points = 0;
+  int max_magic_points = 0;
   PlayerStatus status{};
+
+  /// A stat by the client's name: ATT, DEX, WIS, VIT, DEF, SPD, MAXHP or
+  /// MAXMP. 0 for anything else.
+  int Stat(std::string_view client_name) const;
+
+  /// This character with IncrementStat bonuses added.
+  Character With(const std::vector<StatBonus>& bonuses) const;
 };
 
 /// Where each subattack's hits per volley come from, first match wins: the

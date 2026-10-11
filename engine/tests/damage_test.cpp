@@ -91,3 +91,10 @@ TEST_CASE("expected hit damage handles a single possible roll") {
   CHECK(rotmg::ExpectedHitDamage(Rolls(0, 0), DamageMultiplier(50, {}), {}) == 0);
   CHECK(rotmg::ExpectedHitDamage(Rolls(100, 100), DamageMultiplier(25, {}), {}) == Approx(100));
 }
+
+TEST_CASE("ability damage ignores ATT and adds its StatMod bonus before DEF") {
+  // 100-102 inclusive plus 10, against 20 DEF: (90 + 91 + 92) / 3.
+  CHECK(rotmg::ExpectedAbilityDamage(100, 102, 10, {.defense = 20}, false) == Approx(91));
+  CHECK(rotmg::ExpectedAbilityDamage(100, 102, 10, {.defense = 20}, true) == Approx(111));
+  CHECK(rotmg::ExpectedAbilityDamage(100, 100, 0, {.defense = 500, .cursed = true}, false) == Approx(12.5));
+}
