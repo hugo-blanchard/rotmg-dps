@@ -125,6 +125,21 @@ TEST_CASE("an orb curses the target, longer with more WIS") {
   CHECK(b.buffs[0].duration_s == Approx(4.5));
 }
 
+TEST_CASE("a wakizashi's slash lands every shot and exposes the target") {
+  // 18 WIS over 42: 0.06 * 18 = 1.08 adds one shot, and 3 per point adds 54
+  // damage to each. Rolls 350-449 average 399.5.
+  const auto b = EvaluateAbility(Ability("Plain Wakizashi"), kWis60, {}, {});
+  REQUIRE(b.parts.size() == 1);
+  CHECK(b.parts[0].name == "Shots at the cursor, 4");
+  CHECK(b.damage_per_cast == Approx(4 * (399.5 + 54)));
+  REQUIRE(b.buffs.size() == 1);
+  CHECK(b.buffs[0].effect == "Exposed");
+  CHECK(b.buffs[0].duration_s == Approx(2));
+  // The second activate makes a projectile the dataset doesn't have.
+  CHECK(Has(b.unsupported, "BulletCreate shots of another projectile"));
+  CHECK_FALSE(Has(b.unsupported, "BulletCreate"));
+}
+
 TEST_CASE("a quiver's shots use the hit estimate and expose the target") {
   // 4 shots 7 degrees apart: the outer pair is 10.5 degrees off center, so
   // it passes 2.5 * sin(10.5) = 0.46 tiles from a target 2.5 tiles away (a

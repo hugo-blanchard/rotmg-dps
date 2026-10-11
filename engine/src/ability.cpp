@@ -112,6 +112,33 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
                                 p->armor_piercing);
       assume("spells are aimed at the target's center, so every shot hits");
       out.parts.push_back({"Spell burst, " + std::to_string(count) + " shots", count * each, "RealmEye: Spells"});
+    } else if (a.type == "BulletCreate") {
+      // Shots made around the cursor rather than fired from the player. On
+      // wakizashis, the most common, the slash "is centered on the
+      // crosshair" (RealmEye: Wakizashi). Some create a different
+      // projectile, named by `type`, which the dataset doesn't have.
+      if (!a.Text("type").empty()) {
+        unsupported("BulletCreate shots of another projectile");
+        continue;
+      }
+      const Projectile* p = shots.projectiles.empty() ? nullptr : &shots.projectiles[0];
+      if (p == nullptr) {
+        unsupported("BulletCreate without a projectile");
+        continue;
+      }
+      const int count = static_cast<int>(Param(a, "numShots")) + StatModCount(a, "statModNumShots", c);
+      const double each =
+          ExpectedAbilityDamage(p->min_damage, p->max_damage - 1, StatModBonus(a, "statModDamage", c), target,
+                                p->armor_piercing);
+      if (count > 0) {
+        for (const ConditionEffect& e : p->condition_effects) {
+          if (kTargetStatuses.contains(e.effect)) {
+            out.buffs.push_back({Buff::On::kTarget, NormalizeStatus(e.effect), 0, e.duration});
+          }
+        }
+      }
+      assume("shots made at the cursor (like a wakizashi's slash) pass through the target, so every shot hits");
+      out.parts.push_back({"Shots at the cursor, " + std::to_string(count), count * each, "RealmEye: Wakizashi"});
     } else if (a.type == "DamageNova") {
       const int count = static_cast<int>(Param(a, "activationCount")) + StatModCount(a, "statModActivationCount", c);
       const double each = ExpectedAbilityDamage(static_cast<int>(Param(a, "minDamage")),

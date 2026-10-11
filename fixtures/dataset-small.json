@@ -532,6 +532,64 @@
       "unsupported": [
         "MpCostPerSecond"
       ]
+    },
+    {
+      "type": 24583,
+      "id": "Plain Wakizashi",
+      "name": "Plain Wakizashi",
+      "slotType": 15,
+      "texture": {
+        "file": "exampleSheet",
+        "index": 74
+      },
+      "mpCost": 70,
+      "projectiles": [
+        {
+          "id": 0,
+          "objectId": "Example Slash",
+          "speed": 180,
+          "minDamage": 350,
+          "maxDamage": 450,
+          "lifetimeMs": 350,
+          "multiHit": true,
+          "conditionEffects": [
+            {
+              "effect": "Exposed",
+              "duration": 2
+            }
+          ]
+        }
+      ],
+      "subattacks": [
+        {
+          "projectileId": 0,
+          "numProjectiles": 1,
+          "rateOfFire": 1
+        }
+      ],
+      "activates": [
+        {
+          "type": "BulletCreate",
+          "params": {
+            "numShots": 3,
+            "gapAngle": 45,
+            "gapTiles": 0.4,
+            "offsetAngle": 27,
+            "scalingStat": "WIS",
+            "statModScalingMin": 42,
+            "statModDamage": 3,
+            "statModNumShots": 0.06
+          }
+        },
+        {
+          "type": "BulletCreate",
+          "params": {
+            "numShots": 1,
+            "offsetAngle": 0,
+            "type": "0x6008"
+          }
+        }
+      ]
     }
   ]
 }

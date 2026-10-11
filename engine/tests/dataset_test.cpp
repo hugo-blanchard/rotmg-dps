@@ -51,7 +51,7 @@ TEST_CASE("loads abilities and the rest of the class stats") {
   const rotmg::Dataset d = LoadSmallDataset();
   CHECK(d.classes[0].ability_slot_type == 10);
   CHECK(d.classes[0].wisdom.max == 60);
-  REQUIRE(d.abilities.size() == 10);
+  REQUIRE(d.abilities.size() == 11);
 
   const rotmg::Ability* spell = rotmg::FindAbility(d, "Plain Spell");
   REQUIRE(spell != nullptr);
