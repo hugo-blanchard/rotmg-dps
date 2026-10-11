@@ -1,9 +1,11 @@
 #pragma once
 
 #include <array>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 // The dataset as the engine sees it. Field meanings and units are documented
@@ -19,8 +21,17 @@ struct Class {
   int type = 0;
   std::string id;
   int weapon_slot_type = 0;
+  /// 0 in datasets from before abilities were added, as are the stats below
+  /// that ATT and DEX.
+  int ability_slot_type = 0;
+  StatRange max_hit_points;
+  StatRange max_magic_points;
   StatRange attack;
+  StatRange defense;
+  StatRange speed;
   StatRange dexterity;
+  StatRange vitality;
+  StatRange wisdom;
 };
 
 struct StatBonus {
@@ -86,11 +97,43 @@ struct Weapon {
   int StatBonusFor(std::string_view stat) const;
 };
 
+/// One effect of using an ability, with the client's parameters as they
+/// are: numbers, booleans or strings.
+struct Activate {
+  using Value = std::variant<double, bool, std::string>;
+
+  std::string type;
+  std::map<std::string, Value, std::less<>> params;
+
+  std::optional<double> Number(std::string_view key) const;
+  std::string Text(std::string_view key) const;
+};
+
+struct Ability {
+  int type = 0;
+  std::string id;
+  std::string name;
+  int slot_type = 0;
+  std::optional<int> tier;
+  std::optional<double> mp_cost;
+  std::optional<double> cooldown;
+  std::vector<StatBonus> stat_bonuses;
+  std::vector<Projectile> projectiles;
+  std::vector<Subattack> subattacks;
+  std::vector<Activate> activates;
+  std::vector<std::string> unsupported;
+
+  /// The ability's projectiles and subattacks as a weapon, for the hit
+  /// estimate and damage rules.
+  Weapon AsWeapon() const;
+};
+
 struct Dataset {
   int schema_version = 0;
   std::string build;
   std::vector<Class> classes;
   std::vector<Weapon> weapons;
+  std::vector<Ability> abilities;
 };
 
 }  // namespace rotmg

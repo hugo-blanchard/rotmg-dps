@@ -30,13 +30,26 @@ StatRange ReadStat(const json& j) {
   return {j.at("base").get<int>(), j.at("max").get<int>()};
 }
 
+void ReadOptionalStat(const json& j, const char* key, StatRange& out) {
+  if (auto it = j.find(key); it != j.end()) {
+    out = ReadStat(*it);
+  }
+}
+
 Class ReadClass(const json& j) {
   Class c;
   j.at("type").get_to(c.type);
   j.at("id").get_to(c.id);
   j.at("weaponSlotType").get_to(c.weapon_slot_type);
+  ReadDefault(j, "abilitySlotType", c.ability_slot_type);
   c.attack = ReadStat(j.at("attack"));
   c.dexterity = ReadStat(j.at("dexterity"));
+  ReadOptionalStat(j, "maxHitPoints", c.max_hit_points);
+  ReadOptionalStat(j, "maxMagicPoints", c.max_magic_points);
+  ReadOptionalStat(j, "defense", c.defense);
+  ReadOptionalStat(j, "speed", c.speed);
+  ReadOptionalStat(j, "vitality", c.vitality);
+  ReadOptionalStat(j, "wisdom", c.wisdom);
   return c;
 }
 
@@ -82,6 +95,58 @@ Subattack ReadSubattack(const json& j) {
   return s;
 }
 
+std::vector<StatBonus> ReadStatBonuses(const json& j) {
+  std::vector<StatBonus> out;
+  if (auto it = j.find("statBonuses"); it != j.end()) {
+    for (const json& b : *it) {
+      out.push_back({b.at("stat").get<std::string>(), b.at("amount").get<int>()});
+    }
+  }
+  return out;
+}
+
+Ability ReadAbility(const json& j) {
+  Ability a;
+  j.at("type").get_to(a.type);
+  j.at("id").get_to(a.id);
+  j.at("name").get_to(a.name);
+  j.at("slotType").get_to(a.slot_type);
+  ReadOptional(j, "tier", a.tier);
+  ReadOptional(j, "mpCost", a.mp_cost);
+  ReadOptional(j, "cooldown", a.cooldown);
+  a.stat_bonuses = ReadStatBonuses(j);
+  if (auto it = j.find("projectiles"); it != j.end()) {
+    for (const json& p : *it) {
+      a.projectiles.push_back(ReadProjectile(p));
+    }
+  }
+  if (auto it = j.find("subattacks"); it != j.end()) {
+    for (const json& s : *it) {
+      a.subattacks.push_back(ReadSubattack(s));
+    }
+  }
+  if (auto it = j.find("activates"); it != j.end()) {
+    for (const json& act : *it) {
+      Activate out;
+      act.at("type").get_to(out.type);
+      if (auto params = act.find("params"); params != act.end()) {
+        for (const auto& [key, value] : params->items()) {
+          if (value.is_number()) {
+            out.params.emplace(key, value.get<double>());
+          } else if (value.is_boolean()) {
+            out.params.emplace(key, value.get<bool>());
+          } else if (value.is_string()) {
+            out.params.emplace(key, value.get<std::string>());
+          }
+        }
+      }
+      a.activates.push_back(std::move(out));
+    }
+  }
+  ReadDefault(j, "unsupported", a.unsupported);
+  return a;
+}
+
 Weapon ReadWeapon(const json& j) {
   Weapon w;
   j.at("type").get_to(w.type);
@@ -92,11 +157,7 @@ Weapon ReadWeapon(const json& j) {
   const json& texture = j.at("texture");
   texture.at("file").get_to(w.texture_file);
   texture.at("index").get_to(w.texture_index);
-  if (auto it = j.find("statBonuses"); it != j.end()) {
-    for (const json& b : *it) {
-      w.stat_bonuses.push_back({b.at("stat").get<std::string>(), b.at("amount").get<int>()});
-    }
-  }
+  w.stat_bonuses = ReadStatBonuses(j);
   for (const json& p : j.at("projectiles")) {
     w.projectiles.push_back(ReadProjectile(p));
   }
@@ -140,6 +201,11 @@ Dataset ParseDataset(std::string_view text) {
     for (const json& w : j.at("weapons")) {
       d.weapons.push_back(ReadWeapon(w));
     }
+    if (auto it = j.find("abilities"); it != j.end()) {
+      for (const json& a : *it) {
+        d.abilities.push_back(ReadAbility(a));
+      }
+    }
     return d;
   } catch (const json::exception& e) {
     throw DatasetError(std::string("bad dataset: ") + e.what());
@@ -149,6 +215,43 @@ Dataset ParseDataset(std::string_view text) {
 const Weapon* FindWeapon(const Dataset& dataset, std::string_view name) {
   auto it = std::ranges::find(dataset.weapons, name, &Weapon::name);
   return it == dataset.weapons.end() ? nullptr : &*it;
+}
+
+const Ability* FindAbility(const Dataset& dataset, std::string_view name) {
+  auto it = std::ranges::find(dataset.abilities, name, &Ability::name);
+  return it == dataset.abilities.end() ? nullptr : &*it;
+}
+
+std::optional<double> Activate::Number(std::string_view key) const {
+  auto it = params.find(key);
+  if (it == params.end()) {
+    return std::nullopt;
+  }
+  if (const double* v = std::get_if<double>(&it->second)) {
+    return *v;
+  }
+  return std::nullopt;
+}
+
+std::string Activate::Text(std::string_view key) const {
+  auto it = params.find(key);
+  if (it == params.end()) {
+    return "";
+  }
+  if (const std::string* v = std::get_if<std::string>(&it->second)) {
+    return *v;
+  }
+  return "";
+}
+
+Weapon Ability::AsWeapon() const {
+  Weapon w;
+  w.type = type;
+  w.id = id;
+  w.name = name;
+  w.projectiles = projectiles;
+  w.subattacks = subattacks;
+  return w;
 }
 
 }  // namespace rotmg
