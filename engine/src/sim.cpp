@@ -49,7 +49,7 @@ void Simulation::Advance(double ms) {
   for (const Live& l : live_) {
     const ProjectilePath& path = paths_[static_cast<std::size_t>(l.subattack)][static_cast<std::size_t>(l.index)];
     shots_.push_back({l.subattack, weapon_.subattacks[static_cast<std::size_t>(l.subattack)].projectile_id,
-                      path.At(l.step), path.HeadingDegrees(), l.step * kStepMs, l.hit});
+                      path.At(l.step), path.HeadingDegrees(l.step), l.step * kStepMs, l.hit});
   }
 }
 

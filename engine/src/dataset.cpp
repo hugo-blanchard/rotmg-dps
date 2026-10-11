@@ -73,6 +73,8 @@ Projectile ReadProjectile(const json& j) {
   ReadOptional(j, "acceleration", p.acceleration);
   ReadOptional(j, "accelerationDelay", p.acceleration_delay);
   ReadOptional(j, "speedClamp", p.speed_clamp);
+  ReadOptional(j, "circleTurnDelay", p.circle_turn_delay);
+  ReadOptional(j, "circleTurnAngle", p.circle_turn_angle);
   if (auto it = j.find("conditionEffects"); it != j.end()) {
     for (const json& c : *it) {
       p.condition_effects.push_back({c.at("effect").get<std::string>(), c.at("duration").get<double>()});

@@ -8,7 +8,9 @@
 namespace rotmg {
 namespace {
 
-// Unmodelled client tags that change where projectiles go.
+// Unmodelled client tags that change where projectiles go. The CircleTurn
+// tags are modelled now, but datasets made before circleTurnDelay and
+// circleTurnAngle existed still flag them as unsupported.
 const std::set<std::string, std::less<>> kMotionTags = {
     "TurnRate",        "TurnRateDelay",   "TurnStopTime",      "TurnAcceleration", "TurnAccelerationDelay",
     "TurnClamp",       "CircleTurnAngle", "CircleTurnDelay",   "CollisionMult",    "ProjectilePattern",

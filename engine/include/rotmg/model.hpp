@@ -63,6 +63,9 @@ struct Projectile {
   std::optional<double> acceleration;
   std::optional<double> acceleration_delay;
   std::optional<double> speed_clamp;
+  // CircleTurnDelay in ms and CircleTurnAngle in degrees.
+  std::optional<double> circle_turn_delay;
+  std::optional<double> circle_turn_angle;
   std::vector<ConditionEffect> condition_effects;
 };
 

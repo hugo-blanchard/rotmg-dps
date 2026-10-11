@@ -38,6 +38,10 @@ class ProjectilePath {
   /// The direction it was fired in, in degrees from the aim line.
   double HeadingDegrees() const { return degrees_; }
 
+  /// The direction it's moving in at `step`, in degrees from the aim line.
+  /// Differs from HeadingDegrees() only for shots that circle.
+  double HeadingDegrees(int step) const;
+
   /// Whether the projectile touches a round target during `step`: at the
   /// spawn point for step 0, or anywhere on the way from the previous step.
   bool Touches(int step, Point target, double radius) const;
@@ -51,6 +55,13 @@ class ProjectilePath {
   Point side_;
   double polarity_ = 1;
   std::vector<double> forward_;
+  int circle_step_ = -1;
+  double circle_degrees_ = 0;
+
+  // How far a circling shot has swung around its spawn point, in degrees,
+  // and its distance from it, `along` tiles into its flight.
+  double SwingDegrees(double along) const;
+  double CircleRadius(double along) const;
 };
 
 }  // namespace rotmg

@@ -1,6 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
+#include <numbers>
+
 #include "rotmg/hits.hpp"
+#include "rotmg/path.hpp"
 
 using rotmg::HitsPerVolley;
 using rotmg::Projectile;
@@ -66,6 +70,54 @@ TEST_CASE("offset shots angled inward hit more as the target gets farther") {
   };
   CHECK(total(2) == 0);
   CHECK(total(6) == 2);
+}
+
+TEST_CASE("a shot circling at 90 degrees stays on a ring around its spawn point") {
+  // 10 tiles/s, turning after 0.2 s: a ring of 2 tiles.
+  Weapon w = Single(100, 2000);
+  w.projectiles[0].circle_turn_delay = 200;
+  w.projectiles[0].circle_turn_angle = 90;
+  const rotmg::ProjectilePath path(w.projectiles[0], w.subattacks[0], 0);
+  for (int step = 100; step <= path.Steps(); step += 50) {
+    const rotmg::Point p = path.At(step);
+    CHECK(std::abs(std::hypot(p.x, p.y) - 2) < 1e-9);
+  }
+  // A positive angle turns toward +x, so it swings clockwise from the aim
+  // line: a quarter of the ring (pi tiles) later it's at (2, 0).
+  const rotmg::Point quarter = path.At(100 + static_cast<int>(std::lround(std::numbers::pi / 10 * 1000 / rotmg::kStepMs)));
+  CHECK(std::abs(quarter.x - 2) < 0.02);
+  CHECK(std::abs(quarter.y) < 0.02);
+  CHECK(std::abs(path.HeadingDegrees(path.Steps()) - path.HeadingDegrees(path.Steps() - 1)) > 0);
+}
+
+TEST_CASE("a circling shot moves the way it points") {
+  Weapon w = Single(100, 2000);
+  w.projectiles[0].circle_turn_delay = 200;
+  w.projectiles[0].circle_turn_angle = 30;
+  const rotmg::ProjectilePath path(w.projectiles[0], w.subattacks[0], 0);
+  for (int step = 101; step < path.Steps(); step += 97) {
+    const rotmg::Point a = path.At(step);
+    const rotmg::Point b = path.At(step + 1);
+    const double moved = std::atan2(b.x - a.x, b.y - a.y) * 180 / std::numbers::pi;
+    const double heading = (path.HeadingDegrees(step) + path.HeadingDegrees(step + 1)) / 2;
+    CHECK(std::abs(std::remainder(moved - heading, 360.0)) < 0.01);
+    // Each step covers the same distance as a straight shot would.
+    CHECK(std::abs(std::hypot(b.x - a.x, b.y - a.y) - 0.02) < 1e-6);
+  }
+}
+
+TEST_CASE("a ring of circling shots reaches a target twice at the ring's radius") {
+  // Earthen Ward's pattern: 3 shots 120 degrees apart at 18 tiles/s, turning
+  // after 333 ms onto a 6 tile ring, each living just long enough to swing
+  // to where the next one started. The wiki: at full range "it is
+  // technically possible to hit at least two shots".
+  Weapon w = Single(180, 1030, 3);
+  w.subattacks[0].arc_gap = 120;
+  w.projectiles[0].circle_turn_delay = 333;
+  w.projectiles[0].circle_turn_angle = 90;
+  CHECK(Hits(w, 6) == 2);
+  CHECK(Hits(w, 3) == 1);
+  CHECK(Hits(w, 7) == 0);
 }
 
 TEST_CASE("deceleration with a clamp of 0 stops the shot short") {
