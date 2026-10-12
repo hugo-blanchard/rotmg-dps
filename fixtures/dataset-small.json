@@ -862,6 +862,14 @@
         { "type": "BulletCreate",
           "params": { "proc": 1, "cooldown": 2, "numShots": 2, "targetMouse": true, "type": "0x3012" } }
       ],
+      "onAbility": [
+        { "type": "StatBoostSelf",
+          "params": { "proc": 1, "cooldown": 0, "duration": 5, "stat": "ATT", "amount": 15, "channel": "noStackItm" } },
+        { "type": "BulletCreate",
+          "params": { "proc": 1, "cooldown": 20, "numShots": 3, "targetMouse": true, "type": "0x3012" } },
+        { "type": "ConditionEffectSelf",
+          "params": { "proc": 1, "cooldown": 10, "duration": 3, "effect": "Berserk", "hpMinThresholdRelative": 0.5 } }
+      ],
       "createdProjectiles": [
         { "type": 12306,
           "projectile": { "id": 0, "objectId": "Example Coat Spark", "speed": 160, "minDamage": 40, "maxDamage": 50,

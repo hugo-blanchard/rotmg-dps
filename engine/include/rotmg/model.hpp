@@ -119,6 +119,8 @@ struct Weapon {
   std::vector<Subattack> subattacks;
   /// OnPlayerShootActivate effects, with the client's parameters.
   std::vector<Activate> on_shoot;
+  /// OnPlayerAbilityActivate effects, which go off when the ability is used.
+  std::vector<Activate> on_ability;
   /// Projectiles of other items, by type, that on-shoot effects create.
   std::map<int, Projectile> created_projectiles;
   /// The item's labels, which enchantments match against.
@@ -150,6 +152,9 @@ struct Ability {
   std::vector<Activate> activates;
   /// OnPlayerShootActivate effects, which go off as the weapon fires.
   std::vector<Activate> on_shoot;
+  /// OnPlayerAbilityActivate effects, which go off when it's used. A build's
+  /// ability carries those of the other gear worn too.
+  std::vector<Activate> on_ability;
   /// Projectiles of other items, by type, that activates and other effects
   /// name in their `type` parameter.
   std::map<int, Projectile> created_projectiles;
@@ -227,6 +232,8 @@ struct Gear {
   std::vector<std::string> labels;
   /// OnPlayerShootActivate effects, which go off as the weapon fires.
   std::vector<Activate> on_shoot;
+  /// OnPlayerAbilityActivate effects, which go off when the ability is used.
+  std::vector<Activate> on_ability;
   /// Projectiles of other items, by type, that the effects name.
   std::map<int, Projectile> created_projectiles;
   Enchanting enchanting;

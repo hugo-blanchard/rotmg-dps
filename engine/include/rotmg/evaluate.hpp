@@ -96,6 +96,10 @@ struct Breakdown {
   std::vector<std::string> unsupported;
 };
 
+/// Whether the gear an effect asks for is on: every mustWear item, one of
+/// the mustWearOR ones if it lists any, none of the mustNotWear ones.
+bool GearWorn(const Activate& effect, const std::vector<int>& worn);
+
 /// Stat changes a weapon's on-shoot effects keep up while it fires, like
 /// Valor's -10 ATT. Only the ones the engine can model.
 std::vector<StatBonus> WhileShooting(const Weapon& weapon);

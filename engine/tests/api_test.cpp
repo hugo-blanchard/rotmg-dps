@@ -544,6 +544,35 @@ TEST_CASE("the armor's on-shoot effects go off as the weapon fires") {
   CHECK(state["procs"]["activations"].get<int>() >= 2);
 }
 
+TEST_CASE("the armor's effects go off when the ability is used") {
+  rotmg::Api api = LoadedApi();
+  const std::string build = R"({"weapon": "Plain Sword", "ability": "Plain Spell", "attack": 50, "dexterity": 50,
+      "wisdom": 60, "armor": "Spark Coat"})";
+  const json res = json::parse(api.Evaluate(build));
+  REQUIRE(res["ok"] == true);
+  // 7.7 MP a second for an 80 MP spell: a cast every 10.39 seconds.
+  const double casts = 7.7 / 80;
+  // +15 ATT for 5 seconds on every cast.
+  const json& uptimes = res["build"]["uptimes"];
+  const auto att = std::ranges::find_if(uptimes, [](const json& u) { return u["effect"] == "ATT"; });
+  REQUIRE(att != uptimes.end());
+  CHECK((*att)["amount"] == 15);
+  CHECK((*att)["share"].get<double>() == Catch::Approx(5 * casts));
+  // Three sparks with a 20 second cooldown: every other cast.
+  const json& parts = res["ability"]["parts"];
+  REQUIRE(parts.size() == 2);
+  CHECK(parts[1]["name"] == "On use, Shots at the cursor, 3");
+  CHECK(parts[1]["damage"].get<double>() == Catch::Approx(3 * 44.5 / 2));
+  // Berserk below half HP doesn't go off at full HP.
+  CHECK(std::ranges::none_of(uptimes, [](const json& u) { return u["effect"] == "Berserk"; }));
+
+  // The simulation casts them too.
+  REQUIRE(api.StartSimulation(build).empty());
+  const json state = json::parse(api.AdvanceSimulation(30000));
+  CHECK(state["uptimeMs"].value("ATT", 0.0) > 0);
+  CHECK_FALSE(state["uptimeMs"].contains("Berserk"));
+}
+
 TEST_CASE("the optimizer finds the build with the most DPS") {
   rotmg::Api api = LoadedApi();
   const std::string start = R"({"class": "Swordsman", "weapon": "Plain Sword", "ability": "Plain Spell",

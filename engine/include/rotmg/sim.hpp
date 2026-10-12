@@ -299,6 +299,14 @@ class Simulation {
     // Chance boosts: the chance gathered over shots since the cooldown.
     double chance = 0;
   };
+  // An on-use effect of the ability or the other gear.
+  struct OnCast {
+    const Activate* effect = nullptr;
+    int group = -1;
+    double ready_ms = 0;
+    // The chance gathered over casts since the cooldown.
+    double chance = 0;
+  };
   struct Trap {
     Point at;
     double lands_ms = 0;
@@ -313,6 +321,11 @@ class Simulation {
   void Move();
   void Fire(std::size_t subattack);
   void Cast();
+  // One effect of a cast, with the group its shots go in or -1, and the
+  // channel its buff goes on.
+  void CastEffect(const Activate& effect, int group, const std::string& channel);
+  // A new group for an effect's shots, or -1 for an effect without any.
+  int ShotGroup(const Activate& effect);
   void OnShoot();
   // Adds the shots a BulletNova or BulletCreate makes, with this projectile,
   // and returns the group.
@@ -388,6 +401,7 @@ class Simulation {
   std::vector<double> mp_history_;
   double bucket_damage_ = 0;
   std::vector<Proc> procs_;
+  std::vector<OnCast> on_cast_;
   // The subattack whose shots set off procs.
   std::size_t proc_subattack_ = 0;
   double mp_ = 0;

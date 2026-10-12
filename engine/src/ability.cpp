@@ -125,6 +125,26 @@ int StatModCount(const Activate& effect, std::string_view per_point_key, const C
   return static_cast<int>(std::floor(StatModBonus(effect, per_point_key, character) + 1e-9));
 }
 
+bool GoesOffOnCast(const Activate& a) {
+  const std::string required = a.Text("requiredConditions");
+  return !a.Number("hpMinThresholdRelative") && !a.Number("idMeter") && !a.Number("minimumMeter") &&
+         !a.Number("meterCost") && (required.empty() || required == "In Combat");
+}
+
+double CastShare(const Activate& a, double casts_per_second) {
+  if (casts_per_second <= 0) {
+    return 0;
+  }
+  const double proc = std::clamp(a.Number("proc").value_or(1), 0.0, 1.0);
+  if (proc <= 0) {
+    return 0;
+  }
+  // After it goes off, the casts within its cooldown can't set it off, then
+  // each cast has the chance.
+  const double blocked = std::max(0.0, std::ceil(a.Number("cooldown").value_or(0) * casts_per_second - 1e-9) - 1);
+  return 1 / (blocked + 1 / proc);
+}
+
 AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& character, const Target& target,
                                  const Assumptions& assumptions) {
   AbilityBreakdown out;
@@ -142,7 +162,32 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
     }
   };
 
-  for (const Activate& a : ability.activates) {
+  out.mp_cost = ability.mp_cost.value_or(0);
+  out.cooldown_s = ability.cooldown.value_or(kDefaultCooldownS);
+  out.mp_per_second = MpPerSecond(c.wisdom);
+  out.casts_per_second = 1 / std::max(out.cooldown_s, 1e-3);
+  if (out.mp_cost > 0) {
+    out.casts_per_second = std::min(out.casts_per_second, out.mp_per_second / out.mp_cost);
+  }
+
+  // One effect of a cast. An item's effect that goes off on only a share of
+  // the casts deals that share of its damage, and its buff is up for that
+  // share of the time as if it started with every cast but ran shorter.
+  double share = 1;
+  std::string prefix;
+  const auto add_part = [&](AbilityPart p) {
+    p.name = prefix + p.name;
+    p.damage *= share;
+    out.parts.push_back(std::move(p));
+  };
+  const auto add_buff = [&](Buff b) {
+    if (share < 1) {
+      const double every_s = 1 / (share * out.casts_per_second);
+      b.duration_s = std::min(b.duration_s, every_s) * share;
+    }
+    out.buffs.push_back(b);
+  };
+  const auto apply = [&](const Activate& a) {
     if (a.type == "Shoot") {
       // Fires the item's own projectiles at the target, like a weapon volley.
       const double bonus = StatModBonus(a, "statModDamage", c);
@@ -159,27 +204,27 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
         if (hits > 0) {
           for (const ConditionEffect& e : p->condition_effects) {
             if (kTargetStatuses.contains(e.effect)) {
-              out.buffs.push_back({Buff::On::kTarget, NormalizeStatus(e.effect), 0, e.duration});
+              add_buff({Buff::On::kTarget, NormalizeStatus(e.effect), 0, e.duration});
             }
           }
         }
       }
       assume(estimate ? "the ability's shots land as the hit estimate says" : "every ability shot hits");
-      out.parts.push_back({"Shot", damage, "RealmEye: Character Stats"});
+      add_part({"Shot", damage, "RealmEye: Character Stats"});
     } else if (a.type == "BulletNova") {
       // Spells burst on the cursor; aimed at the target's center, every shot
       // starts inside it and hits once.
       const Projectile* p = shots.projectiles.empty() ? nullptr : &shots.projectiles[0];
       if (p == nullptr) {
         unsupported("BulletNova without a projectile");
-        continue;
+        return;
       }
       const int count = static_cast<int>(Param(a, "numShots")) + StatModCount(a, "statModNumShots", c);
       const double each =
           ExpectedAbilityDamage(p->min_damage, p->max_damage - 1, StatModBonus(a, "statModDamage", c), target,
                                 p->armor_piercing);
       assume("spells are aimed at the target's center, so every shot hits");
-      out.parts.push_back({"Spell burst, " + std::to_string(count) + " shots", count * each, "RealmEye: Spells"});
+      add_part({"Spell burst, " + std::to_string(count) + " shots", count * each, "RealmEye: Spells"});
     } else if (a.type == "BulletCreate") {
       // Shots made around the cursor rather than fired from the player. On
       // wakizashis, the most common, the slash "is centered on the
@@ -190,13 +235,13 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
         const auto it = ability.created_projectiles.find(static_cast<int>(std::strtol(type.c_str(), nullptr, 0)));
         if (it == ability.created_projectiles.end()) {
           unsupported("BulletCreate shots of another projectile");
-          continue;
+          return;
         }
         p = &it->second;
       }
       if (p == nullptr) {
         unsupported("BulletCreate without a projectile");
-        continue;
+        return;
       }
       const int count = static_cast<int>(Param(a, "numShots")) + StatModCount(a, "statModNumShots", c);
       const double each =
@@ -205,19 +250,19 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
       if (count > 0) {
         for (const ConditionEffect& e : p->condition_effects) {
           if (kTargetStatuses.contains(e.effect)) {
-            out.buffs.push_back({Buff::On::kTarget, NormalizeStatus(e.effect), 0, e.duration});
+            add_buff({Buff::On::kTarget, NormalizeStatus(e.effect), 0, e.duration});
           }
         }
       }
       assume("shots made at the cursor (like a wakizashi's slash) pass through the target, so every shot hits");
-      out.parts.push_back({"Shots at the cursor, " + std::to_string(count), count * each, "RealmEye: Wakizashi"});
+      add_part({"Shots at the cursor, " + std::to_string(count), count * each, "RealmEye: Wakizashi"});
     } else if (a.type == "DamageNova") {
       const int count = static_cast<int>(Param(a, "activationCount")) + StatModCount(a, "statModActivationCount", c);
       const double each = ExpectedAbilityDamage(static_cast<int>(Param(a, "minDamage")),
                                                 static_cast<int>(Param(a, "maxDamage")),
                                                 StatModBonus(a, "statModDamage", c), target, false);
       assume("damage novas are aimed at the target and DEF applies to them");
-      out.parts.push_back({"Damage nova, " + std::to_string(count) + " blasts", count * each, "RealmEye: Tomes"});
+      add_part({"Damage nova, " + std::to_string(count) + " blasts", count * each, "RealmEye: Tomes"});
     } else if (a.type == "Lightning") {
       const double damage = LightningDamage(a, c);
       const double first = ExpectedAbilityDamage(0, 0, damage, target, false);
@@ -228,7 +273,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
         assume("a scepter's shockblast hits enemies around the one struck, not that one, so it adds nothing "
                "against a single target");
       }
-      out.parts.push_back({"Lightning, first target", first, "RealmEye: Scepters"});
+      add_part({"Lightning, first target", first, "RealmEye: Scepters"});
     } else if (a.type == "PoisonGrenade") {
       // Poison ignores DEF (RealmEye: Poisons).
       const double impact = Param(a, "impactDamage") + StatModBonus(a, "statModImpactDamage", c);
@@ -236,17 +281,17 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
       const double damage = (impact + total) * (target.cursed ? 1.25 : 1);
       assume("Curse adds 25% to poison damage too");
       if (const auto boost = BuffOf(a, c)) {
-        out.buffs.push_back(*boost);
+        add_buff(*boost);
         assume("a poison's damage boost lasts as long as the poison and covers your other damage, not the poison's own");
       }
-      out.parts.push_back({"Poison, impact and over time", damage, "RealmEye: Poisons"});
+      add_part({"Poison, impact and over time", damage, "RealmEye: Poisons"});
     } else if (a.type == "Trap") {
       // A trap thrown onto an enemy goes off as it lands (RealmEye: Traps).
       // One trap has an armorPierce flag, so the rest go through DEF.
       const int damage = static_cast<int>(Param(a, "totalDamage"));
       const double hit = ExpectedAbilityDamage(damage, damage, StatModBonus(a, "statModTrapDamage", c), target,
                                                a.Flag("armorPierce"));
-      out.parts.push_back({"Trap", hit, "RealmEye: Traps"});
+      add_part({"Trap", hit, "RealmEye: Traps"});
       // RealmEye, Giantcatcher Trap: a sticky bomb of bombDamage (+5 per WIS
       // over 34) goes off bombDelay after the trap, bombTriggerCount times.
       if (a.Number("bombCount").value_or(0) > 0 && a.Number("bombDamage")) {
@@ -254,12 +299,12 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
         const double bomb = ExpectedAbilityDamage(0, 0, bomb_damage, target, false);
         const double times = std::max(1.0, Param(a, "bombTriggerCount"));
         assume("a trap's sticky bomb sticks to the target the trap hits and goes off on it");
-        out.parts.push_back({"Sticky bomb", times * bomb, "RealmEye: Giantcatcher Trap"});
+        add_part({"Sticky bomb", times * bomb, "RealmEye: Giantcatcher Trap"});
       }
     } else if (a.type == "ConditionEffectSelf" || a.type == "ConditionEffectAura" || a.type == "StatBoostSelf" ||
                a.type == "StatBoostAura" || a.type == "EffectBlast") {
       if (const auto buff = BuffOf(a, c)) {
-        out.buffs.push_back(*buff);
+        add_buff(*buff);
         if (buff->amount != 0 && a.Number("wisMin")) {
           unsupported("WIS scaling of stat boosts");
         }
@@ -267,17 +312,40 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
     } else if (!kNoDamageEffects.contains(a.type)) {
       unsupported(a.type);
     }
+  };
+  for (const Activate& a : ability.activates) {
+    apply(a);
   }
 
-  out.mp_cost = ability.mp_cost.value_or(0);
-  out.cooldown_s = ability.cooldown.value_or(kDefaultCooldownS);
+  // Effects of the ability and the other gear that go off when it's used.
+  std::vector<int> worn = character.worn;
+  worn.push_back(ability.type);
+  prefix = "On use, ";
+  for (const Activate& a : ability.on_ability) {
+    if (!GearWorn(a, worn)) {
+      continue;
+    }
+    if (!GoesOffOnCast(a)) {
+      if (a.Number("hpMinThresholdRelative")) {
+        assume("you're at full HP, so item effects that need lower HP don't go off");
+      } else {
+        unsupported("on-use effects that need a meter or a status");
+      }
+      continue;
+    }
+    share = CastShare(a, out.casts_per_second);
+    if (share <= 0) {
+      continue;
+    }
+    if (share < 1) {
+      assume("an item effect that can't go off on every cast counts for the share of casts it can, its buff up for "
+             "that share of the time");
+    }
+    apply(a);
+  }
+
   if (!ability.cooldown) {
     assume("an ability with no cooldown set can be used every 0.5 seconds");
-  }
-  out.mp_per_second = MpPerSecond(c.wisdom);
-  out.casts_per_second = 1 / std::max(out.cooldown_s, 1e-3);
-  if (out.mp_cost > 0) {
-    out.casts_per_second = std::min(out.casts_per_second, out.mp_per_second / out.mp_cost);
   }
   assume("the ability is used as often as MP regeneration and its cooldown allow, not counting the MP you start with");
 

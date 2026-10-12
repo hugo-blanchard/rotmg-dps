@@ -268,21 +268,35 @@ Simulation::Simulation(const Weapon& weapon, const Character& character, const S
           groups_.push_back(std::move(g));
         }
       }
-    } else if ((act.type == "BulletNova" || act.type == "BulletCreate") && !a.projectiles.empty()) {
-      const Projectile* p = &a.projectiles[0];
-      if (const std::string type = act.Text("type"); !type.empty()) {
-        const auto it = a.created_projectiles.find(static_cast<int>(std::strtol(type.c_str(), nullptr, 0)));
-        p = it == a.created_projectiles.end() ? nullptr : &it->second;
-      }
-      if (p != nullptr) {
-        activate_group_[i] = static_cast<int>(AddGroup(*p, act, From::kAbility));
-      }
+    } else {
+      activate_group_[i] = ShotGroup(act);
+    }
+  }
+  // The on-use effects of the ability and the other gear worn that can go
+  // off.
+  worn.push_back(a.type);
+  for (const Activate& act : a.on_ability) {
+    if (GearWorn(act, worn) && GoesOffOnCast(act)) {
+      on_cast_.push_back({&act, ShotGroup(act), 0, 0});
     }
   }
   mp_cost_ = a.mp_cost.value_or(0);
   cooldown_ms_ = a.cooldown.value_or(kDefaultCooldownS) * 1000;
   max_mp_ = std::max<double>(base_.max_magic_points, mp_cost_);
   mp_ = start_.full_mp ? max_mp_ : 0;
+}
+
+int Simulation::ShotGroup(const Activate& act) {
+  const Ability& a = *ability_;
+  if (act.type != "BulletNova" && act.type != "BulletCreate") {
+    return -1;
+  }
+  const Projectile* p = a.projectiles.empty() ? nullptr : &a.projectiles[0];
+  if (const std::string type = act.Text("type"); !type.empty()) {
+    const auto it = a.created_projectiles.find(static_cast<int>(std::strtol(type.c_str(), nullptr, 0)));
+    p = it == a.created_projectiles.end() ? nullptr : &it->second;
+  }
+  return p == nullptr ? -1 : static_cast<int>(AddGroup(*p, act, From::kAbility));
 }
 
 std::size_t Simulation::AddGroup(const Projectile& projectile, const Activate& act, From from) {
@@ -607,121 +621,148 @@ void Simulation::Fire(std::size_t subattack) {
 void Simulation::Cast() {
   ++ability_totals_.casts;
   const Ability& a = *ability_;
+  for (std::size_t i = 0; i < a.activates.size(); ++i) {
+    CastEffect(a.activates[i], activate_group_[i], "ability");
+  }
+  const double now = TimeMs();
+  for (std::size_t i = 0; i < on_cast_.size(); ++i) {
+    OnCast& e = on_cast_[i];
+    const Activate& act = *e.effect;
+    if (now < e.ready_ms) {
+      continue;
+    }
+    // As with procs: chances add up over casts, or each cast rolls.
+    const double chance = act.Number("proc").value_or(1);
+    if (start_.random_rolls) {
+      if (NextRandom(rolls_) >= chance) {
+        continue;
+      }
+    } else {
+      e.chance += chance;
+      if (e.chance < 1 - 1e-9) {
+        continue;
+      }
+      e.chance = 0;
+    }
+    const std::string channel = act.Text("channel");
+    CastEffect(act, e.group, channel.starts_with("noStack") ? channel : "on use " + std::to_string(i));
+    e.ready_ms = now + act.Number("cooldown").value_or(0) * 1000;
+  }
+}
+
+void Simulation::CastEffect(const Activate& act, int group, const std::string& channel) {
   const Point cursor = TargetCenter();
   const double aim = AimAngle();
   const double now = TimeMs();
   constexpr double degrees = std::numbers::pi / 180;
-  for (std::size_t i = 0; i < a.activates.size(); ++i) {
-    const Activate& act = a.activates[i];
-    if (const auto buff = act.type == "PoisonGrenade" ? std::nullopt : BuffOf(act, base_)) {
-      if (buff->on == Buff::On::kPlayer) {
-        Boost(buff->effect, buff->amount, buff->duration_s, "ability");
-      } else {
-        // EffectBlast reaches every target within its radius of the cursor.
-        const double radius = act.Number("radius").value_or(0);
-        for (std::size_t t = 0; t < world_.targets.size(); ++t) {
-          if (Alive(t) && Distance(world_.targets[t].position, cursor) <= radius + world_.targets[t].radius) {
-            Debuff(t, buff->effect, buff->duration_s);
-          }
-        }
-      }
-    }
-    if (act.type == "Shoot") {
-      for (std::size_t g : shoot_groups_) {
-        for (int k = 0; k < static_cast<int>(groups_[g].paths.size()); ++k) {
-          Spawn(g, k, world_.player, aim, -1);
-        }
-      }
-    } else if (act.type == "BulletNova" && activate_group_[i] >= 0) {
-      // RealmEye, Spells: they target the cursor, and their range is how far
-      // the shots go from the centre of the burst.
-      const auto g = static_cast<std::size_t>(activate_group_[i]);
-      for (int k = 0; k < static_cast<int>(groups_[g].paths.size()); ++k) {
-        Spawn(g, k, cursor, aim, -1);
-      }
-    } else if (act.type == "BulletCreate" && activate_group_[i] >= 0) {
-      CreateShots(static_cast<std::size_t>(activate_group_[i]), act);
-    } else if (act.type == "DamageNova") {
-      // RealmEye, Tomes: an "on-cursor nova" that "explodes 2 times for 0.8
-      // seconds". Blasts are spread evenly over `time`, the first at once.
-      const int count = static_cast<int>(act.Number("activationCount").value_or(1)) +
-                        StatModCount(act, "statModActivationCount", base_);
-      const double span = act.Number("time").value_or(0.8) * 1000;
-      const double radius = act.Number("radius").value_or(0) + StatModBonus(act, "statModRadius", base_);
-      for (int k = 0; k < count; ++k) {
-        pending_.push_back({Pending::Kind::kNovaBlast, now + (count > 1 ? span * k / (count - 1) : 0), cursor, radius,
-                            &act, From::kAbility, 0});
-      }
-    } else if (act.type == "Lightning") {
-      // RealmEye, Scepters: the closest enemy in a 30 degree cone towards the
-      // cursor starts the chain, which jumps to an enemy not yet hit within
-      // about 8 tiles of the last, losing damage each time. Scepters listed
-      // with another cone or a range have them as arcDegrees and range.
-      const int count = LightningTargets(act, base_);
-      const double damage = LightningDamage(act, base_);
-      const double drop = act.Number("decrDamage").value_or(0);
-      const double half_cone = act.Number("arcDegrees").value_or(30) / 2 * degrees;
-      const double reach = act.Number("range").value_or(1e9);
-      std::vector<bool> struck(world_.targets.size(), false);
-      std::optional<std::size_t> at;
-      double best = 1e18;
+  if (const auto buff = act.type == "PoisonGrenade" ? std::nullopt : BuffOf(act, base_)) {
+    if (buff->on == Buff::On::kPlayer) {
+      Boost(buff->effect, buff->amount, buff->duration_s, channel);
+    } else {
+      // EffectBlast reaches every target within its radius of the cursor.
+      const double radius = act.Number("radius").value_or(0);
       for (std::size_t t = 0; t < world_.targets.size(); ++t) {
-        if (!Alive(t)) {
-          continue;
-        }
-        const Point p = world_.targets[t].position;
-        const double angle = std::atan2(p.x - world_.player.x, p.y - world_.player.y);
-        const double off = std::abs(std::remainder(angle - aim, 2 * std::numbers::pi));
-        const double d = Distance(world_.player, p);
-        if (off <= half_cone && d <= reach && d < best) {
-          best = d;
-          at = t;
+        if (Alive(t) && Distance(world_.targets[t].position, cursor) <= radius + world_.targets[t].radius) {
+          Debuff(t, buff->effect, buff->duration_s);
         }
       }
-      Effect bolt{Effect::Kind::kBolt, world_.player, 0, now + 150, {world_.player}, false};
-      for (int k = 0; k < count && at; ++k) {
-        struck[*at] = true;
-        ++ability_totals_.hits;
-        Damage(*at, AbilityHit(0, 0, std::max(0.0, damage - drop * k), *at, false), From::kAbility);
-        bolt.chain.push_back(world_.targets[*at].position);
-        // The struck enemy becomes a shockblast, pulsing aoeActivationCount
-        // times over aoeTime; spacing them evenly from now is an assumption.
-        if (act.Number("aoeDamage").value_or(0) > 0) {
-          const int pulses = std::max(1, static_cast<int>(act.Number("aoeActivationCount").value_or(1)));
-          const double span = act.Number("aoeTime").value_or(0) * 1000;
-          for (int n = 0; n < pulses; ++n) {
-            pending_.push_back({Pending::Kind::kShockblast, now + (pulses > 1 ? span * n / (pulses - 1) : 0), {},
-                                act.Number("aoeRange").value_or(0), &act, From::kAbility, *at});
-          }
-        }
-        std::optional<std::size_t> next;
-        double nearest = 8;
-        for (std::size_t t = 0; t < world_.targets.size(); ++t) {
-          const double d = Distance(world_.targets[*at].position, world_.targets[t].position);
-          if (!struck[t] && Alive(t) && d <= nearest) {
-            nearest = d;
-            next = t;
-          }
-        }
-        at = next;
-      }
-      effects_.push_back(std::move(bolt));
-    } else if (act.type == "PoisonGrenade") {
-      // RealmEye, Poisons: thrown at the cursor, it lands 0.8 seconds later
-      // unless the item says.
-      const double radius = act.Number("radius").value_or(0) + StatModBonus(act, "statModRadius", base_);
-      pending_.push_back({Pending::Kind::kPoisonLands, now + act.Number("throwTime").value_or(0.8) * 1000, cursor,
-                          radius, &act, From::kAbility, 0});
-    } else if (act.type == "Trap") {
-      // RealmEye, Traps: thrown at the cursor in 1 second, it lasts 10
-      // seconds, goes off when an enemy comes within half its explosion
-      // radius, at once if it lands on one, and at the end if nothing does.
-      const double radius = act.Number("radius").value_or(0) + StatModBonus(act, "statModTrapRadius", base_);
-      const double lands = now + act.Number("throwTime").value_or(1) * 1000;
-      traps_.push_back({cursor, lands, lands + act.Number("armTime").value_or(0) * 1000,
-                        lands + act.Number("duration").value_or(10) * 1000, radius,
-                        radius * act.Number("sensitivity").value_or(0.5), &act});
     }
+  }
+  if (act.type == "Shoot") {
+    for (std::size_t g : shoot_groups_) {
+      for (int k = 0; k < static_cast<int>(groups_[g].paths.size()); ++k) {
+        Spawn(g, k, world_.player, aim, -1);
+      }
+    }
+  } else if (act.type == "BulletNova" && group >= 0) {
+    // RealmEye, Spells: they target the cursor, and their range is how far
+    // the shots go from the centre of the burst.
+    const auto g = static_cast<std::size_t>(group);
+    for (int k = 0; k < static_cast<int>(groups_[g].paths.size()); ++k) {
+      Spawn(g, k, cursor, aim, -1);
+    }
+  } else if (act.type == "BulletCreate" && group >= 0) {
+    CreateShots(static_cast<std::size_t>(group), act);
+  } else if (act.type == "DamageNova") {
+    // RealmEye, Tomes: an "on-cursor nova" that "explodes 2 times for 0.8
+    // seconds". Blasts are spread evenly over `time`, the first at once.
+    const int count = static_cast<int>(act.Number("activationCount").value_or(1)) +
+                      StatModCount(act, "statModActivationCount", base_);
+    const double span = act.Number("time").value_or(0.8) * 1000;
+    const double radius = act.Number("radius").value_or(0) + StatModBonus(act, "statModRadius", base_);
+    for (int k = 0; k < count; ++k) {
+      pending_.push_back({Pending::Kind::kNovaBlast, now + (count > 1 ? span * k / (count - 1) : 0), cursor, radius,
+                          &act, From::kAbility, 0});
+    }
+  } else if (act.type == "Lightning") {
+    // RealmEye, Scepters: the closest enemy in a 30 degree cone towards the
+    // cursor starts the chain, which jumps to an enemy not yet hit within
+    // about 8 tiles of the last, losing damage each time. Scepters listed
+    // with another cone or a range have them as arcDegrees and range.
+    const int count = LightningTargets(act, base_);
+    const double damage = LightningDamage(act, base_);
+    const double drop = act.Number("decrDamage").value_or(0);
+    const double half_cone = act.Number("arcDegrees").value_or(30) / 2 * degrees;
+    const double reach = act.Number("range").value_or(1e9);
+    std::vector<bool> struck(world_.targets.size(), false);
+    std::optional<std::size_t> at;
+    double best = 1e18;
+    for (std::size_t t = 0; t < world_.targets.size(); ++t) {
+      if (!Alive(t)) {
+        continue;
+      }
+      const Point p = world_.targets[t].position;
+      const double angle = std::atan2(p.x - world_.player.x, p.y - world_.player.y);
+      const double off = std::abs(std::remainder(angle - aim, 2 * std::numbers::pi));
+      const double d = Distance(world_.player, p);
+      if (off <= half_cone && d <= reach && d < best) {
+        best = d;
+        at = t;
+      }
+    }
+    Effect bolt{Effect::Kind::kBolt, world_.player, 0, now + 150, {world_.player}, false};
+    for (int k = 0; k < count && at; ++k) {
+      struck[*at] = true;
+      ++ability_totals_.hits;
+      Damage(*at, AbilityHit(0, 0, std::max(0.0, damage - drop * k), *at, false), From::kAbility);
+      bolt.chain.push_back(world_.targets[*at].position);
+      // The struck enemy becomes a shockblast, pulsing aoeActivationCount
+      // times over aoeTime; spacing them evenly from now is an assumption.
+      if (act.Number("aoeDamage").value_or(0) > 0) {
+        const int pulses = std::max(1, static_cast<int>(act.Number("aoeActivationCount").value_or(1)));
+        const double span = act.Number("aoeTime").value_or(0) * 1000;
+        for (int n = 0; n < pulses; ++n) {
+          pending_.push_back({Pending::Kind::kShockblast, now + (pulses > 1 ? span * n / (pulses - 1) : 0), {},
+                              act.Number("aoeRange").value_or(0), &act, From::kAbility, *at});
+        }
+      }
+      std::optional<std::size_t> next;
+      double nearest = 8;
+      for (std::size_t t = 0; t < world_.targets.size(); ++t) {
+        const double d = Distance(world_.targets[*at].position, world_.targets[t].position);
+        if (!struck[t] && Alive(t) && d <= nearest) {
+          nearest = d;
+          next = t;
+        }
+      }
+      at = next;
+    }
+    effects_.push_back(std::move(bolt));
+  } else if (act.type == "PoisonGrenade") {
+    // RealmEye, Poisons: thrown at the cursor, it lands 0.8 seconds later
+    // unless the item says.
+    const double radius = act.Number("radius").value_or(0) + StatModBonus(act, "statModRadius", base_);
+    pending_.push_back({Pending::Kind::kPoisonLands, now + act.Number("throwTime").value_or(0.8) * 1000, cursor,
+                        radius, &act, From::kAbility, 0});
+  } else if (act.type == "Trap") {
+    // RealmEye, Traps: thrown at the cursor in 1 second, it lasts 10
+    // seconds, goes off when an enemy comes within half its explosion
+    // radius, at once if it lands on one, and at the end if nothing does.
+    const double radius = act.Number("radius").value_or(0) + StatModBonus(act, "statModTrapRadius", base_);
+    const double lands = now + act.Number("throwTime").value_or(1) * 1000;
+    traps_.push_back({cursor, lands, lands + act.Number("armTime").value_or(0) * 1000,
+                      lands + act.Number("duration").value_or(10) * 1000, radius,
+                      radius * act.Number("sensitivity").value_or(0.5), &act});
   }
 }
 

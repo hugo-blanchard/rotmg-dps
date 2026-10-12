@@ -92,9 +92,20 @@ struct AbilityBreakdown {
   std::vector<std::string> unsupported;
 };
 
+/// Whether an effect that goes off on using the ability can at full HP and
+/// without a meter: not ones that need HP below a threshold
+/// (hpMinThresholdRelative), a meter's charge, or a status other than being
+/// in combat.
+bool GoesOffOnCast(const Activate& effect);
+
+/// The share of casts an on-use effect goes off on, from its own cooldown
+/// and chance (proc).
+double CastShare(const Activate& effect, double casts_per_second);
+
 /// `character` includes every bonus but the ability's own, which are added.
 /// The hit estimate settings in `assumptions` apply to abilities that fire
-/// projectiles at the target.
+/// projectiles at the target. The ability's on-use effects count when the
+/// gear they need is in `character.worn`.
 AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& character, const Target& target,
                                  const Assumptions& assumptions);
 

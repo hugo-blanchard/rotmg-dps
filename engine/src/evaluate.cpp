@@ -54,19 +54,6 @@ std::vector<int> TypeList(const std::string& list) {
   return out;
 }
 
-// Whether the gear an on-shoot effect asks for is on: every mustWear item,
-// one of the mustWearOR ones if it lists any, none of the mustNotWear ones.
-// Wand of Geb's needs all four set pieces, matching its tooltip's "With
-// Full Set"; the Alien enchantments' boosts need any one Alien item.
-bool GearWorn(const Activate& a, const std::vector<int>& worn) {
-  const auto wearing = [&](int type) { return std::ranges::find(worn, type) != worn.end(); };
-  const std::vector<int> any = TypeList(a.Text("mustWearOR"));
-  return std::ranges::all_of(TypeList(a.Text("mustWear")), wearing) &&
-         (any.empty() || std::ranges::any_of(any, wearing)) &&
-         std::ranges::none_of(TypeList(a.Text("mustNotWear")), wearing) &&
-         std::ranges::none_of(TypeList(a.Text("mustNotWearOR")), wearing);
-}
-
 // A stat boost with a chance per shot and a cooldown, like the OnShoot
 // boost enchantments. Ones that need HP or a status aren't modelled.
 bool IsChanceBoost(const Activate& a) {
@@ -90,6 +77,17 @@ bool IsProcShot(const Weapon& w, const Activate& a) {
 }
 
 }  // namespace
+
+// Wand of Geb's needs all four set pieces, matching its tooltip's "With Full
+// Set"; the Alien enchantments' boosts need any one Alien item.
+bool GearWorn(const Activate& a, const std::vector<int>& worn) {
+  const auto wearing = [&](int type) { return std::ranges::find(worn, type) != worn.end(); };
+  const std::vector<int> any = TypeList(a.Text("mustWearOR"));
+  return std::ranges::all_of(TypeList(a.Text("mustWear")), wearing) &&
+         (any.empty() || std::ranges::any_of(any, wearing)) &&
+         std::ranges::none_of(TypeList(a.Text("mustNotWear")), wearing) &&
+         std::ranges::none_of(TypeList(a.Text("mustNotWearOR")), wearing);
+}
 
 OnShootModel ModelOf(const Weapon& weapon, const Activate& a, const std::vector<int>& worn) {
   if (IsWhileShooting(a)) {

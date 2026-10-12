@@ -389,6 +389,27 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
       join(g->on_shoot, g->created_projectiles, nullptr);
     }
   }
+  // What the other gear does when the ability is used goes with the
+  // ability's own on-use effects.
+  if (r.ability != nullptr) {
+    Ability with = *r.ability;
+    const auto add = [&](const std::vector<Activate>& on_ability, const std::map<int, Projectile>& created) {
+      with.on_ability.insert(with.on_ability.end(), on_ability.begin(), on_ability.end());
+      with.created_projectiles.insert(created.begin(), created.end());
+    };
+    if (const Weapon* w = FindWeapon(dataset, req.at("weapon").get<std::string>())) {
+      add(w->on_ability, w->created_projectiles);
+    }
+    for (const Gear* g : {r.armor, r.ring}) {
+      if (g != nullptr) {
+        add(g->on_ability, g->created_projectiles);
+      }
+    }
+    if (with.on_ability.size() != r.ability->on_ability.size()) {
+      r.enchanted_ability = std::make_shared<const Ability>(std::move(with));
+      r.ability = r.enchanted_ability.get();
+    }
+  }
   return r;
 }
 
