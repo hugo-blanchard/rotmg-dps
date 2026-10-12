@@ -9,8 +9,7 @@
     playerMovements,
     targetMovements,
     withMovement,
-    type MovementKind,
-    type Placement,
+    type SimOptions,
   } from "./scenario";
   import type { Rect, Sprites } from "./sprites";
 
@@ -27,6 +26,7 @@
     expectedProcDps,
     expectedTotalDps,
     bosses = [],
+    options = $bindable(),
   }: {
     engine: Engine;
     request: EvaluateRequest;
@@ -44,6 +44,8 @@
     expectedTotalDps: number;
     /** Bosses whose HP the targets can take. */
     bosses?: DatasetTarget[];
+    /** The scene, kept by the page so a link can carry it. */
+    options: SimOptions;
   } = $props();
 
   const height = 360;
@@ -60,33 +62,17 @@
   let sim = $state<SimState | null>(null);
   let error = $state("");
 
-  let placement = $state<Placement>("single");
-  let count = $state(5);
-  let spacing = $state(1.5);
-  let targetsMove = $state<MovementKind>("still");
-  let targetSpeed = $state(3);
-  let targetRange = $state(2);
-  let playerMoves = $state<MovementKind>("still");
-  let playerRange = $state(2);
-  let seed = $state(1);
-  let fullMp = $state(true);
-  // "" for dummies that can't die, "custom", or a boss's id.
-  let hpFrom = $state("");
-  let customHp = $state(10000);
-  let respawn = $state(false);
-  let randomRolls = $state(false);
   let showNumbers = $state(false);
   const targetHp = $derived(
-    hpFrom === "custom" ? Math.max(0, customHp) : (bosses.find((b) => b.id === hpFrom)?.maxHitPoints ?? 0),
+    options.hp === "custom"
+      ? Math.max(0, options.customHp)
+      : (bosses.find((b) => b.id === options.hp)?.maxHitPoints ?? 0),
   );
   const distance = $derived(request.hitModel?.distance ?? 4);
   const scenario = $derived.by(() => {
-    const s = withMovement(
-      layOut({ placement, count, spacing }, distance, request.hitModel?.radius ?? 0.5),
-      { targets: targetsMove, targetSpeed, targetRange, player: playerMoves, playerRange, seed },
-      distance,
-    );
+    const s = withMovement(layOut(options, distance, request.hitModel?.radius ?? 0.5), options, distance);
     const targets = targetHp > 0 ? s.targets.map((t) => ({ ...t, hp: targetHp })) : s.targets;
+    const { fullMp, respawn, randomRolls } = options;
     return { ...s, targets, fullMp, respawn, randomRolls };
   });
 
@@ -160,7 +146,7 @@
       floaters = floaters.filter((f) => born - f.born < 700).slice(-80);
     }
     // With nothing left alive there's nothing more to see.
-    if (targetHp > 0 && !respawn && next.targets.every((t) => t.hp <= 0)) {
+    if (targetHp > 0 && !options.respawn && next.targets.every((t) => t.hp <= 0)) {
       playing = false;
       autoPaused = true;
     }
@@ -451,7 +437,7 @@
   <div class="controls">
     <label>
       Targets
-      <select bind:value={placement}>
+      <select bind:value={options.placement}>
         {#each placements as p (p.value)}
           <option value={p.value}>{p.label}</option>
         {/each}
@@ -459,55 +445,55 @@
     </label>
     <label>
       They
-      <select bind:value={targetsMove}>
+      <select bind:value={options.targets}>
         {#each targetMovements as m (m.value)}
           <option value={m.value}>{m.label}</option>
         {/each}
       </select>
     </label>
-    {#if targetsMove !== "still"}
+    {#if options.targets !== "still"}
       <label>
         Speed
-        <input type="number" min="0" max="20" step="0.5" bind:value={targetSpeed} />
+        <input type="number" min="0" max="20" step="0.5" bind:value={options.targetSpeed} />
       </label>
       <label>
-        {targetsMove === "circle" ? "Radius" : targetsMove === "chargeRetreat" ? "Back by" : "Reach"}
-        <input type="number" min="0.1" max="10" step="0.5" bind:value={targetRange} />
+        {options.targets === "circle" ? "Radius" : options.targets === "chargeRetreat" ? "Back by" : "Reach"}
+        <input type="number" min="0.1" max="10" step="0.5" bind:value={options.targetRange} />
       </label>
     {/if}
-    {#if targetsMove === "wander"}
-      <button type="button" onclick={() => (seed += 1)}>New route</button>
+    {#if options.targets === "wander"}
+      <button type="button" onclick={() => (options.seed += 1)}>New route</button>
     {/if}
   </div>
   <div class="controls">
     <label>
       You
-      <select bind:value={playerMoves}>
+      <select bind:value={options.player}>
         {#each playerMovements as m (m.value)}
           <option value={m.value}>{m.label}</option>
         {/each}
       </select>
     </label>
-    {#if playerMoves === "kite" || playerMoves === "strafe"}
+    {#if options.player === "kite" || options.player === "strafe"}
       <label>
-        {playerMoves === "kite" ? "In and out by" : "Reach"}
-        <input type="number" min="0.5" max="10" step="0.5" bind:value={playerRange} />
+        {options.player === "kite" ? "In and out by" : "Reach"}
+        <input type="number" min="0.5" max="10" step="0.5" bind:value={options.playerRange} />
       </label>
     {/if}
-    {#if playerMoves !== "still" && sim?.ok}
+    {#if options.player !== "still" && sim?.ok}
       <span class="hint">at {fine.format(sim.playerSpeed)} tiles/s, from SPD</span>
     {/if}
   </div>
   <div class="controls">
-    {#if placement !== "single"}
+    {#if options.placement !== "single"}
       <label>
-        {placement === "boss" ? "Adds" : "How many"}
-        <input type="number" min="1" max="20" bind:value={count} />
+        {options.placement === "boss" ? "Adds" : "How many"}
+        <input type="number" min="1" max="20" bind:value={options.count} />
       </label>
-      {#if placement !== "ring"}
+      {#if options.placement !== "ring"}
         <label>
           Spacing
-          <input type="number" min="0.2" max="10" step="0.1" bind:value={spacing} />
+          <input type="number" min="0.2" max="10" step="0.1" bind:value={options.spacing} />
         </label>
       {/if}
     {/if}
@@ -527,14 +513,14 @@
     <label><input type="checkbox" bind:checked={showHitbox} /> Hitbox</label>
     <label><input type="checkbox" bind:checked={showTrails} /> Trails</label>
     {#if ability}
-      <label><input type="checkbox" bind:checked={fullMp} /> Start with full MP</label>
+      <label><input type="checkbox" bind:checked={options.fullMp} /> Start with full MP</label>
     {/if}
     <label><input type="checkbox" bind:checked={showNumbers} /> Damage numbers</label>
   </div>
   <div class="controls">
     <label>
       Target HP
-      <select bind:value={hpFrom}>
+      <select bind:value={options.hp}>
         <option value="">None, they can't die</option>
         <option value="custom">Set by hand</option>
         {#each bosses as b (b.id)}
@@ -542,15 +528,15 @@
         {/each}
       </select>
     </label>
-    {#if hpFrom === "custom"}
-      <input type="number" min="1" step="1000" aria-label="Target HP" bind:value={customHp} />
+    {#if options.hp === "custom"}
+      <input type="number" min="1" step="1000" aria-label="Target HP" bind:value={options.customHp} />
     {/if}
     {#if targetHp > 0}
-      <label><input type="checkbox" bind:checked={respawn} /> Respawn</label>
+      <label><input type="checkbox" bind:checked={options.respawn} /> Respawn</label>
     {/if}
-    <label><input type="checkbox" bind:checked={randomRolls} /> Random rolls</label>
-    {#if randomRolls}
-      <button type="button" onclick={() => (seed += 1)}>Reroll</button>
+    <label><input type="checkbox" bind:checked={options.randomRolls} /> Random rolls</label>
+    {#if options.randomRolls}
+      <button type="button" onclick={() => (options.seed += 1)}>Reroll</button>
     {/if}
   </div>
   {#if ability && sim?.ok}
@@ -631,7 +617,7 @@
             {/if}
           </dd>
         </div>
-        {#if sim.targets.length > 1 && !respawn}
+        {#if sim.targets.length > 1 && !options.respawn}
           <div>
             <dt>All dead</dt>
             <dd>{allDeadMs !== null ? `${fine.format(allDeadMs / 1000)} s` : "not yet"}</dd>
@@ -671,7 +657,7 @@
               {#if ability}<th scope="col">Ability DPS</th>{/if}
               {#if targetHp > 0}
                 <th scope="col">HP left</th>
-                <th scope="col">{respawn ? "Kills" : "Died at"}</th>
+                <th scope="col">{options.respawn ? "Kills" : "Died at"}</th>
               {/if}
             </tr>
           </thead>
@@ -686,7 +672,7 @@
                 {#if ability}<td>{whole.format(seconds > 0 ? t.abilityDamage / seconds : 0)}</td>{/if}
                 {#if targetHp > 0}
                   <td>{whole.format(t.hp)}</td>
-                  <td>{respawn ? t.kills : t.killedMs !== null ? `${fine.format(t.killedMs / 1000)} s` : ""}</td>
+                  <td>{options.respawn ? t.kills : t.killedMs !== null ? `${fine.format(t.killedMs / 1000)} s` : ""}</td>
                 {/if}
               </tr>
             {/each}

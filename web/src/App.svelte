@@ -4,6 +4,7 @@
   import LineChart from "./lib/LineChart.svelte";
   import Results from "./lib/Results.svelte";
   import SimulationView from "./lib/SimulationView.svelte";
+  import { defaultSimOptions, simFromQuery, simToQuery, type SimOptions } from "./lib/scenario";
   import {
     abilitiesFor,
     enchantmentsFor,
@@ -39,6 +40,7 @@
   let classId = $state("");
   let weaponName = $state("");
   let abilityName = $state("");
+  let simOptions = $state<SimOptions>({ ...defaultSimOptions });
   let attack = $state(0);
   let dexterity = $state(0);
   let wisdom = $state(0);
@@ -154,6 +156,7 @@
       engine = await Engine.start(loaded.text);
       const d = loaded.dataset;
       const linked = fromQuery(location.search, d);
+      simOptions = simFromQuery(location.search);
       if (linked) {
         ({
           classId,
@@ -205,7 +208,9 @@
       enchantments: enchanted,
       gearEnchantments: gearEnchanted,
     });
-    history.replaceState(null, "", `${location.pathname}?${query}`);
+    const q = new URLSearchParams(query);
+    simToQuery(simOptions, q);
+    history.replaceState(null, "", `${location.pathname}?${q}`);
   });
 
   $effect(() => {
@@ -322,6 +327,7 @@
             expectedProcDps={result.breakdown.procs.reduce((n, p) => n + p.dps, 0)}
             expectedTotalDps={result.build?.dps ?? result.breakdown.dps}
             bosses={dataset?.targets ?? []}
+            bind:options={simOptions}
           />
         </div>
       {/if}

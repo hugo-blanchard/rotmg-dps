@@ -164,3 +164,82 @@ export function layOut(options: PlacementOptions, distance: number, radius: numb
       return { player: { x: 0, y: 0 }, aim: 0, targets: [ahead(0, 0)] };
   }
 }
+
+/** Everything about the simulation's scene that a link keeps. */
+export interface SimOptions extends PlacementOptions, MovementOptions {
+  fullMp: boolean;
+  /** "" for dummies that can't die, "custom" for `customHp`, or a boss's id. */
+  hp: string;
+  customHp: number;
+  respawn: boolean;
+  randomRolls: boolean;
+}
+
+export const defaultSimOptions: SimOptions = {
+  placement: "single",
+  count: 5,
+  spacing: 1.5,
+  targets: "still",
+  targetSpeed: 3,
+  targetRange: 2,
+  player: "still",
+  playerRange: 2,
+  seed: 1,
+  fullMp: true,
+  hp: "",
+  customHp: 10000,
+  respawn: false,
+  randomRolls: false,
+};
+
+// Short names in the link. Only options that differ from the defaults are
+// written, so a plain build keeps a short link.
+const queryKeys: Record<keyof SimOptions, string> = {
+  placement: "place",
+  count: "n",
+  spacing: "gap",
+  targets: "tmove",
+  targetSpeed: "tspeed",
+  targetRange: "trange",
+  player: "pmove",
+  playerRange: "prange",
+  seed: "seed",
+  fullMp: "fullmp",
+  hp: "hp",
+  customHp: "hpn",
+  respawn: "respawn",
+  randomRolls: "rolls",
+};
+
+export function simToQuery(options: SimOptions, q: URLSearchParams): void {
+  for (const [key, short] of Object.entries(queryKeys) as [keyof SimOptions, string][]) {
+    if (options[key] !== defaultSimOptions[key]) {
+      q.set(short, String(options[key]));
+    }
+  }
+}
+
+/** The options in a query; anything missing or invalid is the default. */
+export function simFromQuery(query: string): SimOptions {
+  const q = new URLSearchParams(query);
+  const out: Record<string, unknown> = { ...defaultSimOptions };
+  const allowed: Partial<Record<keyof SimOptions, string[]>> = {
+    placement: placements.map((p) => p.value),
+    targets: targetMovements.map((m) => m.value),
+    player: playerMovements.map((m) => m.value),
+  };
+  for (const [key, short] of Object.entries(queryKeys) as [keyof SimOptions, string][]) {
+    const raw = q.get(short);
+    const fallback = defaultSimOptions[key];
+    if (raw === null) continue;
+    if (typeof fallback === "number") {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 0) out[key] = n;
+    } else if (typeof fallback === "boolean") {
+      out[key] = raw === "true";
+    } else if (!allowed[key] || allowed[key].includes(raw)) {
+      out[key] = raw;
+    }
+  }
+  return out as unknown as SimOptions;
+}
