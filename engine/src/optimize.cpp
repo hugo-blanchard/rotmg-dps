@@ -1,6 +1,7 @@
 #include "rotmg/optimize.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <map>
 #include <set>
@@ -128,6 +129,8 @@ class BuildSearch {
   std::vector<const Enchantment*> OwnEnchantments(std::size_t slot, const std::string& item);
   std::pair<double, Build> Descend(Build current);
   std::vector<std::string> Seeds();
+  OptimizerResult Results() const;
+  void Report();
   static std::string Key(const Build& b);
 
   const Dataset& d_;
@@ -145,6 +148,13 @@ class BuildSearch {
   // Relevant's answers, by slot, item and which stats matter.
   std::map<std::tuple<std::size_t, std::string, unsigned>, std::vector<const Enchantment*>> relevant_;
   long evaluated_ = 0;
+  double baseline_ = 0;
+  // For progress reports: how far along the search is, and the share of it
+  // the current step started at and takes.
+  double done_ = 0;
+  double step_from_ = 0;
+  double step_size_ = 0;
+  std::chrono::steady_clock::time_point last_report_ = std::chrono::steady_clock::now();
 };
 
 std::string BuildSearch::Key(const Build& b) {
@@ -210,6 +220,9 @@ std::optional<double> BuildSearch::Score(const Build& b, const Stats& extra) {
     return it->second;
   }
   ++evaluated_;
+  if (p_.progress && evaluated_ % 64 == 0) {
+    Report();
+  }
   const std::optional<double> dps = p_.score(b, extra);
   scores_.emplace(key, dps);
   if (!plain) {
@@ -682,6 +695,15 @@ std::pair<double, Build> BuildSearch::Descend(Build current) {
     }
     return std::pair{dps, b};
   };
+  // For progress reports, the parts of a round in rough units of work, from
+  // timing every class: each slot and the sets take about one, the pairs
+  // six. A round that improves anything is followed by another of about
+  // eight, as most of it is already scored.
+  int units = 0;
+  const auto at = [&](int rest_of_round, bool improved) {
+    const int rest = rest_of_round + (improved ? 8 : 0);
+    done_ = step_from_ + step_size_ * units / (units + rest);
+  };
   for (int round = 0; round < 8; ++round) {
     bool improved = false;
     const auto take = [&](const std::pair<double, Build>& next) {
@@ -728,12 +750,15 @@ std::pair<double, Build> BuildSearch::Descend(Build current) {
       for (std::size_t i = 0; i < tried.size() && i < looks; ++i) {
         take(deep(tried[i].second, {slot}));
       }
+      ++units;
+      at(static_cast<int>(kSlotCount - slot - 1) + (improved ? 0 : 6) + 1, improved);
     }
     // Two slots at once, when no single change helps: some items only pay
     // off together, like an ability and the ring that feeds what it scales
     // with. The best few of each slot are paired, ranked as they are, and
     // the best pairs get the full look.
     constexpr std::size_t kPairs = 5;
+    units += improved ? 0 : 6;
     for (std::size_t i = 0; !improved && i < kSlotCount; ++i) {
       for (std::size_t j = i + 1; !improved && j < kSlotCount; ++j) {
         std::vector<std::pair<double, Build>> pairs;
@@ -755,6 +780,7 @@ std::pair<double, Build> BuildSearch::Descend(Build current) {
         }
       }
     }
+    at(1, improved);
     // Whole sets: ranked as they are, then the best few get the full look.
     std::vector<std::tuple<double, Build, std::size_t>> sets;
     for (const EquipmentSet& set : d_.sets) {
@@ -780,6 +806,8 @@ std::pair<double, Build> BuildSearch::Descend(Build current) {
     for (std::size_t i = 0; i < sets.size() && i < looks; ++i) {
       take(deep(std::get<1>(sets[i]), {std::get<2>(sets[i])}));
     }
+    ++units;
+    at(0, improved);
     if (!improved) {
       break;
     }
@@ -820,39 +848,11 @@ std::vector<std::string> BuildSearch::Seeds() {
   return out;
 }
 
-std::optional<OptimizerResult> BuildSearch::Run() {
-  const auto baseline = Score(p_.start);
-  if (!baseline) {
-    return std::nullopt;
-  }
-  Descend(p_.start);
-  // Some builds only work around one ability, like stacking the stat it
-  // scales with: each change on the way there looks worse on its own. So
-  // the search starts again from the abilities whose DPS grows most with
-  // each stat, or from every ability in a thorough search.
-  for (const std::string& ability : Seeds()) {
-    Build seed = p_.start;
-    seed.items[1] = ability;
-    Adapt(seed, 1);
-    if (Score(seed)) {
-      Descend(seed);
-    }
-  }
-  // The best few sets of items found, wherever the searches ended, get
-  // their enchantments traded around.
-  std::vector<std::pair<double, Build>> top;
-  for (const auto& [key, entry] : seen_) {
-    top.push_back(entry);
-  }
-  std::ranges::stable_sort(top, [](const auto& a, const auto& b) { return a.first > b.first; });
-  for (std::size_t i = 0; i < top.size() && i < 6; ++i) {
-    Exchange(top[i].second);
-  }
-
+OptimizerResult BuildSearch::Results() const {
   OptimizerResult out;
-  out.baseline = *baseline;
+  out.baseline = baseline_;
   out.evaluated = evaluated_;
-  for (auto& [key, entry] : seen_) {
+  for (const auto& [key, entry] : seen_) {
     out.builds.push_back(entry);
   }
   std::ranges::stable_sort(out.builds, [](const auto& a, const auto& b) { return a.first > b.first; });
@@ -860,6 +860,62 @@ std::optional<OptimizerResult> BuildSearch::Run() {
     out.builds.resize(p_.results);
   }
   return out;
+}
+
+void BuildSearch::Report() {
+  const auto now = std::chrono::steady_clock::now();
+  if (std::chrono::duration<double>(now - last_report_).count() >= p_.progress_every_s) {
+    last_report_ = now;
+    p_.progress(done_, Results());
+  }
+}
+
+std::optional<OptimizerResult> BuildSearch::Run() {
+  const auto baseline = Score(p_.start);
+  if (!baseline) {
+    return std::nullopt;
+  }
+  baseline_ = *baseline;
+  // Some builds only work around one ability, like stacking the stat it
+  // scales with: each change on the way there looks worse on its own. So
+  // the search starts again from the abilities whose DPS grows most with
+  // each stat, or from every ability in a thorough search.
+  const std::vector<std::string> seeds = Seeds();
+  // Shares of the search for progress reports, from timing every class:
+  // a later descent takes a few times less than the first, as most of what
+  // it looks at is already scored, and trading enchantments very little.
+  constexpr double kLaterDescent = 0.15;
+  constexpr double kExchange = 0.03;
+  const double total = 1 + kLaterDescent * static_cast<double>(seeds.size()) + kExchange;
+  const auto step = [&](double size) {
+    step_from_ = done_ = step_from_ + step_size_;
+    step_size_ = size / total;
+  };
+  step(1);
+  Descend(p_.start);
+  for (const std::string& ability : seeds) {
+    step(kLaterDescent);
+    Build seed = p_.start;
+    seed.items[1] = ability;
+    Adapt(seed, 1);
+    if (Score(seed)) {
+      Descend(seed);
+    }
+  }
+  step(kExchange);
+  // The best few sets of items found, wherever the searches ended, get
+  // their enchantments traded around.
+  std::vector<std::pair<double, Build>> top;
+  for (const auto& [key, entry] : seen_) {
+    top.push_back(entry);
+  }
+  std::ranges::stable_sort(top, [](const auto& a, const auto& b) { return a.first > b.first; });
+  constexpr std::size_t kTraded = 6;
+  for (std::size_t i = 0; i < top.size() && i < kTraded; ++i) {
+    Exchange(top[i].second);
+    done_ = step_from_ + step_size_ * static_cast<double>(i + 1) / kTraded;
+  }
+  return Results();
 }
 
 }  // namespace

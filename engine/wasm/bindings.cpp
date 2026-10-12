@@ -3,6 +3,7 @@
 #include <string>
 
 #include <emscripten/bind.h>
+#include <emscripten/val.h>
 
 #include "rotmg/api.hpp"
 
@@ -21,5 +22,9 @@ EMSCRIPTEN_BINDINGS(rotmg) {
                 }))
       .function("optimize", optional_override([](const rotmg::Api& api, const std::string& json) {
                   return api.Optimize(json);
+                }))
+      .function("optimizeWithProgress",
+                optional_override([](const rotmg::Api& api, const std::string& json, emscripten::val report) {
+                  return api.Optimize(json, [&](const std::string& progress) { report(progress); });
                 }));
 }

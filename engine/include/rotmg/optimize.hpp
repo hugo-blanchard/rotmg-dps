@@ -25,6 +25,14 @@ struct OptimizerBuild {
 inline constexpr std::array<const char*, 8> kOptimizerStats = {"ATT", "DEX", "SPD", "WIS",
                                                                 "VIT", "DEF", "MAXHP", "MAXMP"};
 
+struct OptimizerResult {
+  /// The start's DPS.
+  double baseline = 0;
+  long evaluated = 0;
+  /// The best build for each set of items tried, best first.
+  std::vector<std::pair<double, OptimizerBuild>> builds;
+};
+
 struct OptimizerProblem {
   enum class Enchantments { kKeep, kNone, kBest };
   /// The items to try in each slot. A locked slot holds only the start's.
@@ -41,17 +49,14 @@ struct OptimizerProblem {
   /// search starts again from every ability. For checking the normal search.
   bool thorough = false;
   std::size_t results = 5;
+  /// Called every progress_every_s seconds or so while searching, with how
+  /// far along the search is (0 to 1, a rough guess) and the best builds so
+  /// far, which are worth keeping if the search is cut short.
+  std::function<void(double done, const OptimizerResult& so_far)> progress;
+  double progress_every_s = 0.25;
   /// A build's DPS with `extra` added to its stats (in kOptimizerStats
   /// order), or nothing for a build the engine refuses.
   std::function<std::optional<double>(const OptimizerBuild&, const std::array<int, 8>& extra)> score;
-};
-
-struct OptimizerResult {
-  /// The start's DPS.
-  double baseline = 0;
-  long evaluated = 0;
-  /// The best build for each set of items tried, best first.
-  std::vector<std::pair<double, OptimizerBuild>> builds;
 };
 
 /// Nothing when the start itself doesn't evaluate.

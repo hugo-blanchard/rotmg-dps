@@ -902,8 +902,11 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 //    "builds": [{"dps", "weapon", "ability", "armor", "ring",
 //                "enchantments": {"weapon": [...], "ability", "armor", "ring"}}]}
 // with the best build first and the next best, with other items, after it.
-// "baseline" is the request's own build's DPS.
-std::string Api::Optimize(std::string_view request_json) const {
+// "baseline" is the request's own build's DPS. Each progress report is
+//   {"done", "baseline", "evaluated", "builds"}
+// with "done" from 0 to 1, a rough guess, and the best builds so far.
+std::string Api::Optimize(std::string_view request_json,
+                          const std::function<void(const std::string&)>& progress) const {
   if (!dataset_) {
     return Error("no dataset loaded").dump();
   }
@@ -1015,22 +1018,38 @@ std::string Api::Optimize(std::string_view request_json) const {
       return std::nullopt;
     };
 
+    const auto builds = [&](const OptimizerResult& result) {
+      json out = json::array();
+      for (const auto& [dps, b] : result.builds) {
+        json enchants = json::object();
+        json entry = {{"dps", dps}};
+        for (std::size_t slot = 0; slot < kSlots.size(); ++slot) {
+          entry[kSlots[slot]] = b.items[slot];
+          enchants[kSlots[slot]] = b.enchants[slot];
+        }
+        entry["enchantments"] = enchants;
+        out.push_back(entry);
+      }
+      return out;
+    };
+    if (progress) {
+      problem.progress = [&](double done, const OptimizerResult& so_far) {
+        progress(json{{"done", done},
+                      {"baseline", so_far.baseline},
+                      {"evaluated", so_far.evaluated},
+                      {"builds", builds(so_far)}}
+                     .dump());
+      };
+    }
+
     const std::optional<OptimizerResult> found = SearchBuilds(d, problem);
     if (!found) {
       return Error("the build to start from doesn't evaluate").dump();
     }
-    json builds = json::array();
-    for (const auto& [dps, b] : found->builds) {
-      json enchants = json::object();
-      json entry = {{"dps", dps}};
-      for (std::size_t slot = 0; slot < kSlots.size(); ++slot) {
-        entry[kSlots[slot]] = b.items[slot];
-        enchants[kSlots[slot]] = b.enchants[slot];
-      }
-      entry["enchantments"] = enchants;
-      builds.push_back(entry);
-    }
-    return json{{"ok", true}, {"baseline", found->baseline}, {"evaluated", found->evaluated}, {"builds", builds}}
+    return json{{"ok", true},
+                {"baseline", found->baseline},
+                {"evaluated", found->evaluated},
+                {"builds", builds(*found)}}
         .dump();
   } catch (const std::exception& e) {
     return Error(std::string("bad request: ") + e.what()).dump();

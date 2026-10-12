@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -35,8 +36,10 @@ class Api {
 
   /// Looks for the build with the most calculated DPS: the items in the
   /// slots the request doesn't lock, and their enchantments if asked.
-  /// Shapes are in api.cpp.
-  std::string Optimize(std::string_view request_json) const;
+  /// `progress`, if set, gets a report every quarter second or so while it
+  /// searches. Shapes are in api.cpp.
+  std::string Optimize(std::string_view request_json,
+                       const std::function<void(const std::string&)>& progress = {}) const;
 
  private:
   std::optional<Dataset> dataset_;

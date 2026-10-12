@@ -205,3 +205,26 @@ TEST_CASE("the search's start stays its baseline and nothing found is worse") {
   CHECK(found->baseline == Catch::Approx(*Dps(d, p.start, {})));
   CHECK(found->builds[0].first >= found->baseline);
 }
+
+TEST_CASE("the search reports its progress and best builds so far") {
+  const Dataset d = World();
+  OptimizerProblem p = Problem(d, 2);
+  p.progress_every_s = 0;
+  std::vector<double> done;
+  std::vector<double> best;
+  std::vector<long> evaluated;
+  p.progress = [&](double at, const rotmg::OptimizerResult& so_far) {
+    done.push_back(at);
+    evaluated.push_back(so_far.evaluated);
+    best.push_back(so_far.builds.empty() ? 0 : so_far.builds[0].first);
+  };
+  const auto found = rotmg::SearchBuilds(d, p);
+  REQUIRE(found.has_value());
+  REQUIRE_FALSE(done.empty());
+  CHECK(std::ranges::is_sorted(done));
+  CHECK(std::ranges::is_sorted(evaluated));
+  CHECK(std::ranges::is_sorted(best));
+  CHECK(done.front() >= 0);
+  CHECK(done.back() <= 1);
+  CHECK(best.back() <= found->builds[0].first);
+}
