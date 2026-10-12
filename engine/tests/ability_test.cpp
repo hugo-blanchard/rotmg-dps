@@ -90,8 +90,18 @@ TEST_CASE("a spell lands every shot, with StatMod damage and shots") {
   CHECK(b.mp_per_second == Approx(7.7));
   CHECK(b.casts_per_second == Approx(7.7 / 80));
   CHECK(b.dps == Approx(17 * 183 * 7.7 / 80));
-  CHECK(b.cooldown_s == 0.5);
-  CHECK(Has(b.assumptions, "an ability with no cooldown set can be used every 0.5 seconds"));
+  CHECK(b.cooldown_s == 0.45);
+  CHECK(Has(b.assumptions,
+            "an ability with no cooldown set can be used every 0.45 seconds, the shortest any ability allows"));
+}
+
+TEST_CASE("no ability can be used more often than every 0.45 seconds") {
+  rotmg::Ability quick;
+  quick.cooldown = 0.2;
+  CHECK(rotmg::AbilityCooldown(quick) == 0.45);
+  quick.cooldown = 3;
+  CHECK(rotmg::AbilityCooldown(quick) == 3);
+  CHECK(EvaluateAbility(quick, kWis60, {}, {}).casts_per_second == Approx(1 / 3.0));
 }
 
 TEST_CASE("DEF applies to each spell shot") {

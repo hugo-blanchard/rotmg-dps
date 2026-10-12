@@ -65,9 +65,12 @@ std::optional<Buff> BuffOf(const Activate& effect, const Character& character);
 /// The name of a poison's damage boost as a Buff effect.
 inline constexpr const char* kPoisonBoost = "Poison damage boost";
 
-/// The ability's default cooldown when it doesn't set one, in seconds. The
-/// client's default isn't documented.
-inline constexpr double kDefaultCooldownS = 0.5;
+/// No ability can be used more often than this, in seconds, and it's the
+/// cooldown of one that doesn't set its own.
+inline constexpr double kMinCooldownS = 0.45;
+
+/// The ability's cooldown in seconds, at least kMinCooldownS.
+double AbilityCooldown(const Ability& ability);
 
 /// Damage one kind of effect deals per cast.
 struct AbilityPart {

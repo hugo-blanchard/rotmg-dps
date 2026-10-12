@@ -281,7 +281,7 @@ Simulation::Simulation(const Weapon& weapon, const Character& character, const S
     }
   }
   mp_cost_ = a.mp_cost.value_or(0);
-  cooldown_ms_ = a.cooldown.value_or(kDefaultCooldownS) * 1000;
+  cooldown_ms_ = AbilityCooldown(a) * 1000;
   max_mp_ = std::max<double>(base_.max_magic_points, mp_cost_);
   mp_ = start_.full_mp ? max_mp_ : 0;
 }

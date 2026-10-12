@@ -39,6 +39,10 @@ double Param(const Activate& a, std::string_view key) { return a.Number(key).val
 
 double MpPerSecond(int wisdom) { return 0.5 + 0.12 * wisdom; }
 
+double AbilityCooldown(const Ability& ability) {
+  return std::max(ability.cooldown.value_or(kMinCooldownS), kMinCooldownS);
+}
+
 namespace {
 
 // Points of `stat` over `threshold`, or 0.
@@ -163,7 +167,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   };
 
   out.mp_cost = ability.mp_cost.value_or(0);
-  out.cooldown_s = ability.cooldown.value_or(kDefaultCooldownS);
+  out.cooldown_s = AbilityCooldown(ability);
   out.mp_per_second = MpPerSecond(c.wisdom);
   out.casts_per_second = 1 / std::max(out.cooldown_s, 1e-3);
   if (out.mp_cost > 0) {
@@ -348,7 +352,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   }
 
   if (!ability.cooldown) {
-    assume("an ability with no cooldown set can be used every 0.5 seconds");
+    assume("an ability with no cooldown set can be used every 0.45 seconds, the shortest any ability allows");
   }
   assume("the ability is used as often as MP regeneration and its cooldown allow, not counting the MP you start with");
 
