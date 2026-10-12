@@ -214,7 +214,7 @@ TEST_CASE("a quiver's arrows fly from the player and expose what they hit") {
     sim.Advance(1000);
     INFO(distance << " tiles");
     CHECK(sim.AbilityTotals().hits == hits);
-    CHECK(AbilityDamage(sim, 0) == Approx(hits * (314.5 + 3.88 * 26) + exposed * 20));
+    CHECK(AbilityDamage(sim, 0) == Approx(static_cast<double>(hits) * (314.5 + 3.88 * 26) + exposed * 20));
     REQUIRE(sim.TargetStatuses(0).size() == 1);
     CHECK(sim.TargetStatuses(0)[0] == "Exposed");
   }

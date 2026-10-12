@@ -169,8 +169,11 @@ TEST_CASE("each target takes damage through its own DEF") {
   Simulation sim(Lance(true), {.attack = 25, .dexterity = 0}, line);
   sim.Advance(10'000);
   REQUIRE(sim.PerTarget()[1].hits > 0);
-  CHECK(sim.PerTarget()[0].damage / sim.PerTarget()[0].hits == Catch::Approx(100));
-  CHECK(sim.PerTarget()[1].damage / sim.PerTarget()[1].hits == Catch::Approx(50));
+  const auto per_hit = [&](std::size_t i) {
+    return sim.PerTarget()[i].damage / static_cast<double>(sim.PerTarget()[i].hits);
+  };
+  CHECK(per_hit(0) == Catch::Approx(100));
+  CHECK(per_hit(1) == Catch::Approx(50));
 }
 
 TEST_CASE("the player moves at the speed SPD gives") {
