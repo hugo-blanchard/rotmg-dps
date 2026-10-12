@@ -310,3 +310,15 @@ TEST_CASE("same-stat on-shoot boosts on two items count once") {
   CHECK(two["build"]["uptimes"][0]["share"].get<double>() == Catch::Approx(1 - (1 - share) * (1 - share)));
 }
 
+
+TEST_CASE("set bonuses count as bonus stats for relative enchantments") {
+  // Swordsman maxes at 50 DEX. At 50 DEX the sword's +4 and the full set's
+  // +4 make 8 bonus DEX, half of which Relative Dexterity Bonus IV adds.
+  const rotmg::Api api = LoadedApi();
+  const json res = json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "ability": "War Helm", "class": "Swordsman",
+      "attack": 50, "dexterity": 50, "wearing": [28689, 28690],
+      "gearEnchantments": {"ring": ["Relative_Dexterity_Bonus_4"]}})"));
+  REQUIRE(res["ok"] == true);
+  CHECK(res["enchantmentStats"] == json::parse(R"([{"stat": "DEX", "amount": 4}])"));
+}
+

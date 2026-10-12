@@ -214,6 +214,9 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
     worn.push_back(r.ability->type);
   }
   r.sets = WornSets(dataset, worn);
+  for (const WornSet& s : r.sets) {
+    r.character = r.character.With(s.stats);
+  }
   r.character.worn = worn;
   // Reads one item's enchantment ids, checking each fits and that none clash.
   const auto pick = [&](const json& ids, const std::string& item, const auto& fits) {
@@ -291,9 +294,6 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
     en.weapon.unsupported.insert(en.weapon.unsupported.end(), en.unsupported.begin(), en.unsupported.end());
     r.enchanted = std::make_shared<const Weapon>(std::move(en.weapon));
     r.weapon = r.enchanted.get();
-  }
-  for (const WornSet& s : r.sets) {
-    r.character = r.character.With(s.stats);
   }
   return r;
 }
