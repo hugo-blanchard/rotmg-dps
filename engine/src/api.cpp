@@ -888,7 +888,7 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 // plus
 //   "optimize": {"lock": ["weapon", ...], "pools": ["tiered", "untiered", "set"],
 //                "enchantments": "keep" | "none" | "best", "slots": 2, "artifacts": true,
-//                "results": 5}
+//                "thorough": false, "results": 5}
 // "lock" keeps the request's items in those slots. "pools" says which other
 // items may be tried: tiered ones, set pieces, and the rest (untiered).
 // Reskins and unobtainable items are never tried, but the request's own
@@ -896,7 +896,8 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 // "enchantments" keeps the request's where they still fit, removes them, or
 // fills up to "slots" per item (2 unless set, at most 4), and no more than
 // the item has, with the best ones. "artifacts" lets it use enchantments
-// only an artifact or engraving puts on an item. Returns
+// only an artifact or engraving puts on an item. "thorough" searches much
+// longer, for checking the normal search. Returns
 //   {"ok": true, "baseline", "evaluated",
 //    "builds": [{"dps", "weapon", "ability", "armor", "ring",
 //                "enchantments": {"weapon": [...], "ability", "armor", "ring"}}]}
@@ -982,8 +983,17 @@ std::string Api::Optimize(std::string_view request_json) const {
     problem.per_item = max_slots;
     problem.artifacts = artifacts;
     problem.results = results;
-    problem.score = [&](const OptimizerBuild& b) -> std::optional<double> {
+    problem.thorough = opt.value("thorough", false);
+    // The request's stats in kOptimizerStats order, for adding to.
+    constexpr std::array<const char*, 8> kStatKeys = {"attack",   "dexterity", "speed",        "wisdom",
+                                                      "vitality", "defense",   "maxHitPoints", "maxMagicPoints"};
+    problem.score = [&](const OptimizerBuild& b, const std::array<int, 8>& extra) -> std::optional<double> {
       json r = base;
+      for (std::size_t i = 0; i < extra.size(); ++i) {
+        if (extra[i] != 0) {
+          r[kStatKeys[i]] = r.value(kStatKeys[i], 0) + extra[i];
+        }
+      }
       for (std::size_t i = 0; i < kSlots.size(); ++i) {
         if (b.items[i].empty()) {
           r.erase(kSlots[i]);

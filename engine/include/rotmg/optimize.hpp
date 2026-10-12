@@ -21,6 +21,10 @@ struct OptimizerBuild {
   std::array<std::vector<std::string>, 4> enchants;
 };
 
+/// The stats the search can ask about, in this order.
+inline constexpr std::array<const char*, 8> kOptimizerStats = {"ATT", "DEX", "SPD", "WIS",
+                                                                "VIT", "DEF", "MAXHP", "MAXMP"};
+
 struct OptimizerProblem {
   enum class Enchantments { kKeep, kNone, kBest };
   /// The items to try in each slot. A locked slot holds only the start's.
@@ -33,9 +37,13 @@ struct OptimizerProblem {
   int per_item = 2;
   /// Whether enchantments only an artifact or engraving puts on an item count.
   bool artifacts = true;
+  /// Search wider and longer: every candidate gets the full look, and the
+  /// search starts again from every ability. For checking the normal search.
+  bool thorough = false;
   std::size_t results = 5;
-  /// A build's DPS, or nothing for one the engine refuses.
-  std::function<std::optional<double>(const OptimizerBuild&)> score;
+  /// A build's DPS with `extra` added to its stats (in kOptimizerStats
+  /// order), or nothing for a build the engine refuses.
+  std::function<std::optional<double>(const OptimizerBuild&, const std::array<int, 8>& extra)> score;
 };
 
 struct OptimizerResult {

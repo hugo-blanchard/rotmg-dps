@@ -17,6 +17,7 @@ add_executable(rotmg_engine_tests
   wiki_test.cpp
   property_test.cpp
   api_test.cpp
+  optimize_test.cpp
   hits_test.cpp
   sim_test.cpp
   sim_ability_test.cpp
