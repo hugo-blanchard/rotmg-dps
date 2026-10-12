@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <exception>
 #include <map>
 #include <mutex>
 #include <set>
@@ -111,6 +112,9 @@ class BuildSearch {
 
   std::optional<OptimizerResult> Run();
 
+  // Thrown on a thread that stops because the search is stopping.
+  struct Stopped {};
+
  private:
   // What can go on the item in a slot, by the game's rules, and how many.
   struct Fitting {
@@ -131,8 +135,9 @@ class BuildSearch {
   double Exchange(Build& b);
   double FillAll(Build& b);
   std::vector<const Enchantment*> OwnEnchantments(std::size_t slot, const std::string& item);
-  std::pair<double, Build> Descend(Build current);
+  std::pair<double, Build> Descend(Build current, std::size_t index);
   std::vector<std::string> Seeds();
+  std::optional<OptimizerResult> Search();
   OptimizerResult Results();
   void Report();
   static std::string Key(const Build& b);
@@ -155,13 +160,19 @@ class BuildSearch {
   // looked up and filled under it, and worked out outside it; two threads
   // may work out the same thing, which only costs time.
   std::mutex mu_;
-  std::atomic<long> evaluated_ = 0;
+  // Set once a progress report throws, like a caller cutting the search
+  // short: every thread then stops at its next build, and the search
+  // rethrows what the report threw.
+  std::atomic<bool> stopping_ = false;
+  std::exception_ptr stopped_by_;
   double baseline_ = 0;
   // For progress reports: how far along the search is, and the share of it
   // the current step started at and takes.
-  double done_ = 0;
-  double step_from_ = 0;
-  double step_size_ = 0;
+  // For progress reports, under mu_: how far along each descent is, from 0
+  // to 1, and the share of the whole search each takes, the trading of
+  // enchantments at the end being the last.
+  std::vector<double> parts_done_;
+  std::vector<double> part_sizes_;
   std::chrono::steady_clock::time_point last_report_ = std::chrono::steady_clock::now();
 };
 
@@ -223,6 +234,9 @@ void BuildSearch::Adapt(Build& b, std::size_t slot) {
 }
 
 std::optional<double> BuildSearch::Score(const Build& b, const Stats& extra) {
+  if (stopping_) {
+    throw Stopped{};
+  }
   const bool plain = std::ranges::all_of(extra, [](int x) { return x == 0; });
   std::string key = Key(b);
   if (!plain) {
@@ -234,8 +248,9 @@ std::optional<double> BuildSearch::Score(const Build& b, const Stats& extra) {
       return it->second;
     }
   }
-  // Only the thread that started the search can call back into the caller.
-  if (const long n = ++evaluated_; p_.progress && n % 64 == 0 && !OnHelperThread()) {
+  // Only the thread that started the search can call back into the caller,
+  // so it checks whether a report is due on each build it scores.
+  if (p_.progress && !OnHelperThread()) {
     Report();
   }
   const std::optional<double> dps = p_.score(b, extra);
@@ -784,7 +799,7 @@ std::vector<const Enchantment*> BuildSearch::OwnEnchantments(std::size_t slot, c
 // sets are tried at once, until nothing improves. Candidates are ranked
 // first as they are, or with the best of the enchantments made for them,
 // then the best few get the full look.
-std::pair<double, Build> BuildSearch::Descend(Build current) {
+std::pair<double, Build> BuildSearch::Descend(Build current, std::size_t index) {
   const bool best = p_.enchantments == Mode::kBest;
   double current_dps = FillAll(current);
   const std::size_t looks = p_.thorough ? 6 : 3;
@@ -811,7 +826,8 @@ std::pair<double, Build> BuildSearch::Descend(Build current) {
   int units = 0;
   const auto at = [&](int rest_of_round, bool improved) {
     const int rest = rest_of_round + (improved ? 8 : 0);
-    done_ = step_from_ + step_size_ * units / (units + rest);
+    std::lock_guard lock(mu_);
+    parts_done_[index] = static_cast<double>(units) / (units + rest);
   };
   for (int round = 0; round < 8; ++round) {
     bool improved = false;
@@ -869,8 +885,10 @@ std::pair<double, Build> BuildSearch::Descend(Build current) {
       for (const auto& [dps, b] : tried) {
         ranked[slot].push_back(b.items[slot]);
       }
-      for (std::size_t i = 0; i < tried.size() && i < looks; ++i) {
-        take(deep(tried[i].second, {slot}));
+      std::vector<std::pair<double, Build>> looked(std::min(looks, tried.size()));
+      ParallelFor(looked.size(), [&](std::size_t i) { looked[i] = deep(tried[i].second, {slot}); });
+      for (const auto& next : looked) {
+        take(next);
       }
       ++units;
       at(static_cast<int>(kSlotCount - slot - 1) + (improved ? 0 : 6) + 1, improved);
@@ -881,6 +899,14 @@ std::pair<double, Build> BuildSearch::Descend(Build current) {
     // the best pairs get the full look.
     constexpr std::size_t kPairs = 5;
     units += improved ? 0 : 6;
+    struct PairLook {
+      Build build;
+      std::size_t first = 0;
+      std::size_t second = 0;
+      std::size_t group = 0;
+    };
+    std::vector<PairLook> to_look;
+    std::size_t groups = 0;
     for (std::size_t i = 0; !improved && i < kSlotCount; ++i) {
       for (std::size_t j = i + 1; !improved && j < kSlotCount; ++j) {
         std::vector<Build> nexts;
@@ -902,9 +928,23 @@ std::pair<double, Build> BuildSearch::Descend(Build current) {
         }
         std::ranges::stable_sort(pairs, [](const auto& x, const auto& y) { return x.first > y.first; });
         for (std::size_t k = 0; k < pairs.size() && k < looks; ++k) {
-          take(deep(pairs[k].second, {i, j}));
+          to_look.push_back({std::move(pairs[k].second), i, j, groups});
         }
+        ++groups;
       }
+    }
+    // Every group's best pairs get their look at once. They're taken in
+    // order, and once one improves the later groups go unused, as they
+    // always did.
+    std::vector<std::pair<double, Build>> pair_looks(to_look.size());
+    ParallelFor(to_look.size(), [&](std::size_t n) {
+      pair_looks[n] = deep(to_look[n].build, {to_look[n].first, to_look[n].second});
+    });
+    for (std::size_t n = 0; n < to_look.size(); ++n) {
+      if (n > 0 && to_look[n].group != to_look[n - 1].group && improved) {
+        break;
+      }
+      take(pair_looks[n]);
     }
     at(1, improved);
     // Whole sets: ranked as they are, then the best few get the full look.
@@ -940,8 +980,11 @@ std::pair<double, Build> BuildSearch::Descend(Build current) {
       }
     }
     std::ranges::stable_sort(sets, [](const auto& a, const auto& b) { return std::get<0>(a) > std::get<0>(b); });
-    for (std::size_t i = 0; i < sets.size() && i < looks; ++i) {
-      take(deep(std::get<1>(sets[i]), {std::get<2>(sets[i])}));
+    std::vector<std::pair<double, Build>> set_looks(std::min(looks, sets.size()));
+    ParallelFor(set_looks.size(),
+                [&](std::size_t i) { set_looks[i] = deep(std::get<1>(sets[i]), {std::get<2>(sets[i])}); });
+    for (const auto& next : set_looks) {
+      take(next);
     }
     ++units;
     at(0, improved);
@@ -993,9 +1036,10 @@ std::vector<std::string> BuildSearch::Seeds() {
 OptimizerResult BuildSearch::Results() {
   OptimizerResult out;
   out.baseline = baseline_;
-  out.evaluated = evaluated_;
   {
     std::lock_guard lock(mu_);
+    // Distinct builds, since two threads can score the same one at once.
+    out.evaluated = static_cast<long>(scores_.size());
     for (const auto& [key, entry] : seen_) {
       out.builds.push_back(entry);
     }
@@ -1011,11 +1055,35 @@ void BuildSearch::Report() {
   const auto now = std::chrono::steady_clock::now();
   if (std::chrono::duration<double>(now - last_report_).count() >= p_.progress_every_s) {
     last_report_ = now;
-    p_.progress(done_, Results());
+    double done = 0;
+    double total = 0;
+    {
+      std::lock_guard lock(mu_);
+      for (std::size_t i = 0; i < parts_done_.size(); ++i) {
+        done += parts_done_[i] * part_sizes_[i];
+        total += part_sizes_[i];
+      }
+    }
+    try {
+      p_.progress(total > 0 ? done / total : 0, Results());
+    } catch (...) {
+      stopped_by_ = std::current_exception();
+      stopping_ = true;
+      throw;
+    }
   }
 }
 
 std::optional<OptimizerResult> BuildSearch::Run() {
+  try {
+    return Search();
+  } catch (const Stopped&) {
+    // A thread that stopped because another's report threw.
+    std::rethrow_exception(stopped_by_);
+  }
+}
+
+std::optional<OptimizerResult> BuildSearch::Search() {
   const auto baseline = Score(p_.start);
   if (!baseline) {
     return std::nullopt;
@@ -1026,40 +1094,51 @@ std::optional<OptimizerResult> BuildSearch::Run() {
   // the search starts again from the abilities whose DPS grows most with
   // each stat, or from every ability in a thorough search.
   const std::vector<std::string> seeds = Seeds();
-  // Shares of the search for progress reports, from timing every class:
-  // a later descent takes a few times less than the first, as most of what
-  // it looks at is already scored, and trading enchantments very little.
-  constexpr double kLaterDescent = 0.15;
+  // The descents from the start and from each seed are independent, so
+  // they run at once. Shares of the search for progress reports, from
+  // timing every class: one from a seed takes a few times less than the
+  // one from the start, as most of what it looks at is already scored, and
+  // trading enchantments very little.
+  constexpr double kSeedDescent = 0.15;
   constexpr double kExchange = 0.03;
-  const double total = 1 + kLaterDescent * static_cast<double>(seeds.size()) + kExchange;
-  const auto step = [&](double size) {
-    step_from_ = done_ = step_from_ + step_size_;
-    step_size_ = size / total;
-  };
-  step(1);
-  Descend(p_.start);
-  for (const std::string& ability : seeds) {
-    step(kLaterDescent);
-    Build seed = p_.start;
-    seed.items[1] = ability;
-    Adapt(seed, 1);
-    if (Score(seed)) {
-      Descend(seed);
-    }
+  {
+    std::lock_guard lock(mu_);
+    part_sizes_.assign(seeds.size() + 2, kSeedDescent);
+    part_sizes_.front() = 1;
+    part_sizes_.back() = kExchange;
+    parts_done_.assign(part_sizes_.size(), 0);
   }
-  step(kExchange);
+  ParallelFor(seeds.size() + 1, [&](std::size_t i) {
+    Build from = p_.start;
+    if (i > 0) {
+      from.items[1] = seeds[i - 1];
+      Adapt(from, 1);
+    }
+    if (Score(from)) {
+      Descend(from, i);
+    }
+    std::lock_guard lock(mu_);
+    parts_done_[i] = 1;
+  });
   // The best few sets of items found, wherever the searches ended, get
   // their enchantments traded around.
   std::vector<std::pair<double, Build>> top;
-  for (const auto& [key, entry] : seen_) {
-    top.push_back(entry);
+  {
+    std::lock_guard lock(mu_);
+    for (const auto& [key, entry] : seen_) {
+      top.push_back(entry);
+    }
   }
   std::ranges::stable_sort(top, [](const auto& a, const auto& b) { return a.first > b.first; });
   constexpr std::size_t kTraded = 6;
-  for (std::size_t i = 0; i < top.size() && i < kTraded; ++i) {
-    Exchange(top[i].second);
-    done_ = step_from_ + step_size_ * static_cast<double>(i + 1) / kTraded;
+  if (top.size() > kTraded) {
+    top.resize(kTraded);
   }
+  ParallelFor(top.size(), [&](std::size_t i) {
+    Exchange(top[i].second);
+    std::lock_guard lock(mu_);
+    parts_done_.back() += 1.0 / kTraded;
+  });
   return Results();
 }
 
