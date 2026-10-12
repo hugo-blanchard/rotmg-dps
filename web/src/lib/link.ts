@@ -15,6 +15,7 @@ export interface Build {
   target: Target;
   distance: number;
   radius: number;
+  wearing: number[];
 }
 
 const statusKeys = ["weak", "damaging", "berserk", "dazed"] as const;
@@ -41,6 +42,9 @@ export function toQuery(b: Build): string {
   const on = targetKeys.filter((k) => b.target[k]);
   if (on.length) {
     q.set("target", on.join(","));
+  }
+  if (b.wearing.length) {
+    q.set("wear", b.wearing.join(","));
   }
   return q.toString();
 }
@@ -78,5 +82,6 @@ export function fromQuery(query: string, dataset: Dataset): Build | null {
     },
     distance: number("dist", 4),
     radius: number("size", 0.5),
+    wearing: [...flags("wear")].map(Number).filter((n) => Number.isInteger(n) && n > 0),
   };
 }

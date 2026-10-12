@@ -1,6 +1,14 @@
 <script lang="ts">
-  import { abilitiesFor, weaponsFor, type Dataset, type DatasetClass, type DatasetWeapon } from "./dataset";
-  import type { PlayerStatus, Target } from "./engine";
+  import {
+    abilitiesFor,
+    otherPieces,
+    setsFor,
+    weaponsFor,
+    type Dataset,
+    type DatasetClass,
+    type DatasetWeapon,
+  } from "./dataset";
+  import type { PlayerStatus, Target, WornSet } from "./engine";
 
   let {
     dataset,
@@ -14,6 +22,8 @@
     target = $bindable(),
     distance = $bindable(),
     radius = $bindable(),
+    wearing = $bindable(),
+    wornSets,
   }: {
     dataset: Dataset;
     classId: string;
@@ -26,6 +36,9 @@
     target: Target;
     distance: number;
     radius: number;
+    wearing: number[];
+    /** The engine's view of the sets worn, for the bonus each one adds. */
+    wornSets: WornSet[];
   } = $props();
 
   const classes = $derived([...dataset.classes].sort((a, b) => a.id.localeCompare(b.id)));
@@ -36,6 +49,26 @@
   const weapon = $derived(weapons.find((w) => w.name === weaponName));
   const abilities = $derived(abilitiesFor(dataset, cls));
   const ability = $derived(abilities.find((a) => a.name === abilityName));
+
+  const sets = $derived(setsFor(dataset, [weapon, ability]));
+  const statNames: Record<string, string> = { MAXHP: "HP", MAXMP: "MP" };
+  function setSummary(type: number): string {
+    const worn = wornSets.find((s) => s.type === type);
+    if (!worn) {
+      return "";
+    }
+    const totals = new Map<string, number>();
+    for (const b of worn.stats) {
+      totals.set(b.stat, (totals.get(b.stat) ?? 0) + b.amount);
+    }
+    const stats = [...totals].map(([stat, amount]) => `${amount > 0 ? "+" : ""}${amount} ${statNames[stat] ?? stat}`);
+    const pieces = `${worn.pieces} ${worn.pieces === 1 ? "piece" : "pieces"} worn`;
+    return stats.length ? `${pieces}: ${stats.join(", ")}.` : `${pieces}, no bonus yet.`;
+  }
+  function wear(itemTypes: number[], on: boolean) {
+    const others = wearing.filter((t) => !itemTypes.includes(t));
+    wearing = on ? [...others, itemTypes[0]] : others;
+  }
 
   // The boss picked last, shown only while DEF still matches it.
   let bossId = $state("");
@@ -129,6 +162,23 @@
       </label>
     {/if}
   </fieldset>
+
+  {#each sets as s (s.type)}
+    <fieldset>
+      <legend>{s.name}</legend>
+      {#each otherPieces(s) as p (p.slot)}
+        <label>
+          <input
+            type="checkbox"
+            checked={p.itemTypes.some((t) => wearing.includes(t))}
+            onchange={(e) => wear(p.itemTypes, e.currentTarget.checked)}
+          />
+          Also wearing {p.names.length ? p.names.join(" or ") : "the set's " + (p.slot === 2 ? "armor" : "ring")}
+        </label>
+      {/each}
+      <p class="hint">{setSummary(s.type)}</p>
+    </fieldset>
+  {/each}
 
   <fieldset>
     <legend>Stats without the weapon or ability</legend>

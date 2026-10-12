@@ -50,6 +50,15 @@ export interface DatasetTarget {
   maxHitPoints: number;
 }
 
+// An equipment set. Slots are 0 weapon, 1 ability, 2 armor, 3 ring.
+export interface DatasetSet {
+  type: number;
+  name: string;
+  pieces: { slot: number; itemType: number; name: string }[];
+  bonuses?: { pieces: number; stats: { stat: string; amount: number }[] }[];
+  unsupported?: string[];
+}
+
 export interface Dataset {
   schemaVersion: number;
   build: string;
@@ -57,6 +66,7 @@ export interface Dataset {
   weapons: DatasetWeapon[];
   abilities?: DatasetAbility[];
   targets?: DatasetTarget[];
+  sets?: DatasetSet[];
 }
 
 // Written by the pipeline next to the dataset. Older releases don't have one.
@@ -106,6 +116,26 @@ export function weaponsFor(dataset: Dataset, cls: DatasetClass): DatasetWeapon[]
 /** Abilities a class can use, in the same order as weapons. */
 export function abilitiesFor(dataset: Dataset, cls: DatasetClass): DatasetAbility[] {
   return (dataset.abilities ?? []).filter((a) => a.slotType === cls.abilitySlotType).sort(byTierThenName);
+}
+
+/** Sets with a piece among these items, like the chosen weapon and ability. */
+export function setsFor(dataset: Dataset, items: ({ type: number } | undefined)[]): DatasetSet[] {
+  const types = items.filter((i) => i !== undefined).map((i) => i.type);
+  return (dataset.sets ?? []).filter((s) => s.pieces.some((p) => types.includes(p.itemType)));
+}
+
+/** A set's armor and ring pieces by slot: what you can say you also wear. */
+export function otherPieces(set: DatasetSet): { slot: number; itemTypes: number[]; names: string[] }[] {
+  const slots = new Map<number, { slot: number; itemTypes: number[]; names: string[] }>();
+  for (const p of set.pieces.filter((p) => p.slot >= 2)) {
+    const entry = slots.get(p.slot) ?? { slot: p.slot, itemTypes: [], names: [] };
+    entry.itemTypes.push(p.itemType);
+    if (p.name) {
+      entry.names.push(p.name);
+    }
+    slots.set(p.slot, entry);
+  }
+  return [...slots.values()].sort((a, b) => a.slot - b.slot);
 }
 
 /** Class stats at their max, for the ones the editor doesn't show. */

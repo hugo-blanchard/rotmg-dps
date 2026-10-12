@@ -4,7 +4,17 @@
   import LineChart from "./lib/LineChart.svelte";
   import Results from "./lib/Results.svelte";
   import SimulationView from "./lib/SimulationView.svelte";
-  import { abilitiesFor, loadDataset, loadStatus, maxStats, weaponsFor, type Dataset, type DatasetStatus } from "./lib/dataset";
+  import {
+    abilitiesFor,
+    loadDataset,
+    loadStatus,
+    maxStats,
+    otherPieces,
+    setsFor,
+    weaponsFor,
+    type Dataset,
+    type DatasetStatus,
+  } from "./lib/dataset";
   import { Engine, type EvaluateRequest, type EvaluateResponse, type PlayerStatus, type Target } from "./lib/engine";
   import { fromQuery, toQuery } from "./lib/link";
   import { loadSprites, type Sprites } from "./lib/sprites";
@@ -26,6 +36,8 @@
 
   let distance = $state(4);
   let radius = $state(0.5);
+  // Armor and ring pieces of the gear's sets that you also wear.
+  let wearing = $state<number[]>([]);
   let hitOverrides = $state<(number | null)[]>([]);
 
   let response = $state<EvaluateResponse | null>(null);
@@ -38,6 +50,15 @@
 
   const weapon = $derived(dataset?.weapons.find((w) => w.name === weaponName));
   const cls = $derived(dataset?.classes.find((c) => c.id === classId));
+  const ability = $derived(dataset?.abilities?.find((a) => a.name === abilityName));
+  // Only pieces of a set the chosen weapon or ability is in count.
+  const worn = $derived.by(() => {
+    if (!dataset) {
+      return [];
+    }
+    const offered = setsFor(dataset, [weapon, ability]).flatMap((s) => otherPieces(s).flatMap((p) => p.itemTypes));
+    return wearing.filter((t) => offered.includes(t));
+  });
 
   // What evaluating and simulating share; evaluating adds the two charts.
   const request = $derived<EvaluateRequest>({
@@ -50,6 +71,7 @@
     ...(cls ? maxStats(cls) : {}),
     status: { ...status },
     target: { ...target, defense },
+    wearing: [...worn],
     hitsPerVolley: [...hitOverrides],
     hitModel: { distance: hitDistance, radius: Math.max(0.05, Number(radius) || 0.5) },
   });
@@ -86,7 +108,8 @@
       const d = loaded.dataset;
       const linked = fromQuery(location.search, d);
       if (linked) {
-        ({ classId, weaponName, abilityName, attack, dexterity, wisdom, status, target, distance, radius } = linked);
+        ({ classId, weaponName, abilityName, attack, dexterity, wisdom, status, target, distance, radius, wearing } =
+          linked);
       } else {
         const start = d.classes.find((c) => c.id === "Wizard") ?? d.classes[0];
         classId = start.id;
@@ -107,7 +130,19 @@
     if (!dataset || !weaponName) {
       return;
     }
-    const query = toQuery({ classId, weaponName, abilityName, attack, dexterity, wisdom, status, target, distance, radius });
+    const query = toQuery({
+      classId,
+      weaponName,
+      abilityName,
+      attack,
+      dexterity,
+      wisdom,
+      status,
+      target,
+      distance,
+      radius,
+      wearing: worn,
+    });
     history.replaceState(null, "", `${location.pathname}?${query}`);
   });
 
@@ -142,7 +177,21 @@
   {:else if !dataset}
     <p>Loading…</p>
   {:else}
-    <BuildEditor {dataset} bind:classId bind:weaponName bind:abilityName bind:attack bind:dexterity bind:wisdom bind:status bind:target bind:distance bind:radius />
+    <BuildEditor
+      {dataset}
+      wornSets={result?.sets ?? []}
+      bind:classId
+      bind:weaponName
+      bind:abilityName
+      bind:attack
+      bind:dexterity
+      bind:wisdom
+      bind:status
+      bind:target
+      bind:distance
+      bind:radius
+      bind:wearing
+    />
     {#if result}
       <Results
         breakdown={result.breakdown}

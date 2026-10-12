@@ -29,6 +29,8 @@ export interface EvaluateRequest {
   maxMagicPoints?: number;
   status: PlayerStatus;
   target: Target;
+  /** Item types of other set pieces worn, like armor and a ring. */
+  wearing?: number[];
   hitsPerVolley?: (number | null)[];
   curatedHitsPerVolley?: (number | null)[];
   hitModel?: { distance: number; radius: number };
@@ -111,12 +113,23 @@ export interface HitCurvePoint {
   hits: number;
 }
 
+// A set some worn items belong to: how many slots hold its pieces and the
+// stats that adds, every bonus for that many pieces added up.
+export interface WornSet {
+  type: number;
+  name: string;
+  pieces: number;
+  stats: { stat: string; amount: number }[];
+  unsupported: string[];
+}
+
 export type EvaluateResponse =
   | {
       ok: true;
       breakdown: Breakdown;
       build: BuildBreakdown;
       ability?: AbilityBreakdown;
+      sets?: WornSet[];
       curve?: CurvePoint[];
       hitCurve?: HitCurvePoint[];
       hitModelGaps?: string[];
