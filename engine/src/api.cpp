@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <exception>
 #include <map>
@@ -946,13 +947,77 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 // Evaluate's response. Each progress report is
 //   {"done", "baseline", "evaluated", "builds"}
 // with "done" from 0 to 1, a rough guess, and the best builds so far.
-std::string Api::Optimize(std::string_view request_json,
-                          const std::function<void(const std::string&)>& progress) const {
-  if (!dataset_) {
-    return Error("no dataset loaded").dump();
-  }
+//
+// EstimateOptimize takes the same request and returns
+//   {"ok": true, "evaluationS", "evaluations": [low, high], "seconds": [low, high]}
+// with how long one evaluation takes here and the range most searches like
+// this one fall in, or the exact numbers for a search that ends while it's
+// timed. It doesn't count "thorough".
+namespace {
+
+// Roughly how long a search takes: how long one evaluation takes here,
+// from running the search itself for a moment, times how many evaluations
+// searches like it take. Those numbers come from searching for every class
+// at its max stats with each option changed in turn from the defaults: the
+// range most classes fell in, what each option multiplied that by on most,
+// and how much more an evaluation cost over a whole search than in its
+// first moment.
+json Estimate(const Dataset& d, const OptimizerProblem& problem, bool burst) {
+  using Clock = std::chrono::steady_clock;
+  constexpr double kTestS = 0.2;
+  struct Enough {};
+  const auto begin = Clock::now();
+  const auto since = [&] { return std::chrono::duration<double>(Clock::now() - begin).count(); };
+  OptimizerProblem test = problem;
+  long evaluated = 0;
+  test.progress_every_s = 0.02;
+  test.progress = [&](double, const OptimizerResult& so_far) {
+    evaluated = so_far.evaluated;
+    if (since() >= kTestS) {
+      throw Enough{};
+    }
+  };
   try {
-    const Dataset& d = *dataset_;
+    if (const auto done = SearchBuilds(d, test)) {
+      // Done already: that's how long it takes.
+      const double seconds = since();
+      return {{"ok", true},
+              {"evaluationS", seconds / static_cast<double>(std::max(1L, done->evaluated))},
+              {"evaluations", {done->evaluated, done->evaluated}},
+              {"seconds", {seconds, seconds}}};
+    }
+    return Error("the build to start from doesn't evaluate");
+  } catch (const Enough&) {
+  }
+  constexpr double kLaterCost = 1.3;
+  const double each = kLaterCost * since() / static_cast<double>(std::max(1L, evaluated));
+
+  double low = 140000;
+  double high = 360000;
+  double factor = 1;
+  if (problem.enchantments != OptimizerProblem::Enchantments::kBest) {
+    low = 1500;
+    high = 3000;
+  } else {
+    constexpr std::array<double, 5> kPerItem = {0.01, 0.54, 1, 1.2, 1.33};
+    factor *= kPerItem[static_cast<std::size_t>(std::clamp(problem.per_item, 0, 4))];
+  }
+  const int restarts = static_cast<int>(std::ranges::count(problem.restart_stats, true));
+  factor *= restarts == 0 ? 0.73 : restarts == 1 ? 0.8 : 1;
+  if (problem.candidates[1].size() <= 1) {
+    factor *= 0.32;
+  }
+  if (burst) {
+    factor *= 1.23;
+  }
+  low *= factor;
+  high *= factor;
+  return {{"ok", true}, {"evaluationS", each}, {"evaluations", {low, high}}, {"seconds", {low * each, high * each}}};
+}
+
+std::string RunOptimize(const Dataset& d, std::string_view request_json,
+                        const std::function<void(const std::string&)>& progress, bool estimate) {
+  try {
     json base = json::parse(request_json);
     const json opt = base.value("optimize", json::object());
     for (const char* key : {"optimize", "curve", "hitCurve"}) {
@@ -1124,6 +1189,9 @@ std::string Api::Optimize(std::string_view request_json,
       }
       return out;
     };
+    if (estimate) {
+      return Estimate(d, problem, burst.has_value()).dump();
+    }
     if (progress) {
       problem.progress = [&](double done, const OptimizerResult& so_far) {
         progress(json{{"done", done},
@@ -1146,6 +1214,23 @@ std::string Api::Optimize(std::string_view request_json,
   } catch (const std::exception& e) {
     return Error(std::string("bad request: ") + e.what()).dump();
   }
+}
+
+}  // namespace
+
+std::string Api::Optimize(std::string_view request_json,
+                          const std::function<void(const std::string&)>& progress) const {
+  if (!dataset_) {
+    return Error("no dataset loaded").dump();
+  }
+  return RunOptimize(*dataset_, request_json, progress, false);
+}
+
+std::string Api::EstimateOptimize(std::string_view request_json) const {
+  if (!dataset_) {
+    return Error("no dataset loaded").dump();
+  }
+  return RunOptimize(*dataset_, request_json, {}, true);
 }
 
 }  // namespace rotmg

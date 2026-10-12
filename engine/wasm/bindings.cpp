@@ -26,5 +26,8 @@ EMSCRIPTEN_BINDINGS(rotmg) {
       .function("optimizeWithProgress",
                 optional_override([](const rotmg::Api& api, const std::string& json, emscripten::val report) {
                   return api.Optimize(json, [&](const std::string& progress) { report(progress); });
+                }))
+      .function("estimateOptimize", optional_override([](const rotmg::Api& api, const std::string& json) {
+                  return api.EstimateOptimize(json);
                 }));
 }

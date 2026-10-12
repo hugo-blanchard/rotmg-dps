@@ -41,6 +41,10 @@ class Api {
   std::string Optimize(std::string_view request_json,
                        const std::function<void(const std::string&)>& progress = {}) const;
 
+  /// Roughly how long Optimize would take on the same request here, from
+  /// timing a fifth of a second of evaluations. Shapes are in api.cpp.
+  std::string EstimateOptimize(std::string_view request_json) const;
+
  private:
   std::optional<Dataset> dataset_;
   std::unique_ptr<Simulation> simulation_;

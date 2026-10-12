@@ -707,6 +707,20 @@ TEST_CASE("the optimizer can rank builds by their damage in a burst window") {
   CHECK(best["burst"]["damage"].get<double>() == Catch::Approx(most));
 }
 
+TEST_CASE("the optimizer's estimate is exact for a search that ends while it's timed") {
+  rotmg::Api api = LoadedApi();
+  const std::string request = R"({"class": "Swordsman", "weapon": "Plain Sword", "attack": 75, "dexterity": 50,
+      "optimize": {"enchantments": "none"}})";
+  const json estimate = json::parse(api.EstimateOptimize(request));
+  REQUIRE(estimate["ok"] == true);
+  const json found = json::parse(api.Optimize(request));
+  CHECK(estimate["evaluations"][0] == found["evaluated"]);
+  CHECK(estimate["evaluations"][1] == found["evaluated"]);
+  CHECK(estimate["seconds"][0].get<double>() > 0);
+  CHECK(estimate["seconds"][0] == estimate["seconds"][1]);
+  CHECK(json::parse(api.EstimateOptimize(R"({"weapon": "Plain Sword"})"))["ok"] == false);
+}
+
 TEST_CASE("the optimizer works from a reskin or an unobtainable item you chose") {
   rotmg::Api api = LoadedApi();
   const auto optimize = [&](const std::string& extra) {
