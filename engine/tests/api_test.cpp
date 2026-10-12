@@ -627,6 +627,42 @@ TEST_CASE("the optimizer finds the build with the most DPS") {
   }
 }
 
+TEST_CASE("the optimizer ranks by the weapon and ability DPS weighted as asked") {
+  rotmg::Api api = LoadedApi();
+  const auto optimize = [&](const std::string& weights) {
+    return json::parse(api.Optimize(R"({"class": "Swordsman", "weapon": "Plain Sword", "ability": "Plain Spell",
+        "armor": "Plain Mail", "ring": "Plain Amulet", "attack": 75, "dexterity": 50, "wisdom": 60,
+        "hitModel": {"distance": 3}, "optimize": {"enchantments": "none", "weights": )" +
+                                    weights + "}}"));
+  };
+  const json total = optimize(R"({"weapon": 1, "ability": 1})");
+  REQUIRE(total["ok"] == true);
+  const json& mixed = total["builds"][0];
+  CHECK(mixed["score"].get<double>() == Catch::Approx(mixed["dps"].get<double>()));
+  CHECK(mixed["dps"].get<double>() ==
+        Catch::Approx(mixed["weaponDps"].get<double>() + mixed["abilityDps"].get<double>()));
+
+  // The most weapon DPS of every Swordsman build, by brute force.
+  double most = 0;
+  for (const char* ability : {"Plain Spell", "War Helm", "Battle Seal", "Curse Orb"}) {
+    for (const char* ring : {"Plain Ring", "Plain Amulet"}) {
+      const json r = json::parse(api.Evaluate(json{{"class", "Swordsman"}, {"weapon", "Plain Sword"},
+                                                   {"ability", ability}, {"armor", "Plain Mail"}, {"ring", ring},
+                                                   {"attack", 75}, {"dexterity", 50}, {"wisdom", 60},
+                                                   {"hitModel", {{"distance", 3}}}}
+                                                  .dump()));
+      most = std::max(most, r["build"]["weaponDps"].get<double>());
+    }
+  }
+  const json weapon = optimize(R"({"weapon": 1, "ability": 0})");
+  REQUIRE(weapon["ok"] == true);
+  CHECK(weapon["builds"][0]["score"].get<double>() == Catch::Approx(most));
+  CHECK(weapon["builds"][0]["weaponDps"].get<double>() == Catch::Approx(most));
+
+  const json none = optimize(R"({"weapon": 0, "ability": 0})");
+  CHECK(none["ok"] == false);
+}
+
 TEST_CASE("the optimizer works from a reskin or an unobtainable item you chose") {
   rotmg::Api api = LoadedApi();
   const auto optimize = [&](const std::string& extra) {

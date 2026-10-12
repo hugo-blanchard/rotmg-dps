@@ -888,8 +888,8 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 // plus
 //   "optimize": {"lock": ["weapon", ...], "pools": ["tiered", "untiered", "set"],
 //                "enchantments": "keep" | "none" | "best", "slots": 2, "artifacts": true,
-//                "around": "every stat" | "nothing" | "ATT" | ..., "thorough": false,
-//                "results": 5}
+//                "around": "every stat" | "nothing" | "ATT" | ...,
+//                "weights": {"weapon": 1, "ability": 1}, "thorough": false, "results": 5}
 // "lock" keeps the request's items in those slots. "pools" says which other
 // items may be tried: tiered ones, set pieces, and the rest (untiered).
 // Reskins and unobtainable items are never tried, but the request's own
@@ -900,13 +900,17 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 // only an artifact or engraving puts on an item. "around" says which
 // stats, as in kOptimizerStats, the search starts again from the ability
 // that scales best with: every one (the default), none, which is quicker,
-// or just one. "thorough" searches much longer, for checking the normal
+// or just one. Builds are ranked by their weapon DPS, with the ability's
+// buffs, and the ability's own DPS, each times its weight, which is 1 for
+// both unless set. "thorough" searches much longer, for checking the normal
 // search. Returns
 //   {"ok": true, "baseline", "evaluated",
-//    "builds": [{"dps", "weapon", "ability", "armor", "ring",
+//    "builds": [{"score", "dps", "weaponDps", "abilityDps",
+//                "weapon", "ability", "armor", "ring",
 //                "enchantments": {"weapon": [...], "ability", "armor", "ring"}}]}
 // with the best build first and the next best, with other items, after it.
-// "baseline" is the request's own build's DPS. Each progress report is
+// "score" is what builds are ranked by and "baseline" is the request's own
+// build's score. Each progress report is
 //   {"done", "baseline", "evaluated", "builds"}
 // with "done" from 0 to 1, a rough guess, and the best builds so far.
 std::string Api::Optimize(std::string_view request_json,
@@ -1002,7 +1006,14 @@ std::string Api::Optimize(std::string_view request_json,
     // The request's stats in kOptimizerStats order, for adding to.
     constexpr std::array<const char*, 8> kStatKeys = {"attack",   "dexterity", "speed",        "wisdom",
                                                       "vitality", "defense",   "maxHitPoints", "maxMagicPoints"};
-    problem.score = [&](const OptimizerBuild& b, const std::array<int, 8>& extra) -> std::optional<double> {
+    const json weights = opt.value("weights", json::object());
+    const double weapon_weight = std::max(0.0, weights.value("weapon", 1.0));
+    const double ability_weight = std::max(0.0, weights.value("ability", 1.0));
+    if (weapon_weight == 0 && ability_weight == 0) {
+      return Error("the weapon and ability weights can't both be 0").dump();
+    }
+    const auto evaluate = [&](const OptimizerBuild& b,
+                              const std::array<int, 8>& extra) -> std::optional<BuildBreakdown> {
       json r = base;
       for (std::size_t i = 0; i < extra.size(); ++i) {
         if (extra[i] != 0) {
@@ -1021,7 +1032,7 @@ std::string Api::Optimize(std::string_view request_json,
       try {
         const Request p = ParseRequest(r, d);
         if (p.weapon != nullptr && !p.unknown_ability) {
-          return EvaluateBuild(*p.weapon, p.ability, p.character, p.target, p.assumptions).dps;
+          return EvaluateBuild(*p.weapon, p.ability, p.character, p.target, p.assumptions);
         }
       } catch (const std::exception&) {
         // A combination the engine rejects, like an enchantment that no
@@ -1029,12 +1040,28 @@ std::string Api::Optimize(std::string_view request_json,
       }
       return std::nullopt;
     };
+    const auto ability_dps = [](const BuildBreakdown& b) { return b.ability ? b.ability->dps : 0.0; };
+    problem.score = [&](const OptimizerBuild& b, const std::array<int, 8>& extra) -> std::optional<double> {
+      const std::optional<BuildBreakdown> e = evaluate(b, extra);
+      if (!e) {
+        return std::nullopt;
+      }
+      // Ties, common when a weight is 0, go to the build with the most DPS
+      // in all: a millionth of it is enough to tell them apart.
+      constexpr double kTieBreak = 1e-6;
+      return weapon_weight * e->weapon_dps + ability_weight * ability_dps(*e) + kTieBreak * e->dps;
+    };
 
     const auto builds = [&](const OptimizerResult& result) {
       json out = json::array();
-      for (const auto& [dps, b] : result.builds) {
+      for (const auto& [score, b] : result.builds) {
         json enchants = json::object();
-        json entry = {{"dps", dps}};
+        json entry = {{"score", score}};
+        if (const std::optional<BuildBreakdown> e = evaluate(b, {})) {
+          entry["dps"] = e->dps;
+          entry["weaponDps"] = e->weapon_dps;
+          entry["abilityDps"] = ability_dps(*e);
+        }
         for (std::size_t slot = 0; slot < kSlots.size(); ++slot) {
           entry[kSlots[slot]] = b.items[slot];
           enchants[kSlots[slot]] = b.enchants[slot];

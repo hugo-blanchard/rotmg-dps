@@ -194,8 +194,8 @@ for (const cls of classes) {
       }),
     ),
   );
-  if (!res.ok || !(res.builds[0]?.dps >= res.baseline)) {
-    failures.push(`optimizing ${cls.id}: ${res.ok ? `${res.builds[0]?.dps} below ${res.baseline}` : res.error}`);
+  if (!res.ok || !(res.builds[0]?.score >= res.baseline)) {
+    failures.push(`optimizing ${cls.id}: ${res.ok ? `${res.builds[0]?.score} below ${res.baseline}` : res.error}`);
   }
   optimized++;
 }
