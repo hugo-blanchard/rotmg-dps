@@ -16,6 +16,12 @@ export interface Target {
   cursed: boolean;
 }
 
+export interface GearEnchantments {
+  ring: string[];
+  armor: string[];
+  ability: string[];
+}
+
 export interface EvaluateRequest {
   weapon: string;
   ability?: string;
@@ -33,6 +39,8 @@ export interface EvaluateRequest {
   wearing?: number[];
   /** Ids of up to 4 enchantments on the weapon. */
   enchantments?: string[];
+  /** Up to 4 enchantment ids each on the other gear. */
+  gearEnchantments?: GearEnchantments;
   /** Class id, which relative enchantments measure bonus stats against. */
   class?: string;
   hitsPerVolley?: (number | null)[];

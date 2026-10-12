@@ -187,6 +187,15 @@ export function enchantmentsFor(dataset: Dataset, weapon: DatasetWeapon | undefi
   );
 }
 
+/** Enchantments that fit any item of a slot (RING, ARMOR or ABILITY), by
+ * the engine's rule: no label beyond EQUIPMENT and the slot's. */
+export function enchantmentsForSlot(dataset: Dataset, slot: string): DatasetEnchantment[] {
+  const generic = (l: string) => l === "EQUIPMENT" || l === slot;
+  return (dataset.enchantments ?? []).filter(
+    (e) => e.compatible.length > 0 && e.compatible.every(generic) && !(e.incompatible ?? []).some(generic),
+  );
+}
+
 /** Whether two enchantments can't share an item. */
 export function clash(a: DatasetEnchantment, b: DatasetEnchantment): boolean {
   const meets = (x: DatasetEnchantment, y: DatasetEnchantment) =>

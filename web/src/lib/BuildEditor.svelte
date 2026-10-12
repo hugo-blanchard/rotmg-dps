@@ -1,8 +1,9 @@
 <script lang="ts">
+  import EnchantmentSlots from "./EnchantmentSlots.svelte";
   import {
     abilitiesFor,
-    clash,
     enchantmentsFor,
+    enchantmentsForSlot,
     gearFor,
     otherPieces,
     setsFor,
@@ -11,7 +12,7 @@
     type DatasetClass,
     type DatasetWeapon,
   } from "./dataset";
-  import type { PlayerStatus, Target, WornSet } from "./engine";
+  import type { GearEnchantments, PlayerStatus, Target, WornSet } from "./engine";
 
   let {
     dataset,
@@ -27,6 +28,7 @@
     radius = $bindable(),
     wearing = $bindable(),
     enchantments = $bindable(),
+    gearEnchantments = $bindable(),
     wornSets,
     enchantmentStats,
   }: {
@@ -45,6 +47,7 @@
     /** The engine's view of the sets worn, for the bonus each one adds. */
     wornSets: WornSet[];
     enchantments: string[];
+    gearEnchantments: GearEnchantments;
     /** Stats the engine added from the enchantments, after rounding. */
     enchantmentStats: { stat: string; amount: number }[];
   } = $props();
@@ -60,27 +63,10 @@
 
   const sets = $derived(setsFor(dataset, [weapon, ability]));
 
-  // Weapon enchantments first, then the stat ones, each by name.
-  const fitting = $derived(
-    enchantmentsFor(dataset, weapon).sort(
-      (a, b) =>
-        Number(b.compatible.includes("WEAPON")) - Number(a.compatible.includes("WEAPON")) ||
-        a.name.localeCompare(b.name),
-    ),
-  );
-  const slots = [0, 1, 2, 3];
-  function pickEnchantment(slot: number, id: string) {
-    const next = slots.map((i) => (i === slot ? id : (enchantments[i] ?? "")));
-    enchantments = next.filter((x) => x !== "");
-  }
-  // An option is off when it clashes with what the other slots hold.
-  function blocked(slot: number, id: string): boolean {
-    const e = fitting.find((x) => x.id === id);
-    return enchantments.some((other, i) => {
-      const o = fitting.find((x) => x.id === other);
-      return i !== slot && o !== undefined && e !== undefined && (o.id === e.id || clash(o, e));
-    });
-  }
+  const fitting = $derived(enchantmentsFor(dataset, weapon));
+  const ringOptions = $derived(enchantmentsForSlot(dataset, "RING"));
+  const armorOptions = $derived(enchantmentsForSlot(dataset, "ARMOR"));
+  const abilityOptions = $derived(enchantmentsForSlot(dataset, "ABILITY"));
   const enchantmentSummary = $derived(
     enchantmentStats.map((b) => `${b.amount > 0 ? "+" : ""}${b.amount} ${statNames[b.stat] ?? b.stat}`).join(", "),
   );
@@ -210,30 +196,26 @@
 
   {#if fitting.length}
     <fieldset>
-      <legend>Enchantments on the weapon</legend>
-      {#each slots as slot (slot)}
-        {#if slot <= enchantments.length}
-          <label>
-            Slot {slot + 1}
-            <select value={enchantments[slot] ?? ""} onchange={(e) => pickEnchantment(slot, e.currentTarget.value)}>
-              <option value="">None</option>
-              <optgroup label="Weapon">
-                {#each fitting.filter((e) => e.compatible.includes("WEAPON")) as e (e.id)}
-                  <option value={e.id} disabled={blocked(slot, e.id)} title={e.description}>{e.name}</option>
-                {/each}
-              </optgroup>
-              <optgroup label="Stats">
-                {#each fitting.filter((e) => !e.compatible.includes("WEAPON")) as e (e.id)}
-                  <option value={e.id} disabled={blocked(slot, e.id)} title={e.description}>{e.name}</option>
-                {/each}
-              </optgroup>
-            </select>
-          </label>
-        {/if}
-      {/each}
-      {#if enchantmentSummary}
-        <p class="hint">Stat enchantments add {enchantmentSummary}.</p>
+      <legend>Enchantments</legend>
+      <EnchantmentSlots label="Weapon" special="WEAPON" options={fitting} bind:value={enchantments} />
+      {#if ringOptions.length}
+        <EnchantmentSlots label="Ring" special="RING" options={ringOptions} bind:value={gearEnchantments.ring} />
       {/if}
+      {#if armorOptions.length}
+        <EnchantmentSlots label="Armor" special="ARMOR" options={armorOptions} bind:value={gearEnchantments.armor} />
+      {/if}
+      {#if ability && abilityOptions.length}
+        <EnchantmentSlots
+          label="Ability"
+          special="ABILITY"
+          options={abilityOptions}
+          bind:value={gearEnchantments.ability}
+        />
+      {/if}
+      <p class="hint">
+        {#if enchantmentSummary}Stat enchantments add {enchantmentSummary}.{/if}
+        Stats you typed above count as your gear's, so only add enchantments you didn't include there.
+      </p>
     </fieldset>
   {/if}
 

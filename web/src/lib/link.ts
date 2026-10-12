@@ -2,7 +2,7 @@
 // missing or no longer in the dataset falls back to the defaults.
 
 import { abilitiesFor, weaponsFor, type Dataset } from "./dataset";
-import type { PlayerStatus, Target } from "./engine";
+import type { GearEnchantments, PlayerStatus, Target } from "./engine";
 
 export interface Build {
   classId: string;
@@ -17,9 +17,11 @@ export interface Build {
   radius: number;
   wearing: number[];
   enchantments: string[];
+  gearEnchantments: GearEnchantments;
 }
 
 const statusKeys = ["weak", "damaging", "berserk", "dazed"] as const;
+const gearSlots = ["ring", "armor", "ability"] as const;
 const targetKeys = ["armored", "armorBroken", "exposed", "cursed"] as const;
 
 export function toQuery(b: Build): string {
@@ -50,6 +52,11 @@ export function toQuery(b: Build): string {
   if (b.enchantments.length) {
     q.set("ench", b.enchantments.join(","));
   }
+  for (const slot of gearSlots) {
+    if (b.gearEnchantments[slot].length) {
+      q.set(`ench_${slot}`, b.gearEnchantments[slot].join(","));
+    }
+  }
   return q.toString();
 }
 
@@ -70,6 +77,7 @@ export function fromQuery(query: string, dataset: Dataset): Build | null {
     return q.has(key) && Number.isFinite(n) && n >= 0 ? n : otherwise;
   };
   const flags = (key: string) => new Set((q.get(key) ?? "").split(","));
+  const known = (ids: Set<string>) => [...ids].filter((id) => dataset.enchantments?.some((e) => e.id === id));
   const self = flags("self");
   const on = flags("target");
   return {
@@ -87,6 +95,11 @@ export function fromQuery(query: string, dataset: Dataset): Build | null {
     distance: number("dist", 4),
     radius: number("size", 0.5),
     wearing: [...flags("wear")].map(Number).filter((n) => Number.isInteger(n) && n > 0),
-    enchantments: [...flags("ench")].filter((id) => dataset.enchantments?.some((e) => e.id === id)),
+    enchantments: known(flags("ench")),
+    gearEnchantments: {
+      ring: known(flags("ench_ring")),
+      armor: known(flags("ench_armor")),
+      ability: known(flags("ench_ability")),
+    },
   };
 }

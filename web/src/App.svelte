@@ -17,7 +17,14 @@
     type Dataset,
     type DatasetStatus,
   } from "./lib/dataset";
-  import { Engine, type EvaluateRequest, type EvaluateResponse, type PlayerStatus, type Target } from "./lib/engine";
+  import {
+    Engine,
+    type EvaluateRequest,
+    type EvaluateResponse,
+    type GearEnchantments,
+    type PlayerStatus,
+    type Target,
+  } from "./lib/engine";
   import { fromQuery, toQuery } from "./lib/link";
   import { loadSprites, type Sprites } from "./lib/sprites";
 
@@ -40,8 +47,9 @@
   let radius = $state(0.5);
   // Armor and ring pieces of the gear's sets that you also wear.
   let wearing = $state<number[]>([]);
-  // Enchantment ids on the weapon, up to 4.
+  // Enchantment ids on the weapon, up to 4, and on the other gear.
   let enchantments = $state<string[]>([]);
+  let gearEnchantments = $state<GearEnchantments>({ ring: [], armor: [], ability: [] });
   let hitOverrides = $state<(number | null)[]>([]);
 
   let response = $state<EvaluateResponse | null>(null);
@@ -86,6 +94,12 @@
     target: { ...target, defense },
     wearing: [...worn],
     enchantments: [...enchanted],
+    gearEnchantments: {
+      ring: [...gearEnchantments.ring],
+      armor: [...gearEnchantments.armor],
+      // Ability enchantments only mean something with an ability.
+      ability: abilityName ? [...gearEnchantments.ability] : [],
+    },
     class: classId,
     hitsPerVolley: [...hitOverrides],
     hitModel: { distance: hitDistance, radius: Math.max(0.05, Number(radius) || 0.5) },
@@ -136,6 +150,7 @@
           radius,
           wearing,
           enchantments,
+          gearEnchantments,
         } = linked);
       } else {
         const start = d.classes.find((c) => c.id === "Wizard") ?? d.classes[0];
@@ -170,6 +185,7 @@
       radius,
       wearing: worn,
       enchantments: enchanted,
+      gearEnchantments,
     });
     history.replaceState(null, "", `${location.pathname}?${query}`);
   });
@@ -221,6 +237,7 @@
       bind:radius
       bind:wearing
       bind:enchantments
+      bind:gearEnchantments
     />
     {#if result}
       <Results
