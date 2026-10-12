@@ -1,6 +1,7 @@
 #include "rotmg/damage.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace rotmg {
 
@@ -39,6 +40,13 @@ int EffectiveDefense(const Target& target, bool armor_piercing) {
 double DamageAfterDefense(double damage, int defense, bool cursed) {
   double after = std::max(damage - defense, 0.1 * damage);
   return cursed ? after * 1.25 : after;
+}
+
+Multiplier WithDamageBonus(Multiplier multiplier, double bonus) {
+  if (bonus == 1) {
+    return multiplier;
+  }
+  return {multiplier.num * static_cast<int>(std::lround(bonus * 10000)), multiplier.den * 10000};
 }
 
 double ExpectedHitDamage(const Projectile& projectile, Multiplier multiplier, const Target& target) {

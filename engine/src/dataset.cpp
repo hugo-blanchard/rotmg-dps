@@ -132,6 +132,49 @@ std::vector<Activate> ReadActivates(const json& j, std::string_view key) {
   return out;
 }
 
+Activate::Value ReadValue(const json& v) {
+  if (v.is_number()) {
+    return v.get<double>();
+  }
+  if (v.is_boolean()) {
+    return v.get<bool>();
+  }
+  return v.is_string() ? v.get<std::string>() : std::string();
+}
+
+Enchantment ReadEnchantment(const json& j) {
+  Enchantment e;
+  j.at("type").get_to(e.type);
+  j.at("id").get_to(e.id);
+  e.name = j.value("name", e.id);
+  e.description = j.value("description", "");
+  ReadDefault(j, "compatible", e.compatible);
+  ReadDefault(j, "incompatible", e.incompatible);
+  ReadDefault(j, "incompatibleItems", e.incompatible_items);
+  ReadDefault(j, "labels", e.labels);
+  ReadDefault(j, "incompatibleLabels", e.incompatible_labels);
+  if (auto it = j.find("mutators"); it != j.end()) {
+    for (const json& m : *it) {
+      Mutator out;
+      m.at("tag").get_to(out.tag);
+      if (auto v = m.find("value"); v != m.end()) {
+        if (v->is_number()) {
+          out.number = v->get<double>();
+        } else if (v->is_string()) {
+          out.text = v->get<std::string>();
+        }
+      }
+      if (auto params = m.find("params"); params != m.end()) {
+        for (const auto& [name, value] : params->items()) {
+          out.attributes.params.emplace(name, ReadValue(value));
+        }
+      }
+      e.mutators.push_back(std::move(out));
+    }
+  }
+  return e;
+}
+
 std::map<int, Projectile> ReadCreatedProjectiles(const json& j) {
   std::map<int, Projectile> out;
   if (auto it = j.find("createdProjectiles"); it != j.end()) {
@@ -203,6 +246,7 @@ Weapon ReadWeapon(const json& j) {
   }
   w.on_shoot = ReadActivates(j, "onShoot");
   w.created_projectiles = ReadCreatedProjectiles(j);
+  ReadDefault(j, "labels", w.labels);
   ReadDefault(j, "unsupported", w.unsupported);
   return w;
 }
@@ -248,6 +292,11 @@ Dataset ParseDataset(std::string_view text) {
     if (auto it = j.find("sets"); it != j.end()) {
       for (const json& s : *it) {
         d.sets.push_back(ReadSet(s));
+      }
+    }
+    if (auto it = j.find("enchantments"); it != j.end()) {
+      for (const json& e : *it) {
+        d.enchantments.push_back(ReadEnchantment(e));
       }
     }
     return d;

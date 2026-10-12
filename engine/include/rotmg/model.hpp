@@ -110,6 +110,10 @@ struct Weapon {
   std::vector<Activate> on_shoot;
   /// Projectiles of other items, by type, that on-shoot effects create.
   std::map<int, Projectile> created_projectiles;
+  /// The item's labels, which enchantments match against.
+  std::vector<std::string> labels;
+  /// Multiplies every roll, on top of ATT. Enchantments set it.
+  double damage_bonus = 1;
   std::vector<std::string> unsupported;
 
   /// Null if the weapon has no projectile with that id.
@@ -140,6 +144,31 @@ struct Ability {
   Weapon AsWeapon() const;
 };
 
+/// One change an enchantment makes: the element's name, its text (a
+/// number like 1.02 or a kind like IncrementStat) and its attributes.
+struct Mutator {
+  std::string tag;
+  std::optional<double> number;
+  std::string text;
+  Activate attributes;
+};
+
+/// An enchantment fits an item with every `compatible` label and none of
+/// the `incompatible` ones. Two can't share an item when one's
+/// `incompatible_labels` meets the other's `labels`.
+struct Enchantment {
+  int type = 0;
+  std::string id;
+  std::string name;
+  std::string description;
+  std::vector<std::string> compatible;
+  std::vector<std::string> incompatible;
+  std::vector<std::string> incompatible_items;
+  std::vector<std::string> labels;
+  std::vector<std::string> incompatible_labels;
+  std::vector<Mutator> mutators;
+};
+
 /// An equipment set. Slots are 0 weapon, 1 ability, 2 armor, 3 ring; a slot
 /// can accept several items.
 struct EquipmentSet {
@@ -167,6 +196,7 @@ struct Dataset {
   std::vector<Weapon> weapons;
   std::vector<Ability> abilities;
   std::vector<EquipmentSet> sets;
+  std::vector<Enchantment> enchantments;
 };
 
 }  // namespace rotmg

@@ -1,6 +1,9 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
+#include <string>
+
 #include <nlohmann/json.hpp>
 
 #include "fixture.hpp"
@@ -150,4 +153,55 @@ TEST_CASE("adds set bonuses for the pieces worn") {
   CHECK(other == 50);
   REQUIRE(other_sets.size() == 1);
   CHECK(other_sets[0]["pieces"] == 1);
+}
+
+TEST_CASE("applies a weapon's enchantments") {
+  const rotmg::Api api = LoadedApi();
+  const auto evaluate = [&](const std::string& enchantments) {
+    return json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "attack": 25, "dexterity": 0, "enchantments": )" +
+                                    enchantments + "}"));
+  };
+  const json plain = evaluate("[]");
+  REQUIRE(plain["ok"] == true);
+
+  // Damage Bonus IV multiplies each 50-79 roll by 1.05 along with ATT's
+  // 1.0, rounded down as weapon damage is.
+  const json damage = evaluate(R"(["Damage_Bonus_4"])");
+  REQUIRE(damage["ok"] == true);
+  double sum = 0;
+  for (int roll = 50; roll <= 79; ++roll) {
+    sum += std::floor(roll * 1.05);
+  }
+  CHECK(damage["breakdown"]["subattacks"][0]["damagePerHit"].get<double>() == Catch::Approx(sum / 30));
+
+  // FireRate Bonus IV: 5% more volleys.
+  const json rate = evaluate(R"(["FireRate_Bonus_4"])");
+  CHECK(rate["breakdown"]["subattacks"][0]["volleysPerSecond"].get<double>() ==
+        Catch::Approx(plain["breakdown"]["subattacks"][0]["volleysPerSecond"].get<double>() * 1.05));
+
+  // +1.4 and +0.7 ATT add to 2.1, which rounds down to +2; +1.8 DEX alone
+  // rounds down to +1.
+  const json stats = evaluate(R"(["Attack_Bonus_1", "Vitality_Bonus_1"])");
+  REQUIRE(stats["ok"] == true);
+  CHECK(stats["enchantmentStats"] == json::parse(R"([{"stat": "ATT", "amount": 2}])"));
+  CHECK(evaluate(R"(["Dexterity_Bonus_2"])")["enchantmentStats"] ==
+        json::parse(R"([{"stat": "DEX", "amount": 1}])"));
+
+  // Effects that aren't modelled are named.
+  const json odd = evaluate(R"(["Odd_Enchant"])");
+  REQUIRE(odd["ok"] == true);
+  CHECK(odd["breakdown"]["unsupported"].back() == "Odd Enchant (enchantment)");
+}
+
+TEST_CASE("refuses enchantments that can't be on the weapon together") {
+  const rotmg::Api api = LoadedApi();
+  const auto error = [&](const char* enchantments) {
+    const json res = json::parse(api.Evaluate(std::string(R"({"weapon": "Plain Sword", "enchantments": )") +
+                                              enchantments + "}"));
+    REQUIRE(res["ok"] == false);
+    return res["error"].get<std::string>();
+  };
+  CHECK(error(R"(["Staff_Only"])").find("doesn't go on Plain Sword") != std::string::npos);
+  CHECK(error(R"(["Attack_Bonus_1", "Dexterity_Bonus_2"])").find("can't share an item") != std::string::npos);
+  CHECK(error(R"(["Nope"])").find("no enchantment named") != std::string::npos);
 }

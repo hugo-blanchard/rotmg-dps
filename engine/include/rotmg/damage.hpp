@@ -35,6 +35,10 @@ struct Multiplier {
 /// unless the player is also Weak.
 Multiplier DamageMultiplier(int attack, const PlayerStatus& status);
 
+/// The multiplier with an item's damage bonus on top, kept exact to four
+/// decimals: Damage Bonus IV's 1.05 multiplies the roll along with ATT.
+Multiplier WithDamageBonus(Multiplier multiplier, double bonus);
+
 /// Damage of one roll before DEF, rounded down. The wiki's worked examples
 /// (83 ATT Sword of Acclaim = 475-591) only come out right with this floor.
 int HitDamage(int roll, Multiplier multiplier);

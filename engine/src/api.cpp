@@ -2,12 +2,15 @@
 
 #include <algorithm>
 #include <exception>
+#include <memory>
+#include <stdexcept>
 
 #include <nlohmann/json.hpp>
 
 #include "rotmg/build.hpp"
 #include "rotmg/dataset.hpp"
 #include "rotmg/evaluate.hpp"
+#include "rotmg/enchant.hpp"
 #include "rotmg/hits.hpp"
 #include "rotmg/sets.hpp"
 
@@ -17,13 +20,14 @@
 //    "defense": 25, "speed": 50, "maxHitPoints": 700, "maxMagicPoints": 300,
 //    "status": {"weak", "damaging", "berserk", "dazed"},
 //    "target": {"defense", "armored", "armorBroken", "exposed", "cursed"},
-//    "wearing": [14381, 14382],
+//    "wearing": [14381, 14382], "enchantments": ["Damage_Bonus_4"],
 //    "hitsPerVolley": [null, 1.5], "curatedHitsPerVolley": [2, null],
 //    "hitModel": {"distance": 4, "radius": 0.5},
 //    "curve": {"from": 0, "to": 150, "step": 5},
 //    "hitCurve": {"from": 0.5, "to": 10, "step": 0.25}}
 // Only "weapon" is required. "wearing" lists the item types of other gear
-// worn, like a set's armor or a ring a weapon's procs need. "curve" adds
+// worn, like a set's armor or a ring a weapon's procs need.
+// "enchantments" are ids of up to 4 enchantments on the weapon. "curve" adds
 // the build's DPS at each DEF in the range, with everything else in the
 // request unchanged. "hitCurve" adds the geometric estimate's total hits
 // per volley at each distance.
@@ -32,6 +36,7 @@
 //   {"ok": true, "breakdown": {...the weapon on its own...},
 //    "build": {"dps", "weaponDps", "uptimes": [...], "assumptions": [...]},
 //    "ability": {...}, "sets": [{"type", "name", "pieces", "stats", "unsupported"}],
+//    "enchantmentStats": [{"stat", "amount"}],
 //    "curve": [{"defense", "dps"}],
 //    "hitCurve": [{"distance", "hits"}], "hitModelGaps": ["..."]}
 // "ability" is only there when the request names one.
@@ -145,6 +150,9 @@ struct Request {
   Target target;
   Assumptions assumptions;
   std::vector<WornSet> sets;
+  // The weapon with its enchantments, when it has any; `weapon` points here.
+  std::shared_ptr<const Weapon> enchanted;
+  std::vector<StatBonus> enchantment_stats;
 };
 
 // Reads the parts of a request Evaluate and StartSimulation share. Throws on
@@ -201,6 +209,34 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
   }
   r.sets = WornSets(dataset, worn);
   r.character.worn = worn;
+  if (auto it = req.find("enchantments"); it != req.end() && r.weapon != nullptr) {
+    std::vector<const Enchantment*> picked;
+    for (const json& id : *it) {
+      const auto e = std::ranges::find(dataset.enchantments, id.get<std::string>(), &Enchantment::id);
+      if (e == dataset.enchantments.end()) {
+        throw std::runtime_error("no enchantment named \"" + id.get<std::string>() + "\"");
+      }
+      if (!Fits(*e, *r.weapon)) {
+        throw std::runtime_error(e->name + " doesn't go on " + r.weapon->name);
+      }
+      for (const Enchantment* other : picked) {
+        if (Conflict(*e, *other)) {
+          throw std::runtime_error(e->name + " and " + other->name + " can't share an item");
+        }
+      }
+      picked.push_back(&*e);
+    }
+    // Divine items have 4 slots, the most (RealmEye: Enchanting).
+    if (picked.size() > 4) {
+      throw std::runtime_error("an item holds at most 4 enchantments");
+    }
+    Enchanted en = Enchant(*r.weapon, picked);
+    en.weapon.unsupported.insert(en.weapon.unsupported.end(), en.unsupported.begin(), en.unsupported.end());
+    r.enchanted = std::make_shared<const Weapon>(std::move(en.weapon));
+    r.weapon = r.enchanted.get();
+    r.enchantment_stats = en.stats;
+    r.character = r.character.With(en.stats);
+  }
   for (const WornSet& s : r.sets) {
     r.character = r.character.With(s.stats);
   }
@@ -247,7 +283,8 @@ std::string Api::Evaluate(std::string_view request_json) const {
   try {
     const json req = json::parse(request_json);
     const Request r = ParseRequest(req, *dataset_);
-    const auto& [weapon, ability, unknown_ability, character, target, assumptions, sets] = r;
+    const auto& [weapon, ability, unknown_ability, character, target, assumptions, sets, enchanted, enchantment_stats] =
+        r;
     if (weapon == nullptr) {
       return Error("no weapon named \"" + req.at("weapon").get<std::string>() + "\"").dump();
     }
@@ -263,6 +300,13 @@ std::string Api::Evaluate(std::string_view request_json) const {
     res["sets"] = json::array();
     for (const WornSet& s : sets) {
       res["sets"].push_back(ToJson(s));
+    }
+    res["enchantmentStats"] = json::array();
+    for (const StatBonus& b : enchantment_stats) {
+      res["enchantmentStats"].push_back({{"stat", b.stat}, {"amount", b.amount}});
+    }
+    if (!enchantment_stats.empty()) {
+      res["build"]["assumptions"].push_back("fractional stat bonuses from enchantments add up and the total rounds down");
     }
     if (auto it = req.find("curve"); it != req.end()) {
       const int from = it->value("from", 0);

@@ -15,7 +15,7 @@ Simulation::Simulation(const Weapon& weapon, const Character& character, const T
   const Character geared = character.With(weapon_.stat_bonuses).With(WhileShooting(weapon_));
   const int attack = geared.attack;
   const int dexterity = geared.dexterity;
-  const Multiplier multiplier = DamageMultiplier(attack, character.status);
+  const Multiplier multiplier = WithDamageBonus(DamageMultiplier(attack, character.status), weapon_.damage_bonus);
   const double attacks_per_second = AttacksPerSecond(dexterity, character.status);
 
   for (const Subattack& s : weapon_.subattacks) {

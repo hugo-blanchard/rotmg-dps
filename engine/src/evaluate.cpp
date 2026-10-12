@@ -141,7 +141,7 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
   const Character geared = character.With(weapon.stat_bonuses).With(while_shooting);
   const int attack = geared.attack;
   const int dexterity = geared.dexterity;
-  const Multiplier multiplier = DamageMultiplier(attack, character.status);
+  const Multiplier multiplier = WithDamageBonus(DamageMultiplier(attack, character.status), weapon.damage_bonus);
   for (const StatBonus& b : while_shooting) {
     out.terms.push_back(
         {b.stat + " change while shooting", static_cast<double>(b.amount), Source::kClientData, "weapon on-shoot effect"});
@@ -289,6 +289,9 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
     for (std::string& a : HitModelAssumptions(weapon)) {
       out.assumptions.push_back(std::move(a));
     }
+  }
+  if (weapon.damage_bonus != 1) {
+    out.assumptions.push_back("an enchantment's damage bonus multiplies each roll along with ATT");
   }
   if (target.armored && target.exposed) {
     out.assumptions.push_back("Armored applies before Exposed");

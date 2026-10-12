@@ -96,6 +96,7 @@
           "amount": 4
         }
       ],
+      "labels": ["EQUIPMENT", "WEAPON", "SWORD"],
       "projectiles": [
         {
           "id": 0,
@@ -328,6 +329,28 @@
         { "pieces": 4, "stats": [ { "stat": "ATT", "amount": 10 }, { "stat": "DEX", "amount": 4 } ] }
       ]
     }
+  ],
+  "enchantments": [
+    { "type": 263, "id": "Attack_Bonus_1", "name": "Attack Bonus I", "compatible": ["EQUIPMENT"],
+      "labels": ["STAT", "SINGLESTAT", "ATTACK"], "incompatibleLabels": ["SINGLESTAT"],
+      "mutators": [ { "tag": "ActivateOnEquip", "value": "IncrementStat", "params": { "stat": "ATT", "amount": 1.4 } } ] },
+    { "type": 264, "id": "Dexterity_Bonus_2", "name": "Dexterity Bonus II", "compatible": ["EQUIPMENT"],
+      "labels": ["STAT", "SINGLESTAT", "DEXTERITY"], "incompatibleLabels": ["SINGLESTAT"],
+      "mutators": [ { "tag": "ActivateOnEquip", "value": "IncrementStat", "params": { "stat": "DEX", "amount": 1.8 } } ] },
+    { "type": 265, "id": "Vitality_Bonus_1", "name": "Vitality Bonus I", "compatible": ["EQUIPMENT"],
+      "labels": ["STAT", "DUALSTAT", "VITALITY"], "incompatibleLabels": ["DUALSTAT"],
+      "mutators": [ { "tag": "ActivateOnEquip", "value": "IncrementStat", "params": { "stat": "ATT", "amount": 0.7 } } ] },
+    { "type": 266, "id": "Damage_Bonus_4", "name": "Damage Bonus IV", "compatible": ["WEAPON"],
+      "labels": ["WEAPON", "WEAPONDAMAGE"], "incompatibleLabels": ["WEAPONDAMAGE"],
+      "mutators": [ { "tag": "MultiplyMinDamage", "value": 1.05, "params": { "projectileId": -1 } },
+                    { "tag": "MultiplyMaxDamage", "value": 1.05, "params": { "projectileId": -1 } } ] },
+    { "type": 267, "id": "FireRate_Bonus_4", "name": "FireRate Bonus IV", "compatible": ["WEAPON"],
+      "labels": ["WEAPON", "WEAPONFIRERATE"], "incompatibleLabels": ["WEAPONFIRERATE"],
+      "mutators": [ { "tag": "MultiplyRateOfFire", "value": 1.05, "params": { "subAttackIndex": -1 } } ] },
+    { "type": 268, "id": "Staff_Only", "name": "Staff Only", "compatible": ["WEAPON", "STAFF"], "labels": [],
+      "mutators": [] },
+    { "type": 269, "id": "Odd_Enchant", "name": "Odd Enchant", "compatible": ["WEAPON"], "labels": ["ODD"],
+      "mutators": [ { "tag": "AddOnPlayerHitActivate", "value": "Heal", "params": { "amount": 20 } } ] }
   ],
   "abilities": [
     {
