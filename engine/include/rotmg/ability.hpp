@@ -37,6 +37,15 @@ struct Buff {
   double duration_s = 0;
 };
 
+/// A scepter's lightning: damage on the first target, falling by decrDamage
+/// on each next one, and how many targets it chains to. Both grow with WIS
+/// over wisMin (50 if unset): damage by wisDamageBase / 10 a point, and one
+/// more target every wisPerTarget points (10 if unset). These give the
+/// per-WIS damage and targets in RealmEye's Scepters tables for every
+/// scepter listed there.
+double LightningDamage(const Activate& lightning, const Character& character);
+int LightningTargets(const Activate& lightning, const Character& character);
+
 /// The buff or debuff one effect gives at these stats, if it changes weapon
 /// DPS: Damaging, Berserk, Weak or Dazed, ATT or DEX boosts on the player,
 /// Curse, Exposed or Armor Broken on targets.

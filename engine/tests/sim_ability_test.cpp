@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <initializer_list>
 #include <string>
 #include <tuple>
@@ -58,6 +59,13 @@ bool HasTrap(const Simulation& sim) {
   return false;
 }
 
+// The scepter's bolt among the effects in the world.
+const Simulation::Effect& Bolt(const Simulation& sim) {
+  const auto it = std::ranges::find(sim.Effects(), Simulation::Effect::Kind::kBolt, &Simulation::Effect::kind);
+  REQUIRE(it != sim.Effects().end());
+  return *it;
+}
+
 }  // namespace
 
 TEST_CASE("casting as often as MP allows matches the evaluated ability DPS") {
@@ -82,17 +90,17 @@ TEST_CASE("a full MP bar is spent on the first step") {
 }
 
 TEST_CASE("Scepters: lightning chains through targets within 8 tiles") {
-  // 60 WIS is 10 over 50: 300 + 22 * 10 to each. The fourth target is more
-  // than 8 tiles from all the others, so the chain stops.
-  Simulation sim(Sword(), kWis60, At({{0, 4}, {0, 6}, {1, 9}, {12, 0}}), &Ability("Shock Scepter"));
+  // 60 WIS is 10 over 50: 300 + 8 * 10, then 40 less on each next target.
+  // The fourth target is more than 8 tiles from all the others, so the chain
+  // stops.
+  Simulation sim(Sword(), kWis60, At({{0, 4}, {0, 8}, {1, 13}, {12, 0}}), &Ability("Shock Scepter"));
   sim.Advance(10);
   CHECK(sim.AbilityTotals().hits == 3);
-  for (std::size_t i = 0; i < 3; ++i) {
-    CHECK(AbilityDamage(sim, i) == Approx(520));
-  }
+  CHECK(AbilityDamage(sim, 0) == Approx(380));
+  CHECK(AbilityDamage(sim, 1) == Approx(340));
+  CHECK(AbilityDamage(sim, 2) == Approx(300));
   CHECK(AbilityDamage(sim, 3) == 0);
-  REQUIRE(sim.Effects().size() == 1);
-  CHECK(sim.Effects()[0].chain.size() == 4);
+  CHECK(Bolt(sim).chain.size() == 4);
 }
 
 TEST_CASE("Scepters: the chain starts at the closest target in the cone") {
@@ -101,8 +109,7 @@ TEST_CASE("Scepters: the chain starts at the closest target in the cone") {
   Scenario s = At({{0, 8}, {0, 3}, {-2, 1}});
   Simulation sim(Sword(), kWis60, s, &Ability("Shock Scepter"));
   sim.Advance(10);
-  REQUIRE(sim.Effects().size() == 1);
-  const auto& chain = sim.Effects()[0].chain;
+  const auto& chain = Bolt(sim).chain;
   REQUIRE(chain.size() == 4);
   CHECK(chain[1].y == Approx(3));
 }

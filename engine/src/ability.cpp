@@ -39,6 +39,27 @@ double Param(const Activate& a, std::string_view key) { return a.Number(key).val
 
 double MpPerSecond(int wisdom) { return 0.5 + 0.12 * wisdom; }
 
+namespace {
+
+// Points of `stat` over `threshold`, or 0.
+double Over(const Character& c, const std::string& stat, double threshold) {
+  return stat.empty() ? 0 : std::max(0.0, c.Stat(stat) - threshold);
+}
+
+}  // namespace
+
+double LightningDamage(const Activate& a, const Character& c) {
+  return a.Number("totalDamage").value_or(0) +
+         Over(c, "WIS", a.Number("wisMin").value_or(50)) * a.Number("wisDamageBase").value_or(0) / 10;
+}
+
+int LightningTargets(const Activate& a, const Character& c) {
+  const double per = a.Number("wisPerTarget").value_or(10);
+  const double over = Over(c, "WIS", a.Number("wisMin").value_or(50));
+  return static_cast<int>(a.Number("maxTargets").value_or(1)) +
+         (per > 0 ? static_cast<int>(std::floor(over / per + 1e-9)) : 0);
+}
+
 std::optional<Buff> BuffOf(const Activate& a, const Character& c) {
   if (a.type == "ConditionEffectSelf" || a.type == "ConditionEffectAura") {
     const std::string effect = a.Text("effect");
@@ -177,8 +198,8 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
       assume("damage novas are aimed at the target and DEF applies to them");
       out.parts.push_back({"Damage nova, " + std::to_string(count) + " blasts", count * each, "RealmEye: Tomes"});
     } else if (a.type == "Lightning") {
-      const int damage = static_cast<int>(Param(a, "totalDamage"));
-      const double first = ExpectedAbilityDamage(damage, damage, StatModBonus(a, "statModDamage", c), target, false);
+      const double damage = LightningDamage(a, c);
+      const double first = ExpectedAbilityDamage(0, 0, damage, target, false);
       assume("lightning's first target takes the full damage, and DEF applies to it");
       if (a.Number("aoeDamage")) {
         unsupported("lightning's shockblast area damage");

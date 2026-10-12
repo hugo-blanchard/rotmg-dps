@@ -611,12 +611,19 @@
           "type": "Lightning",
           "params": {
             "totalDamage": 300,
+            "decrDamage": 40,
             "maxTargets": 5,
+            "wisDamageBase": 80,
             "aoeDamage": 75,
             "aoeActivationCount": 3,
+            "aoeMaxTargets": 2,
+            "aoeRange": 2.5,
+            "aoeTime": 1,
+            "aoeArmorPierce": true,
             "scalingStat": "WIS",
             "statModScalingMin": 50,
-            "statModDamage": 22
+            "statModDamage": 22,
+            "statModPerTarget": 10
           }
         }
       ]

@@ -619,12 +619,13 @@ void Simulation::Cast() {
     } else if (act.type == "Lightning") {
       // RealmEye, Scepters: the closest enemy in a 30 degree cone towards the
       // cursor starts the chain, which jumps to an enemy not yet hit within
-      // about 8 tiles of the last, losing damage each time.
-      const int count = static_cast<int>(act.Number("maxTargets").value_or(1)) +
-                        StatModCount(act, "statModPerTarget", base_);
-      const int damage = static_cast<int>(act.Number("totalDamage").value_or(0));
-      const double bonus = StatModBonus(act, "statModDamage", base_);
+      // about 8 tiles of the last, losing damage each time. Scepters listed
+      // with another cone or a range have them as arcDegrees and range.
+      const int count = LightningTargets(act, base_);
+      const double damage = LightningDamage(act, base_);
       const double drop = act.Number("decrDamage").value_or(0);
+      const double half_cone = act.Number("arcDegrees").value_or(30) / 2 * degrees;
+      const double reach = act.Number("range").value_or(1e9);
       std::vector<bool> struck(world_.targets.size(), false);
       std::optional<std::size_t> at;
       double best = 1e18;
@@ -636,7 +637,7 @@ void Simulation::Cast() {
         const double angle = std::atan2(p.x - world_.player.x, p.y - world_.player.y);
         const double off = std::abs(std::remainder(angle - aim, 2 * std::numbers::pi));
         const double d = Distance(world_.player, p);
-        if (off <= 15 * degrees && d < best) {
+        if (off <= half_cone && d <= reach && d < best) {
           best = d;
           at = t;
         }
@@ -645,8 +646,7 @@ void Simulation::Cast() {
       for (int k = 0; k < count && at; ++k) {
         struck[*at] = true;
         ++ability_totals_.hits;
-        Damage(*at, AbilityHit(damage, damage, std::max(-damage * 1.0, bonus - drop * k), *at, false),
-               From::kAbility);
+        Damage(*at, AbilityHit(0, 0, std::max(0.0, damage - drop * k), *at, false), From::kAbility);
         bolt.chain.push_back(world_.targets[*at].position);
         std::optional<std::size_t> next;
         double nearest = 8;
