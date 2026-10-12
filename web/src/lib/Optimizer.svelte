@@ -32,6 +32,7 @@
   let pools = $state({ tiered: true, untiered: true, set: true });
   let enchantMode = $state<OptimizeOptions["enchantments"]>("best");
   let artifacts = $state(true);
+  let perItem = $state(2);
   let searching = $state(false);
   let found = $state<OptimizeResponse | null>(null);
   // The build before the last one taken, for undo.
@@ -51,6 +52,7 @@
         pools: (["tiered", "untiered", "set"] as const).filter((p) => pools[p]),
         enchantments: enchantMode,
         artifacts,
+        slots: perItem,
         results: 5,
       },
     });
@@ -104,11 +106,21 @@
       <label class="mode">
         Enchantments
         <select bind:value={enchantMode}>
-          <option value="best">Find the best, up to 4 per item</option>
+          <option value="best">Find the best</option>
           <option value="keep">Keep mine where they fit</option>
           <option value="none">None</option>
         </select>
       </label>
+      {#if enchantMode === "best"}
+        <label class="mode">
+          Enchantments per item
+          <select bind:value={perItem}>
+            {#each [1, 2, 3, 4] as n (n)}
+              <option value={n}>{n}</option>
+            {/each}
+          </select>
+        </label>
+      {/if}
       {#if enchantMode !== "none"}
         <label><input type="checkbox" bind:checked={artifacts} /> Also ones that need an artifact or engraving</label>
       {/if}

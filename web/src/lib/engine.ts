@@ -263,6 +263,7 @@ export interface OptimizeOptions {
   enchantments: "keep" | "none" | "best";
   /** Whether to use enchantments only an artifact or engraving puts on an item. */
   artifacts?: boolean;
+  /** How many enchantments to fill on each item, 2 unless set. */
   slots?: number;
   results?: number;
 }
