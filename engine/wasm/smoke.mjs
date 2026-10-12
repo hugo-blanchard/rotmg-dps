@@ -144,6 +144,30 @@ for (const a of abilities) {
   abilityBuilds++;
 }
 
+// Every enchantment that changes a weapon, rather than only adding stats,
+// evaluates on the first weapon it fits.
+const { enchantments = [] } = JSON.parse(text);
+const fits = (e, w) =>
+  e.compatible.every((l) => (w.labels ?? []).includes(l)) &&
+  !(e.incompatible ?? []).some((l) => (w.labels ?? []).includes(l)) &&
+  !(e.incompatibleItems ?? []).includes(w.id);
+let enchanted = 0;
+for (const e of enchantments) {
+  if ((e.mutators ?? []).every((m) => m.tag === "ActivateOnEquip")) continue;
+  const weapon = weapons.find((w) => fits(e, w));
+  if (!weapon) {
+    failures.push(`${e.name}: no weapon it fits`);
+    continue;
+  }
+  const res = evaluate({ weapon: weapon.name, enchantments: [e.id], attack: 50, dexterity: 50, hitModel: { distance: 4 } });
+  if (!res.ok) {
+    failures.push(`${e.name} on ${weapon.name}: ${res.error}`);
+  } else if (!Number.isFinite(res.build.dps) || res.build.dps < 0) {
+    failures.push(`${e.name} on ${weapon.name}: DPS ${res.build.dps}`);
+  }
+  enchanted++;
+}
+
 // The simulation view must agree with the numbers next to it: once every
 // shot of a volley has landed or expired, it must have counted exactly the
 // hits the estimate predicts.
@@ -181,6 +205,7 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(
-  `${weapons.length} weapons and ${abilityBuilds} abilities evaluated, hit estimate checks passed, ` +
+  `${weapons.length} weapons, ${abilityBuilds} abilities and ${enchanted} weapon enchantments evaluated, ` +
+    `hit estimate checks passed, ` +
     `${simulated} simulations agree with the estimate`,
 );
