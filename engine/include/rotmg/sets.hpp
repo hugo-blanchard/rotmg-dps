@@ -16,7 +16,8 @@ struct WornSet {
   std::vector<StatBonus> stats;
 };
 
-/// The sets with at least one piece among `worn`, by item type.
+/// The sets with at least one piece among `worn`, by item type, and one of
+/// their key pieces when they have any.
 std::vector<WornSet> WornSets(const Dataset& dataset, const std::vector<int>& worn);
 
 }  // namespace rotmg

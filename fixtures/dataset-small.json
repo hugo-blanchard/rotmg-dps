@@ -327,6 +327,7 @@
         { "slot": 2, "itemType": 28689, "name": "Plain Mail" },
         { "slot": 3, "itemType": 28690, "name": "Plain Ring" }
       ],
+      "keyPieces": [4097, 20482, 28689, 28690],
       "bonuses": [
         { "pieces": 2, "stats": [ { "stat": "ATT", "amount": 5 } ] },
         { "pieces": 3, "stats": [ { "stat": "ATT", "amount": 5 } ] },

@@ -269,6 +269,7 @@ EquipmentSet ReadSet(const json& j) {
       s.bonuses.push_back({b.at("pieces").get<int>(), ReadStatBonuses({{"statBonuses", b.at("stats")}})});
     }
   }
+  ReadDefault(j, "keyPieces", s.key_pieces);
   ReadDefault(j, "unsupported", s.unsupported);
   return s;
 }

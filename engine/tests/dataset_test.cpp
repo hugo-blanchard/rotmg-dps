@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <string>
+#include <vector>
 
 #include "fixture.hpp"
 #include "rotmg/dataset.hpp"
@@ -13,6 +14,8 @@ TEST_CASE("loads the small fixture dataset") {
   CHECK(d.classes[1].weapon_slot_type == 3);
   CHECK(d.classes[1].dexterity.max == 75);
   REQUIRE(d.weapons.size() == 4);
+  REQUIRE(d.sets.size() == 1);
+  CHECK(d.sets[0].key_pieces == std::vector<int>{4097, 20482, 28689, 28690});
 
   const rotmg::Weapon* sword = rotmg::FindWeapon(d, "Plain Sword");
   REQUIRE(sword != nullptr);

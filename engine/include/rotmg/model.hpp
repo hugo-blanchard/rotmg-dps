@@ -223,6 +223,9 @@ struct EquipmentSet {
   int type = 0;
   std::string name;
   std::vector<Piece> pieces;
+  /// The pieces whose own setType names the set. When there are any, the set
+  /// only counts while one of them is worn. Empty in older datasets.
+  std::vector<int> key_pieces;
   std::vector<Bonus> bonuses;
   std::vector<std::string> unsupported;
 };
