@@ -662,6 +662,8 @@ json ToJson(const BurstBreakdown& b, const BurstWindow& w) {
           {"weaponDamage", b.weapon_damage},
           {"abilityDamage", b.ability_damage},
           {"casts", b.casts},
+          {"windowCasts", b.window_casts},
+          {"paidCasts", b.paid_casts},
           {"assumptions", b.assumptions}};
 }
 
@@ -1004,6 +1006,14 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 //   {"done", "baseline", "evaluated", "builds"}
 // with "done" from 0 to 1, a rough guess, and the best builds so far.
 //
+// ExplainBuild takes the same request and returns, for the request's own
+// build in the units the search ranks by,
+//   {"ok": true, "score", "items": {"ability": <loss without it>, "armor", "ring"},
+//    "enchantments": {"weapon": [<loss without each>], ...},
+//    "stats": [{"stat", "perPoint"}], "burst"}
+// with null for a loss the engine can't work out, and "burst" only with a
+// burst window.
+//
 // EstimateOptimize takes the same request and returns
 //   {"ok": true, "evaluationS", "evaluations": [low, high], "seconds": [low, high]}
 // with how long one evaluation takes here and the range most searches like
@@ -1071,8 +1081,12 @@ json Estimate(const Dataset& d, const OptimizerProblem& problem, bool burst) {
   return {{"ok", true}, {"evaluationS", each}, {"evaluations", {low, high}}, {"seconds", {low * each, high * each}}};
 }
 
+// What RunOptimize does with the request: search, estimate how long a
+// search would take, or explain the request's own build.
+enum class Run { kSearch, kEstimate, kExplain };
+
 std::string RunOptimize(const Dataset& d, std::string_view request_json,
-                        const std::function<void(const std::string&)>& progress, bool estimate) {
+                        const std::function<void(const std::string&)>& progress, Run run) {
   try {
     json base = json::parse(request_json);
     const json opt = base.value("optimize", json::object());
@@ -1131,11 +1145,12 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
       start.items[i] = base.value(kSlots[i], std::string());
       if (locked.contains(kSlots[i]) || candidates[i].empty()) {
         problem.candidates[i] = {start.items[i]};
-      } else if (start.items[i].empty()) {
+      } else if (start.items[i].empty() && run != Run::kExplain) {
         start.items[i] = candidates[i].front();
       }
     }
-    if (mode == "keep") {
+    // A build explained is the request's own, enchantments and all.
+    if (mode == "keep" || run == Run::kExplain) {
       start.enchants[0] = base.value("enchantments", std::vector<std::string>{});
       const json gear = base.value("gearEnchantments", json::object());
       for (std::size_t i = 1; i < kSlots.size(); ++i) {
@@ -1245,8 +1260,51 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
       }
       return out;
     };
-    if (estimate) {
+    if (run == Run::kEstimate) {
       return Estimate(d, problem, burst.has_value()).dump();
+    }
+    if (run == Run::kExplain) {
+      // What the build scores, what it loses without each item but the
+      // weapon and each enchantment, and what a point of each stat adds,
+      // measured over 10 points since some effects grow in steps of 10.
+      const OptimizerBuild& b = problem.start;
+      const std::optional<double> score = problem.score(b, {});
+      if (!score) {
+        return Error("the build doesn't evaluate").dump();
+      }
+      const auto loss = [&](const OptimizerBuild& without) -> json {
+        const std::optional<double> s = problem.score(without, {});
+        return s ? json(*score - *s) : json(nullptr);
+      };
+      json items = json::object();
+      json enchants = json::object();
+      for (std::size_t i = 0; i < kSlots.size(); ++i) {
+        if (i > 0 && !b.items[i].empty()) {
+          OptimizerBuild without = b;
+          without.items[i].clear();
+          without.enchants[i].clear();
+          items[kSlots[i]] = loss(without);
+        }
+        enchants[kSlots[i]] = json::array();
+        for (std::size_t k = 0; k < b.enchants[i].size(); ++k) {
+          OptimizerBuild without = b;
+          without.enchants[i].erase(without.enchants[i].begin() + static_cast<std::ptrdiff_t>(k));
+          enchants[kSlots[i]].push_back(loss(without));
+        }
+      }
+      constexpr int kStep = 10;
+      json stats = json::array();
+      for (std::size_t i = 0; i < kOptimizerStats.size(); ++i) {
+        std::array<int, 8> extra{};
+        extra[i] = kStep;
+        const std::optional<double> s = problem.score(b, extra);
+        stats.push_back({{"stat", kOptimizerStats[i]}, {"perPoint", s ? (*s - *score) / kStep : 0}});
+      }
+      json out = {{"ok", true}, {"score", *score}, {"items", items}, {"enchantments", enchants}, {"stats", stats}};
+      if (const std::optional<Request> p = read(b, {}); p && burst) {
+        out["burst"] = ToJson(evaluate_burst(*p), *burst);
+      }
+      return out.dump();
     }
     if (progress) {
       problem.progress = [&](double done, const OptimizerResult& so_far) {
@@ -1279,14 +1337,21 @@ std::string Api::Optimize(std::string_view request_json,
   if (!dataset_) {
     return Error("no dataset loaded").dump();
   }
-  return RunOptimize(*dataset_, request_json, progress, false);
+  return RunOptimize(*dataset_, request_json, progress, Run::kSearch);
 }
 
 std::string Api::EstimateOptimize(std::string_view request_json) const {
   if (!dataset_) {
     return Error("no dataset loaded").dump();
   }
-  return RunOptimize(*dataset_, request_json, {}, true);
+  return RunOptimize(*dataset_, request_json, {}, Run::kEstimate);
+}
+
+std::string Api::ExplainBuild(std::string_view request_json) const {
+  if (!dataset_) {
+    return Error("no dataset loaded").dump();
+  }
+  return RunOptimize(*dataset_, request_json, {}, Run::kExplain);
 }
 
 }  // namespace rotmg

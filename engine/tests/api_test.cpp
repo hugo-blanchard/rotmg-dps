@@ -739,6 +739,29 @@ TEST_CASE("the optimizer's estimate is exact for a search that ends while it's t
   CHECK(json::parse(api.EstimateOptimize(R"({"weapon": "Plain Sword"})"))["ok"] == false);
 }
 
+TEST_CASE("explaining a build gives what each piece and stat point adds") {
+  rotmg::Api api = LoadedApi();
+  const std::string build = R"({"class": "Swordsman", "weapon": "Plain Sword", "ability": "Battle Seal",
+      "ring": "Plain Ring", "attack": 75, "dexterity": 50, "wisdom": 60, "hitModel": {"distance": 3})";
+  const json res = json::parse(api.ExplainBuild(build + "}"));
+  REQUIRE(res["ok"] == true);
+  const auto dps = [&](const std::string& extra) {
+    return json::parse(api.Evaluate(build + extra + "}"))["build"]["dps"].get<double>();
+  };
+  // The score is total DPS with a millionth of it again to break ties.
+  CHECK(res["score"].get<double>() == Catch::Approx(dps("") * (1 + 1e-6)));
+  CHECK(res["items"]["ring"].get<double>() ==
+        Catch::Approx((dps("") - dps(R"(, "ring": null)")) * (1 + 1e-6)));
+  CHECK_FALSE(res["items"].contains("weapon"));
+  CHECK_FALSE(res["items"].contains("armor"));
+  // ATT raises the sword's damage; the rest of the stats do nothing here.
+  const json& stats = res["stats"];
+  REQUIRE(stats.size() == 8);
+  CHECK(stats[0]["stat"] == "ATT");
+  CHECK(stats[0]["perPoint"].get<double>() > 0);
+  CHECK(stats[4]["perPoint"].get<double>() == Catch::Approx(0).margin(1e-9));
+}
+
 TEST_CASE("the optimizer works from a reskin or an unobtainable item you chose") {
   rotmg::Api api = LoadedApi();
   const auto optimize = [&](const std::string& extra) {

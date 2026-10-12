@@ -49,6 +49,10 @@ class Api {
   /// timing a fifth of a second of evaluations. Shapes are in api.cpp.
   std::string EstimateOptimize(std::string_view request_json) const;
 
+  /// What each item, enchantment and stat point adds to the request's own
+  /// build, scored as Optimize would. Shapes are in api.cpp.
+  std::string ExplainBuild(std::string_view request_json) const;
+
  private:
   std::optional<Dataset> dataset_;
   std::unique_ptr<Simulation> simulation_;

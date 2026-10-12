@@ -53,6 +53,11 @@ struct BurstBreakdown {
   /// Casts in a window, on average over many: a share of one when MP runs
   /// short.
   double casts = 0;
+  /// What limits them: how many fit in the window from a full pool of MP,
+  /// as the cooldown allows, and how many the MP regenerated between windows
+  /// pays for, -1 for an ability that costs none.
+  int window_casts = 0;
+  double paid_casts = -1;
   std::vector<std::string> assumptions;
 };
 

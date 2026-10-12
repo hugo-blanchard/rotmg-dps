@@ -289,8 +289,10 @@ BurstBreakdown EvaluateBurst(const Weapon& weapon, const Ability* ability, const
     const double max_mp = caster.With(ability->stat_bonuses).max_magic_points;
     casts = CastTimes(*a, max_mp, max_mp, length);
     average = static_cast<double>(casts.size());
+    out.window_casts = static_cast<int>(casts.size());
     if (a->mp_cost > 0) {
-      average = std::min(average, a->mp_per_second * window.every_s / a->mp_cost);
+      out.paid_casts = a->mp_per_second * window.every_s / a->mp_cost;
+      average = std::min(average, out.paid_casts);
     }
     out.assumptions.push_back(
         "the ability is cast as the window opens, its buffs up for the first volley, and again as soon as its "
