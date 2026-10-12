@@ -35,6 +35,8 @@ export interface Scenario {
   aim: number;
   targets: ScenarioTarget[];
   seed?: number;
+  /** Whether the MP bar starts full; empty shows the steady state. */
+  fullMp?: boolean;
 }
 
 export const targetMovements: { value: MovementKind; label: string }[] = [

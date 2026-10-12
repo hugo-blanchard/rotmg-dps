@@ -12,6 +12,9 @@
   --accent-wash: rgba(42, 120, 214, 0.1);
   --warn-bg: #fdf3dc;
   --warn-text: #6b4a00;
+  --poison: #3f9a2e;
+  --trap: #c26a12;
+  --blast: #d4a106;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   line-height: 1.5;
 }
@@ -31,6 +34,9 @@
     --accent-wash: rgba(57, 135, 229, 0.12);
     --warn-bg: #3a2e10;
     --warn-text: #f5d58a;
+    --poison: #67c24f;
+    --trap: #e88a2e;
+    --blast: #f0c419;
   }
 }
 

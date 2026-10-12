@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
-  import type { DatasetWeapon } from "./dataset";
+  import type { DatasetAbility, DatasetWeapon } from "./dataset";
   import type { Engine, EvaluateRequest, SimState } from "./engine";
   import {
     layOut,
@@ -17,19 +17,23 @@
     engine,
     request,
     weapon,
+    ability,
     className,
     sprites,
     expectedDps,
     expectedHits,
+    expectedAbilityDps,
   }: {
     engine: Engine;
     request: EvaluateRequest;
     weapon: DatasetWeapon;
+    ability?: DatasetAbility;
     className: string;
     sprites: Sprites | null;
     expectedDps: number;
     /** The breakdown's hits per volley, summed over subattacks. */
     expectedHits: number;
+    expectedAbilityDps?: number;
   } = $props();
 
   const height = 360;
@@ -53,14 +57,16 @@
   let playerMoves = $state<MovementKind>("still");
   let playerRange = $state(2);
   let seed = $state(1);
+  let fullMp = $state(true);
   const distance = $derived(request.hitModel?.distance ?? 4);
-  const scenario = $derived(
-    withMovement(
+  const scenario = $derived({
+    ...withMovement(
       layOut({ placement, count, spacing }, distance, request.hitModel?.radius ?? 0.5),
       { targets: targetsMove, targetSpeed, targetRange, player: playerMoves, playerRange, seed },
       distance,
     ),
-  );
+    fullMp,
+  });
 
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
   const fine = new Intl.NumberFormat("en", { maximumFractionDigits: 2 });
@@ -128,10 +134,14 @@
     advance(1000 / 60);
   }
 
-  // Projectile sprites by projectile id, from the weapon's projectile objects.
-  const projectileSprites = $derived(
+  // Projectile sizes by object id, for the weapon's shots and the ability's.
+  const projectileSizes = $derived(
     new Map(
-      (weapon.projectiles ?? []).map((p) => [p.id, { sprite: sprites?.index.projectiles[p.objectId], size: p.size }]),
+      [
+        ...(weapon.projectiles ?? []),
+        ...(ability?.projectiles ?? []),
+        ...(ability?.createdProjectiles ?? []).map((c) => c.projectile),
+      ].map((p) => [p.objectId, p.size ?? 100]),
     ),
   );
 
@@ -150,9 +160,11 @@
     const color = (name: string) => styles.getPropertyValue(name).trim();
     const { player, targets, aim } = sim;
 
-    // Fit the player, every target and a tile and a half of room around them.
+    // Fit the player, every target, what the ability leaves on the ground and
+    // a tile and a half of room around them.
     let [minX, maxX, minY, maxY] = bounds ?? [player.x, player.x, player.y, player.y];
-    for (const p of [{ x: player.x, y: player.y, radius: 0.5 }, ...targets]) {
+    const ground = sim.effects.filter((e) => e.kind !== "bolt");
+    for (const p of [{ x: player.x, y: player.y, radius: 0.5 }, ...targets, ...ground]) {
       minX = Math.min(minX, p.x - p.radius);
       maxX = Math.max(maxX, p.x + p.radius);
       minY = Math.min(minY, p.y - p.radius);
@@ -197,6 +209,36 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
+    const circle = (x: number, y: number, radius: number) => {
+      ctx.beginPath();
+      ctx.arc(sx(x), sy(y), radius * tile, 0, Math.PI * 2);
+    };
+
+    // What the ability left on the ground goes under everything else.
+    for (const e of sim.effects) {
+      if (e.kind === "poison") {
+        ctx.globalAlpha = 0.2;
+        ctx.fillStyle = color("--poison");
+        circle(e.x, e.y, e.radius);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = color("--poison");
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      } else if (e.kind === "trap") {
+        // The ring is how close a target has to come to set it off.
+        ctx.strokeStyle = color("--trap");
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash(e.armed ? [] : [4, 4]);
+        circle(e.x, e.y, e.radius);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = color("--trap");
+        circle(e.x, e.y, 0.15);
+        ctx.fill();
+      }
+    }
+
     const blit = (rect: Rect, x: number, y: number, size: number, rotation = 0) => {
       const scale = size / Math.max(rect[2], rect[3]);
       ctx.save();
@@ -226,11 +268,15 @@
         ctx.arc(sx(target.x), sy(target.y), target.radius * tile, 0, Math.PI * 2);
         ctx.stroke();
       }
+      ctx.font = `${Math.max(10, Math.min(14, tile * 0.35))}px sans-serif`;
+      ctx.textAlign = "center";
       if (targets.length > 1) {
         ctx.fillStyle = i === aim ? color("--accent") : color("--text-2");
-        ctx.font = `${Math.max(10, Math.min(14, tile * 0.35))}px sans-serif`;
-        ctx.textAlign = "center";
         ctx.fillText(i === aim ? `${i + 1} (aim)` : String(i + 1), sx(target.x), sy(target.y) - target.radius * tile - 4);
+      }
+      if (target.statuses.length) {
+        ctx.fillStyle = color("--text-2");
+        ctx.fillText(target.statuses.join(", "), sx(target.x), sy(target.y) + target.radius * tile + 14);
       }
     });
 
@@ -250,18 +296,44 @@
     // Shots. Headings are degrees from straight up, turning right; sprites
     // point right unless AngleCorrection turns them by 45 degree steps.
     for (const s of sim.shots) {
-      const info = projectileSprites.get(s.projectileId);
-      const size = tile * 0.8 * ((info?.size ?? 100) / 100);
-      if (info?.sprite) {
-        const spin = ((info.sprite.rotation ?? 0) * s.ageMs) / 1000;
-        const degrees = s.heading - 90 + (info.sprite.angleCorrection ?? 0) * 45 + spin;
-        blit(info.sprite.rect, sx(s.x), sy(s.y), size, (degrees * Math.PI) / 180);
+      const sprite = sprites?.index.projectiles[s.objectId];
+      const size = tile * 0.8 * ((projectileSizes.get(s.objectId) ?? 100) / 100);
+      if (sprite) {
+        const spin = ((sprite.rotation ?? 0) * s.ageMs) / 1000;
+        const degrees = s.heading - 90 + (sprite.angleCorrection ?? 0) * 45 + spin;
+        blit(sprite.rect, sx(s.x), sy(s.y), size, (degrees * Math.PI) / 180);
       } else {
-        ctx.fillStyle = color("--accent");
+        ctx.fillStyle = s.subattack < 0 ? color("--blast") : color("--accent");
         ctx.beginPath();
         ctx.arc(sx(s.x), sy(s.y), Math.max(2, size / 6), 0, Math.PI * 2);
         ctx.fill();
       }
+    }
+
+    // Blasts and lightning flash over the top.
+    for (const e of sim.effects) {
+      if (e.kind === "blast") {
+        ctx.strokeStyle = color("--blast");
+        ctx.lineWidth = 3;
+        circle(e.x, e.y, e.radius);
+        ctx.stroke();
+      } else if (e.kind === "bolt" && e.chain.length > 1) {
+        ctx.strokeStyle = color("--blast");
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(sx(e.chain[0].x), sy(e.chain[0].y));
+        for (const p of e.chain.slice(1)) {
+          ctx.lineTo(sx(p.x), sy(p.y));
+        }
+        ctx.stroke();
+      }
+    }
+
+    if (sim.statuses.length) {
+      ctx.fillStyle = color("--text-2");
+      ctx.font = `${Math.max(10, Math.min(14, tile * 0.35))}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.fillText(sim.statuses.join(", "), sx(player.x), sy(player.y) + tile * 0.5 + 14);
     }
   }
 
@@ -275,6 +347,7 @@
   const seconds = $derived(sim?.ok ? sim.timeMs / 1000 : 0);
   const measuredDps = $derived(sim?.ok && seconds > 0 ? sim.totals.damage / seconds : 0);
   const aimDps = $derived(sim?.ok && seconds > 0 ? (sim.targets[sim.aim]?.damage ?? 0) / seconds : 0);
+  const abilityDps = $derived(sim?.ok && seconds > 0 ? sim.ability.damage / seconds : 0);
   const measuredHits = $derived(
     sim?.ok
       ? sim.perSubattack.reduce((sum, c) => sum + (c.resolvedVolleys ? c.resolvedHits / c.resolvedVolleys : 0), 0)
@@ -285,9 +358,9 @@
 <section class="sim">
   <h2>Simulation</h2>
   <p class="hint">
-    The engine fires the weapon in real time, using the same motion as the hit estimate. With one dummy its numbers
-    settle on the weapon's numbers above; with more, shots that don't pierce stop at the first dummy in their way.
-    The ability isn't simulated.
+    The engine fires the weapon in real time, using the same motion as the hit estimate, and casts the ability at the
+    aimed dummy whenever MP allows. With one dummy the weapon's numbers settle on the ones above; with more, shots that
+    don't pierce stop at the first dummy in their way, and spells, poisons and lightning reach every dummy in range.
   </p>
   <div class="controls">
     <label>
@@ -367,7 +440,17 @@
     </label>
     <label><input type="checkbox" bind:checked={showHitbox} /> Hitbox</label>
     <label><input type="checkbox" bind:checked={showTrails} /> Trails</label>
+    {#if ability}
+      <label><input type="checkbox" bind:checked={fullMp} /> Start with full MP</label>
+    {/if}
   </div>
+  {#if ability && sim?.ok}
+    <div class="mp">
+      <span>MP</span>
+      <div class="bar"><div style:width="{(100 * sim.mp) / Math.max(1, sim.mpMax)}%"></div></div>
+      <span>{whole.format(sim.mp)} / {whole.format(sim.mpMax)}</span>
+    </div>
+  {/if}
   <div class="stage" bind:clientWidth={width}>
     <canvas
       bind:this={canvas}
@@ -402,6 +485,21 @@
           <dd>{whole.format(aimDps)}</dd>
         </div>
       {/if}
+      {#if ability}
+        <div>
+          <dt>{sim.targets.length > 1 ? "Ability DPS, all targets" : "Ability DPS"}</dt>
+          <dd>
+            {whole.format(abilityDps)}
+            {#if expectedAbilityDps !== undefined}
+              <span>engine {whole.format(expectedAbilityDps)} on one, in the long run</span>
+            {/if}
+          </dd>
+        </div>
+        <div>
+          <dt>Casts</dt>
+          <dd>{sim.ability.casts}</dd>
+        </div>
+      {/if}
     </dl>
     {#if sim.targets.length > 1}
       <div class="table-scroll">
@@ -413,6 +511,7 @@
               <th scope="col">DEF</th>
               <th scope="col">Hits</th>
               <th scope="col">DPS</th>
+              {#if ability}<th scope="col">Ability DPS</th>{/if}
             </tr>
           </thead>
           <tbody>
@@ -423,6 +522,7 @@
                 <td>{t.defense}</td>
                 <td>{t.hits}</td>
                 <td>{whole.format(seconds > 0 ? t.damage / seconds : 0)}</td>
+                {#if ability}<td>{whole.format(seconds > 0 ? t.abilityDamage / seconds : 0)}</td>{/if}
               </tr>
             {/each}
           </tbody>
@@ -489,6 +589,24 @@
   }
   .table-scroll {
     overflow-x: auto;
+  }
+  .mp {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .mp .bar {
+    flex: 0 1 12rem;
+    height: 0.5rem;
+    border-radius: 4px;
+    background: var(--grid);
+    overflow: hidden;
+  }
+  .mp .bar div {
+    height: 100%;
+    background: var(--accent);
   }
   table {
     border-collapse: collapse;

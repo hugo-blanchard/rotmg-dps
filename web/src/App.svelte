@@ -313,10 +313,12 @@
             {engine}
             {request}
             {weapon}
+            {ability}
             className={classId}
             {sprites}
             expectedDps={result.breakdown.subattacks.reduce((n, s) => n + s.dps, 0)}
             expectedHits={result.breakdown.subattacks.reduce((n, s) => n + s.hitsPerVolley, 0)}
+            expectedAbilityDps={result.ability?.dps}
           />
         </div>
       {/if}

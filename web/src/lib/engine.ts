@@ -154,8 +154,10 @@ export type EvaluateResponse =
   | { ok: false; error: string };
 
 export interface SimShot {
+  /** -1 for the ability's shots. */
   subattack: number;
   projectileId: number;
+  objectId: string;
   x: number;
   y: number;
   heading: number;
@@ -178,7 +180,21 @@ export interface SimTarget {
   radius: number;
   defense: number;
   hits: number;
+  /** All damage taken, the ability's included. */
   damage: number;
+  abilityDamage: number;
+  statuses: string[];
+}
+
+export interface SimEffect {
+  kind: "poison" | "trap" | "blast" | "bolt";
+  x: number;
+  y: number;
+  radius: number;
+  /** Traps: waiting for a target. */
+  armed: boolean;
+  /** Lightning: from the player through every target it struck. */
+  chain: { x: number; y: number }[];
 }
 
 export type SimState =
@@ -195,6 +211,12 @@ export type SimState =
       shots: SimShot[];
       totals: SimCounters;
       perSubattack: SimCounters[];
+      mp: number;
+      mpMax: number;
+      /** Statuses and stat boosts on the player now, like "Berserk". */
+      statuses: string[];
+      ability: { casts: number; hits: number; damage: number };
+      effects: SimEffect[];
     }
   | { ok: false; error: string };
 
