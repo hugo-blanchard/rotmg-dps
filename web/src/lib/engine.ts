@@ -230,6 +230,18 @@ export interface SimRun {
   effects: SimEffect[];
 }
 
+/** How one build did over many seeded runs; lists are sorted. */
+export interface Spread {
+  runs: number;
+  /** DPS counted up to the last kill. */
+  dps: number[];
+  /** Seconds, for the runs that killed every target. */
+  timeToKill: number[];
+  unfinished: number;
+}
+
+export type SpreadResponse = (Spread & { ok: true; compare?: Spread }) | { ok: false; error: string };
+
 export type SimState =
   | (SimRun & {
       ok: true;
@@ -242,7 +254,8 @@ type Message =
   | { kind: "load"; dataset: string }
   | { kind: "evaluate"; request: string }
   | { kind: "simStart"; request: string }
-  | { kind: "simAdvance"; ms: number };
+  | { kind: "simAdvance"; ms: number }
+  | { kind: "simMany"; request: string };
 
 export type WorkerRequest = Message & { id: number };
 
@@ -295,6 +308,15 @@ export class Engine {
       return { ok: false, error: res.error };
     }
     return JSON.parse(res.result!) as SimState;
+  }
+
+  /** Runs the request many times with random rolls; see Api::SimulateMany. */
+  async simulateMany(request: EvaluateRequest & { runs: number; seconds: number }): Promise<SpreadResponse> {
+    const res = await this.send({ kind: "simMany", request: JSON.stringify(request) });
+    if (res.error) {
+      return { ok: false, error: res.error };
+    }
+    return JSON.parse(res.result!) as SpreadResponse;
   }
 
   private send(message: Message) {

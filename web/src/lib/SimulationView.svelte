@@ -2,7 +2,7 @@
   import { onDestroy } from "svelte";
   import type { DatasetAbility, DatasetTarget, DatasetWeapon } from "./dataset";
   import TimeChart from "./TimeChart.svelte";
-  import type { Engine, EvaluateRequest, SimRun, SimState } from "./engine";
+  import type { Engine, EvaluateRequest, SimRun, SimState, Spread, SpreadResponse } from "./engine";
   import {
     layOut,
     placements,
@@ -86,13 +86,49 @@
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
   const fine = new Intl.NumberFormat("en", { maximumFractionDigits: 2 });
 
+  const simRequest = () => ({
+    ...$state.snapshot(request),
+    scenario: $state.snapshot(scenario),
+    compare: pinned ? $state.snapshot(pinned.request) : undefined,
+  });
+
+  // Many seeded runs of the same fight, for how much results vary.
+  const manyRuns = 100;
+  let spread = $state<SpreadResponse | null>(null);
+  let spreading = $state(false);
+  // Bumped on every restart, so runs for a build that's since changed are dropped.
+  let spreadTicket = 0;
+  async function runMany() {
+    const ticket = ++spreadTicket;
+    spreading = true;
+    // Dummies that can't die would run the whole time; half a minute is plenty.
+    const seconds = targetHp > 0 ? 120 : 30;
+    const result = await engine.simulateMany({ ...simRequest(), runs: manyRuns, seconds });
+    if (ticket === spreadTicket) {
+      spread = result;
+      spreading = false;
+    }
+  }
+  // The value a share of the way through a sorted list.
+  const at = (sorted: number[], share: number) => sorted[Math.min(sorted.length - 1, Math.floor(share * sorted.length))];
+  function describe(s: Spread) {
+    const kill = s.timeToKill.length
+      ? `kills everything in ${fine.format(at(s.timeToKill, 0.5))} s typically, ` +
+        `${fine.format(at(s.timeToKill, 0.1))} to ${fine.format(at(s.timeToKill, 0.9))} s in most runs` +
+        (s.unfinished ? `, and not within 2 minutes in ${s.unfinished}` : "")
+      : "";
+    const dps =
+      `${whole.format(at(s.dps, 0.5))} DPS typically, ` +
+      `${whole.format(at(s.dps, 0.1))} to ${whole.format(at(s.dps, 0.9))} in most runs`;
+    return kill ? `${kill}; ${dps}` : dps;
+  }
+
   // Restart whenever the build, the targets or the distance changes.
   $effect(() => {
-    const r = {
-      ...$state.snapshot(request),
-      scenario: $state.snapshot(scenario),
-      compare: pinned ? $state.snapshot(pinned.request) : undefined,
-    };
+    const r = simRequest();
+    spread = null;
+    spreading = false;
+    spreadTicket++;
     engine.startSimulation(r).then((e) => {
       error = e;
       sim = null;
@@ -674,6 +710,22 @@
         {/if}
       {/if}
     </dl>
+    <div class="controls">
+      <button type="button" onclick={runMany} disabled={spreading}>
+        {spreading ? "Running…" : `Run it ${manyRuns} times`}
+      </button>
+      <span class="hint">with random rolls, each from its own seed</span>
+    </div>
+    {#if spread && !spread.ok}
+      <p role="alert">{spread.error}</p>
+    {:else if spread}
+      <ul class="spread">
+        <li><strong>{pinned ? "This build" : "Over " + spread.runs + " runs"}</strong>: {describe(spread)}.</li>
+        {#if spread.compare && pinned}
+          <li><strong>{pinned.label}</strong>: {describe(spread.compare)}.</li>
+        {/if}
+      </ul>
+    {/if}
     {#if sim.compare && pinned}
       {@const mine = runSummary(sim)}
       {@const theirs = runSummary(sim.compare)}
@@ -830,6 +882,11 @@
   }
   .table-scroll {
     overflow-x: auto;
+  }
+  .spread {
+    margin: 0;
+    padding-left: 1.2rem;
+    font-size: 0.9rem;
   }
   .mp {
     display: flex;

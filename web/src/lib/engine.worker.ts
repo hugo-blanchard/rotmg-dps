@@ -8,6 +8,7 @@ interface Api {
   evaluate(requestJson: string): string;
   startSimulation(requestJson: string): string;
   advanceSimulation(ms: number): string;
+  simulateMany(requestJson: string): string;
 }
 
 // The worker global isn't in the DOM typings this project compiles against.
@@ -41,6 +42,9 @@ scope.onmessage = async (e) => {
         break;
       case "simAdvance":
         scope.postMessage({ id: message.id, result: engine.advanceSimulation(message.ms) });
+        break;
+      case "simMany":
+        scope.postMessage({ id: message.id, result: engine.simulateMany(message.request) });
         break;
     }
   } catch (err) {
