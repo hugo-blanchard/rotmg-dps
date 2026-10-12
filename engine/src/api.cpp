@@ -360,6 +360,35 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
     r.enchanted = std::make_shared<const Weapon>(std::move(en.weapon));
     r.weapon = r.enchanted.get();
   }
+  // The other gear's on-shoot effects go off as the weapon fires, like its
+  // own, and some create their projectiles.
+  const auto join = [&](const std::vector<Activate>& on_shoot, const std::map<int, Projectile>& created,
+                        const Ability* own) {
+    if (on_shoot.empty() || r.weapon == nullptr) {
+      return;
+    }
+    Weapon w = *r.weapon;
+    for (Activate a : on_shoot) {
+      // An ability's shots without a `type` are its own projectile, which
+      // the weapon knows by the ability's type.
+      if (own != nullptr && a.Text("type").empty() && !own->projectiles.empty()) {
+        a.params["type"] = std::to_string(own->type);
+        w.created_projectiles.emplace(own->type, own->projectiles[0]);
+      }
+      w.on_shoot.push_back(std::move(a));
+    }
+    w.created_projectiles.insert(created.begin(), created.end());
+    r.enchanted = std::make_shared<const Weapon>(std::move(w));
+    r.weapon = r.enchanted.get();
+  };
+  if (r.ability != nullptr) {
+    join(r.ability->on_shoot, r.ability->created_projectiles, r.ability);
+  }
+  for (const Gear* g : {r.armor, r.ring}) {
+    if (g != nullptr) {
+      join(g->on_shoot, g->created_projectiles, nullptr);
+    }
+  }
   return r;
 }
 

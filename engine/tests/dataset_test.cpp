@@ -74,7 +74,7 @@ TEST_CASE("loads armor, rings and the slots classes wear them in") {
   const rotmg::Dataset d = LoadSmallDataset();
   CHECK(d.classes[0].armor_slot_type == 7);
   CHECK(d.classes[0].ring_slot_type == 9);
-  REQUIRE(d.armors.size() == 1);
+  REQUIRE(d.armors.size() == 2);
   REQUIRE(d.rings.size() == 3);
   const rotmg::Gear* ring = rotmg::FindGear(d.rings, "Plain Ring");
   REQUIRE(ring != nullptr);

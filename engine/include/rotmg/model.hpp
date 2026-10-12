@@ -148,8 +148,10 @@ struct Ability {
   std::vector<Projectile> projectiles;
   std::vector<Subattack> subattacks;
   std::vector<Activate> activates;
-  /// Projectiles of other items, by type, that activates name in their
-  /// `type` parameter.
+  /// OnPlayerShootActivate effects, which go off as the weapon fires.
+  std::vector<Activate> on_shoot;
+  /// Projectiles of other items, by type, that activates and other effects
+  /// name in their `type` parameter.
   std::map<int, Projectile> created_projectiles;
   std::vector<std::string> labels;
   Enchanting enchanting;
@@ -223,6 +225,10 @@ struct Gear {
   std::vector<StatBonus> stat_bonuses;
   /// What enchantments match against.
   std::vector<std::string> labels;
+  /// OnPlayerShootActivate effects, which go off as the weapon fires.
+  std::vector<Activate> on_shoot;
+  /// Projectiles of other items, by type, that the effects name.
+  std::map<int, Projectile> created_projectiles;
   Enchanting enchanting;
   std::string reskin_of;
   std::vector<std::string> unsupported;

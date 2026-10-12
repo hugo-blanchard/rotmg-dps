@@ -849,6 +849,24 @@
         { "stat": "ATT", "amount": 4 }
       ],
       "labels": ["EQUIPMENT", "ARMOR", "TIERED"]
+    },
+    {
+      "type": 28693,
+      "id": "Spark Coat",
+      "name": "Spark Coat",
+      "slotType": 14,
+      "texture": { "file": "exampleSheet", "index": 84 },
+      "statBonuses": [{ "stat": "DEF", "amount": 8 }],
+      "labels": ["EQUIPMENT", "ARMOR", "UT"],
+      "onShoot": [
+        { "type": "BulletCreate",
+          "params": { "proc": 1, "cooldown": 2, "numShots": 2, "targetMouse": true, "type": "0x3012" } }
+      ],
+      "createdProjectiles": [
+        { "type": 12306,
+          "projectile": { "id": 0, "objectId": "Example Coat Spark", "speed": 160, "minDamage": 40, "maxDamage": 50,
+                          "lifetimeMs": 400 } }
+      ]
     }
   ],
   "rings": [

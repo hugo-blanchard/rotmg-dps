@@ -524,6 +524,26 @@ TEST_CASE("an Alien boost only goes off with Alien gear on") {
   CHECK(uptimes(R"("Plain Mail")")[0]["amount"] == 10);
 }
 
+TEST_CASE("the armor's on-shoot effects go off as the weapon fires") {
+  rotmg::Api api = LoadedApi();
+  const std::string sword = R"({"weapon": "Plain Sword", "attack": 50, "dexterity": 50, "hitModel": {"distance": 3})";
+  const json plain = json::parse(api.Evaluate(sword + "}"));
+  const json coat = json::parse(api.Evaluate(sword + R"(, "armor": "Spark Coat"})"));
+  REQUIRE(coat["ok"] == true);
+  // Two 40-49 sparks every 2 seconds, rounded up to whole shots.
+  REQUIRE(coat["breakdown"]["procs"].size() == 1);
+  const json& sparks = coat["breakdown"]["procs"][0];
+  CHECK(sparks["name"] == "Extra shots (Example Coat Spark)");
+  CHECK(sparks["damage"].get<double>() == Catch::Approx(2 * 44.5));
+  CHECK(coat["build"]["dps"].get<double>() ==
+        Catch::Approx(plain["build"]["dps"].get<double>() + sparks["dps"].get<double>()));
+
+  // The simulation fires them too.
+  REQUIRE(api.StartSimulation(sword + R"(, "armor": "Spark Coat"})").empty());
+  const json state = json::parse(api.AdvanceSimulation(5000));
+  CHECK(state["procs"]["activations"].get<int>() >= 2);
+}
+
 TEST_CASE("the optimizer finds the build with the most DPS") {
   rotmg::Api api = LoadedApi();
   const std::string start = R"({"class": "Swordsman", "weapon": "Plain Sword", "ability": "Plain Spell",
