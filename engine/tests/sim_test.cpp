@@ -1,6 +1,9 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
+#include <numbers>
+
 #include "fixture.hpp"
 #include "rotmg/hits.hpp"
 #include "rotmg/sim.hpp"
@@ -96,4 +99,76 @@ TEST_CASE("shots that don't pierce disappear when they hit") {
   sim.Advance(20);
   CHECK(sim.Totals().hits == 1);
   CHECK(sim.Shots().empty());
+}
+
+TEST_CASE("turning or moving the scene doesn't change what lands") {
+  // The same shot at a target to the side, behind, or with the player
+  // elsewhere hits exactly as straight ahead from the origin does.
+  for (const char* name : kWeapons) {
+    const rotmg::Weapon& w = Weapon(name);
+    for (double distance : {1.5, 3.0, 6.0}) {
+      for (double degrees : {90.0, 180.0, 233.0}) {
+        const double a = degrees * std::numbers::pi / 180;
+        const rotmg::Point player{2, -1};
+        const rotmg::Scenario scenario{
+            player, {{{player.x + distance * std::sin(a), player.y + distance * std::cos(a)}, 0.5, {}}}, 0};
+        Simulation sim(w, {.attack = 50, .dexterity = 50}, scenario);
+        sim.Advance(10'000);
+        for (std::size_t i = 0; i < w.subattacks.size(); ++i) {
+          const auto& c = sim.PerSubattack()[i];
+          INFO(name << ", subattack " << i + 1 << ", " << distance << " tiles at " << degrees << " degrees");
+          CHECK(c.resolved_hits == rotmg::HitsPerVolley(w, w.subattacks[i], distance, 0.5) * c.resolved_volleys);
+        }
+      }
+    }
+  }
+}
+
+namespace {
+
+// One straight shot a volley, 10 tiles/s for 1 s.
+rotmg::Weapon Lance(bool pierces) {
+  rotmg::Weapon w;
+  rotmg::Projectile p;
+  p.speed = 100;
+  p.lifetime_ms = 1000;
+  p.min_damage = 100;
+  p.max_damage = 101;
+  p.multi_hit = pierces;
+  w.projectiles.push_back(p);
+  w.subattacks.push_back(rotmg::Subattack{});
+  return w;
+}
+
+}  // namespace
+
+TEST_CASE("a shot that doesn't pierce stops at the first target in its way") {
+  // Two dummies in a line; the player aims at the far one.
+  const rotmg::Scenario line{{0, 0}, {{{0, 2}, 0.5, {}}, {{0, 5}, 0.5, {}}}, 1};
+  for (bool pierces : {false, true}) {
+    Simulation sim(Lance(pierces), {.attack = 25, .dexterity = 0}, line);
+    sim.Advance(10'000);
+    const auto& near = sim.PerTarget()[0];
+    const auto& far = sim.PerTarget()[1];
+    INFO((pierces ? "piercing" : "not piercing"));
+    // Every volley reaches the near dummy, counting the one still flying.
+    CHECK(near.hits >= sim.Totals().resolved_volleys);
+    CHECK(near.hits <= sim.Totals().volleys);
+    if (pierces) {
+      CHECK(far.hits >= sim.Totals().resolved_volleys);
+    } else {
+      CHECK(far.hits == 0);
+    }
+  }
+}
+
+TEST_CASE("each target takes damage through its own DEF") {
+  // A piercing shot through two dummies, the far one with 50 DEF: 100
+  // damage at 1x becomes 50 on it.
+  const rotmg::Scenario line{{0, 0}, {{{0, 2}, 0.5, {}}, {{0, 5}, 0.5, {.defense = 50}}}, 1};
+  Simulation sim(Lance(true), {.attack = 25, .dexterity = 0}, line);
+  sim.Advance(10'000);
+  REQUIRE(sim.PerTarget()[1].hits > 0);
+  CHECK(sim.PerTarget()[0].damage / sim.PerTarget()[0].hits == Catch::Approx(100));
+  CHECK(sim.PerTarget()[1].damage / sim.PerTarget()[1].hits == Catch::Approx(50));
 }

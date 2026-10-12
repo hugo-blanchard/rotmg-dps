@@ -348,3 +348,21 @@ TEST_CASE("a class that isn't a string is the same as none") {
   CHECK(res["breakdown"]["unsupported"].back() == "relative stat bonuses, which need the class");
 }
 
+
+TEST_CASE("a simulation can have several targets") {
+  rotmg::Api api = LoadedApi();
+  REQUIRE(api.StartSimulation(R"({"weapon": "Plain Sword", "attack": 50, "dexterity": 50,
+      "scenario": {"player": {"x": 1, "y": 0}, "aim": 1,
+                   "targets": [{"x": 1, "y": 1.5}, {"x": 1, "y": 3, "defense": 40}]}})")
+              .empty());
+  const json state = json::parse(api.AdvanceSimulation(5000));
+  REQUIRE(state["ok"] == true);
+  CHECK(state["player"] == json::parse(R"({"x": 1.0, "y": 0.0})"));
+  CHECK(state["aim"] == 1);
+  REQUIRE(state["targets"].size() == 2);
+  CHECK(state["targets"][1]["defense"] == 40);
+  // The sword's shots stop at the near dummy before reaching the one aimed at.
+  CHECK(state["targets"][0]["hits"].get<int>() > 0);
+  CHECK(state["targets"][1]["hits"] == 0);
+  CHECK_FALSE(api.StartSimulation(R"({"weapon": "Plain Sword", "scenario": {"targets": []}})").empty());
+}

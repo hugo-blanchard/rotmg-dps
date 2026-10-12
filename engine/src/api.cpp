@@ -312,6 +312,39 @@ json ToJson(const WornSet& s) {
           {"unsupported", s.set->unsupported}};
 }
 
+json ToJson(Point p) {
+  return {{"x", p.x}, {"y", p.y}};
+}
+
+// The simulation's scene. Without "scenario" it's one target straight ahead
+// at the hit model's distance. Targets take the request's target statuses
+// and DEF unless they set their own.
+Scenario ReadScenario(const json& req, const Request& r) {
+  const double radius = r.assumptions.target_radius;
+  auto it = req.find("scenario");
+  if (it == req.end()) {
+    return {{0, 0}, {{{0, r.assumptions.distance.value_or(4.0)}, radius, r.target}}, 0};
+  }
+  Scenario s;
+  if (auto p = it->find("player"); p != it->end()) {
+    s.player = {p->value("x", 0.0), p->value("y", 0.0)};
+  }
+  for (const json& t : it->at("targets")) {
+    SimTarget target{{t.at("x").get<double>(), t.at("y").get<double>()}, t.value("radius", radius), r.target};
+    target.target.defense = t.value("defense", r.target.defense);
+    target.target.armored = t.value("armored", r.target.armored);
+    target.target.armor_broken = t.value("armorBroken", r.target.armor_broken);
+    target.target.exposed = t.value("exposed", r.target.exposed);
+    target.target.cursed = t.value("cursed", r.target.cursed);
+    s.targets.push_back(target);
+  }
+  if (s.targets.empty()) {
+    throw std::runtime_error("a scenario needs at least one target");
+  }
+  s.aim = std::min(it->value("aim", std::size_t{0}), s.targets.size() - 1);
+  return s;
+}
+
 json ToJson(const Simulation::Counters& c) {
   return {{"volleys", c.volleys},
           {"projectiles", c.projectiles},
@@ -418,16 +451,22 @@ std::string Api::StartSimulation(std::string_view request_json) {
     }
     // The ability isn't simulated, but its stat bonuses are part of the build.
     const Character character = r.ability ? r.character.With(r.ability->stat_bonuses) : r.character;
-    simulation_ = std::make_unique<Simulation>(*r.weapon, character, r.target, r.assumptions.distance.value_or(4.0),
-                                               r.assumptions.target_radius);
+    simulation_ = std::make_unique<Simulation>(*r.weapon, character, ReadScenario(req, r));
     return "";
   } catch (const std::exception& e) {
     return std::string("bad request: ") + e.what();
   }
 }
 
+// A simulation request is an evaluate request plus, optionally,
+//   "scenario": {"player": {"x", "y"}, "aim": 0,
+//                "targets": [{"x", "y", "radius", "defense", "armored", ...}]}
+// in tiles, with +y the way the player faces at the start.
+//
 // State:
-//   {"ok": true, "timeMs", "target": {"x", "y", "radius"},
+//   {"ok": true, "timeMs", "player": {"x", "y"}, "aim",
+//    "target": {"x", "y", "radius"} (the aim target),
+//    "targets": [{"x", "y", "radius", "defense", "hits", "damage"}],
 //    "shots": [{"subattack", "projectileId", "x", "y", "heading", "ageMs", "hit"}],
 //    "totals": {...}, "perSubattack": [{...}]}
 // with counters {"volleys", "projectiles", "hits", "damage",
@@ -452,9 +491,20 @@ std::string Api::AdvanceSimulation(double ms) {
     per.push_back(ToJson(c));
   }
   const Point target = simulation_->TargetCenter();
+  const Scenario& world = simulation_->World();
+  json targets = json::array();
+  for (std::size_t i = 0; i < world.targets.size(); ++i) {
+    const SimTarget& t = world.targets[i];
+    const Simulation::TargetCounters& c = simulation_->PerTarget()[i];
+    targets.push_back({{"x", t.position.x}, {"y", t.position.y}, {"radius", t.radius},
+                       {"defense", t.target.defense}, {"hits", c.hits}, {"damage", c.damage}});
+  }
   return json{{"ok", true},
               {"timeMs", simulation_->TimeMs()},
+              {"player", ToJson(world.player)},
               {"target", {{"x", target.x}, {"y", target.y}, {"radius", simulation_->Radius()}}},
+              {"aim", world.aim},
+              {"targets", targets},
               {"shots", shots},
               {"totals", ToJson(simulation_->Totals())},
               {"perSubattack", per}}
