@@ -196,15 +196,7 @@
       const query = new URLSearchParams(location.search);
       advanced = query.get("view") === "advanced";
       tab = query.get("tab") === "simulation" ? "simulation" : "numbers";
-      const [length, every] = (query.get("burst") ?? "").split(",").map(Number);
-      if (isBurstWindow({ window: length, every })) {
-        burst = { window: length, every };
-      }
-      simOptions = simFromQuery(location.search);
-      const linked = fromQuery(location.search, d);
-      if (linked) {
-        ({ classId, items, enchants, status, target, distance, radius } = linked);
-      } else {
+      if (!open(location.search, d)) {
         const start = d.classes.find((c) => c.id === "Wizard") ?? d.classes[0];
         classId = start.id;
         items = Object.fromEntries(
@@ -220,16 +212,36 @@
     }
   });
 
-  // Keep the URL on the current build and view, so it can be shared.
-  $effect(() => {
-    if (!dataset || !items.weapon) {
-      return;
+  // Sets the build, scene and burst window from a link's query. False if
+  // it names no build.
+  function open(search: string, d: Dataset): boolean {
+    const query = new URLSearchParams(search);
+    const [length, every] = (query.get("burst") ?? "").split(",").map(Number);
+    burst = isBurstWindow({ window: length, every }) ? { window: length, every } : { ...defaultBurst };
+    simOptions = simFromQuery(search);
+    const linked = fromQuery(search, d);
+    if (linked) {
+      ({ classId, items, enchants, status, target, distance, radius } = linked);
     }
+    return !!linked;
+  }
+
+  // The build, scene and burst window as a link's query.
+  const buildLink = $derived.by(() => {
     const q = new URLSearchParams(toQuery({ classId, items, enchants, status, target, distance, radius }));
     simToQuery(simOptions, q);
     if (burst.window !== defaultBurst.window || burst.every !== defaultBurst.every) {
       q.set("burst", `${burst.window},${burst.every}`);
     }
+    return q.toString();
+  });
+
+  // Keep the URL on the current build and view, so it can be shared.
+  $effect(() => {
+    if (!dataset || !items.weapon) {
+      return;
+    }
+    const q = new URLSearchParams(buildLink);
     if (advanced) q.set("view", "advanced");
     if (tab === "simulation") q.set("tab", "simulation");
     history.replaceState(null, "", `${location.pathname}?${q}`);
@@ -295,6 +307,9 @@
       bind:distance
       bind:radius
       bind:burst
+      link={buildLink}
+      dps={result?.build.dps}
+      onopen={(link) => dataset && open(link, dataset)}
     />
     <div class="results" bind:this={resultsEl}>
       <div class="tabs" role="tablist" aria-label="Results">
