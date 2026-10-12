@@ -1055,7 +1055,9 @@ json Estimate(const Dataset& d, const OptimizerProblem& problem, bool burst) {
     return Error("the build to start from doesn't evaluate");
   } catch (const Enough&) {
   }
-  constexpr double kLaterCost = 1.3;
+  // On several threads the search's first moment is the busiest, so an
+  // evaluation costs about twice as much over the whole search as in it.
+  constexpr double kLaterCost = 2.0;
   const double each = kLaterCost * since() / static_cast<double>(std::max(1L, evaluated));
 
   double low = 140000;
