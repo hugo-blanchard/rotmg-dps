@@ -90,8 +90,8 @@
     const invulnerable =
       options.invulnerableEvery > 0 ? { every: options.invulnerableEvery, for: options.invulnerableFor } : undefined;
     const targets = s.targets.map((t) => ({ ...t, hp: targetHp > 0 ? targetHp : undefined, invulnerable }));
-    const { fullMp, respawn, randomRolls } = options;
-    return { ...s, targets, fullMp, respawn, randomRolls };
+    const { fullMp, respawn, randomRolls, lead } = options;
+    return { ...s, targets, fullMp, respawn, randomRolls, lead };
   });
 
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
@@ -578,6 +578,9 @@
     {/if}
     {#if options.targets === "wander"}
       <button type="button" onclick={() => (options.seed += 1)}>New route</button>
+    {/if}
+    {#if options.targets !== "still"}
+      <label><input type="checkbox" bind:checked={options.lead} /> Lead your shots</label>
     {/if}
   </div>
   <div class="controls">

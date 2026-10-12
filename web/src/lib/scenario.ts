@@ -45,6 +45,8 @@ export interface Scenario {
   respawn?: boolean;
   /** Roll damage and proc chances instead of using averages. */
   randomRolls?: boolean;
+  /** Aim where a moving target will be when the shot gets there. */
+  lead?: boolean;
 }
 
 export const targetMovements: { value: MovementKind; label: string }[] = [
@@ -178,6 +180,7 @@ export interface SimOptions extends PlacementOptions, MovementOptions {
   /** Seconds between invulnerable windows, 0 for none, and how long each lasts. */
   invulnerableEvery: number;
   invulnerableFor: number;
+  lead: boolean;
 }
 
 export const defaultSimOptions: SimOptions = {
@@ -197,6 +200,7 @@ export const defaultSimOptions: SimOptions = {
   randomRolls: false,
   invulnerableEvery: 0,
   invulnerableFor: 2,
+  lead: false,
 };
 
 // Short names in the link. Only options that differ from the defaults are
@@ -218,6 +222,7 @@ const queryKeys: Record<keyof SimOptions, string> = {
   randomRolls: "rolls",
   invulnerableEvery: "inv",
   invulnerableFor: "invfor",
+  lead: "lead",
 };
 
 export function simToQuery(options: SimOptions, q: URLSearchParams): void {
