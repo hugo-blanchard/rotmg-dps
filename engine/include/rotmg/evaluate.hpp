@@ -130,4 +130,9 @@ std::vector<ChanceBoost> ChanceBoosts(const Weapon& weapon, const std::vector<in
 Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const Target& target,
                          const Assumptions& assumptions = {});
 
+/// EvaluateWeapon's DPS alone, without building the breakdown, which is
+/// most of the work.
+double EvaluateWeaponDps(const Weapon& weapon, const Character& character, const Target& target,
+                         const Assumptions& assumptions = {});
+
 }  // namespace rotmg

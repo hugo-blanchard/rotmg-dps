@@ -172,10 +172,17 @@ Character Character::With(const std::vector<StatBonus>& bonuses) const {
   return out;
 }
 
-Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const Target& target,
-                         const Assumptions& assumptions) {
+namespace {
+
+// The weapon's DPS and, with `details`, everything that explains it. The
+// optimizer and the buff windows of a build only need the DPS, and building
+// the explanation's text takes most of the time.
+Breakdown Evaluate(const Weapon& weapon, const Character& character, const Target& target,
+                   const Assumptions& assumptions, bool details) {
   Breakdown out;
-  out.unsupported = weapon.unsupported;
+  if (details) {
+    out.unsupported = weapon.unsupported;
+  }
 
   const std::vector<StatBonus> while_shooting = WhileShooting(weapon);
   bool unmodelled_on_shoot = false;
@@ -190,7 +197,8 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
       unmodelled_on_shoot = true;
     }
   }
-  if (unmodelled_on_shoot && std::ranges::find(out.unsupported, "OnPlayerShootActivate") == out.unsupported.end()) {
+  if (details && unmodelled_on_shoot &&
+      std::ranges::find(out.unsupported, "OnPlayerShootActivate") == out.unsupported.end()) {
     out.unsupported.push_back("OnPlayerShootActivate");
   }
 
@@ -198,20 +206,23 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
   const int attack = geared.attack;
   const int dexterity = geared.dexterity;
   const Multiplier multiplier = WithDamageBonus(DamageMultiplier(attack, character.status), weapon.damage_bonus);
-  for (const StatBonus& b : while_shooting) {
+  if (details) {
+    for (const StatBonus& b : while_shooting) {
+      out.terms.push_back({b.stat + " change while shooting", static_cast<double>(b.amount), Source::kClientData,
+                           "weapon on-shoot effect"});
+    }
+    if (!while_shooting.empty()) {
+      out.assumptions.push_back("you're in combat, so on-shoot stat changes that need it stay up while you fire");
+    }
+    out.terms.push_back({"ATT with weapon", static_cast<double>(attack), Source::kClientData, "weapon stat bonuses"});
     out.terms.push_back(
-        {b.stat + " change while shooting", static_cast<double>(b.amount), Source::kClientData, "weapon on-shoot effect"});
+        {"DEX with weapon", static_cast<double>(dexterity), Source::kClientData, "weapon stat bonuses"});
+    out.terms.push_back({"Damage multiplier", multiplier.Value(), Source::kWiki, "RealmEye: Character Stats"});
+    out.terms.push_back({"Attacks per second", AttacksPerSecond(dexterity, character.status), Source::kWiki,
+                         "RealmEye: Character Stats"});
+    out.terms.push_back({"Target DEF", static_cast<double>(EffectiveDefense(target, false)), Source::kWiki,
+                         "RealmEye: Status Effects"});
   }
-  if (!while_shooting.empty()) {
-    out.assumptions.push_back("you're in combat, so on-shoot stat changes that need it stay up while you fire");
-  }
-  out.terms.push_back({"ATT with weapon", static_cast<double>(attack), Source::kClientData, "weapon stat bonuses"});
-  out.terms.push_back({"DEX with weapon", static_cast<double>(dexterity), Source::kClientData, "weapon stat bonuses"});
-  out.terms.push_back({"Damage multiplier", multiplier.Value(), Source::kWiki, "RealmEye: Character Stats"});
-  out.terms.push_back({"Attacks per second", AttacksPerSecond(dexterity, character.status), Source::kWiki,
-                       "RealmEye: Character Stats"});
-  out.terms.push_back({"Target DEF", static_cast<double>(EffectiveDefense(target, false)), Source::kWiki,
-                       "RealmEye: Status Effects"});
 
   const std::vector<std::string> gaps = HitModelGaps(weapon);
   const bool estimate = assumptions.distance.has_value() && gaps.empty();
@@ -275,10 +286,12 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
     p.dps = p.per_second * p.damage;
     p.reference = "RealmEye: Poisons";
     out.dps += p.dps;
-    out.procs.push_back(p);
-    out.assumptions.push_back("the target is inside every poison burst");
-    if (target.cursed) {
-      out.assumptions.push_back("Curse adds 25% to poison damage too");
+    if (details) {
+      out.procs.push_back(p);
+      out.assumptions.push_back("the target is inside every poison burst");
+      if (target.cursed) {
+        out.assumptions.push_back("Curse adds 25% to poison damage too");
+      }
     }
   }
 
@@ -300,6 +313,11 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
     const int count = static_cast<int>(a.Number("numShots").value_or(1)) + StatModCount(a, "statModNumShots", geared);
     const double each = ExpectedAbilityDamage(p.min_damage, p.max_damage - 1, StatModBonus(a, "statModDamage", geared),
                                               target, p.armor_piercing);
+    out.dps += shots_per_second / shots_between * count * each;
+    any_shots = true;
+    if (!details) {
+      continue;
+    }
     const std::string name = "Extra shots (" + p.object_id + ")";
     auto row = std::ranges::find_if(out.procs, [&](const ProcResult& r) {
       return r.name == name && r.per_second == shots_per_second / shots_between;
@@ -310,8 +328,9 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
     }
     row->damage += count * each;
     row->dps = row->per_second * row->damage;
-    out.dps += row->per_second * count * each;
-    any_shots = true;
+  }
+  if (!details) {
+    return out;
   }
   if (any_shots) {
     out.assumptions.push_back("extra shots made at the cursor pass through the target, so every one hits");
@@ -356,6 +375,18 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
     out.assumptions.push_back("Berserk multiplies burst delay by 0.67");
   }
   return out;
+}
+
+}  // namespace
+
+Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const Target& target,
+                         const Assumptions& assumptions) {
+  return Evaluate(weapon, character, target, assumptions, true);
+}
+
+double EvaluateWeaponDps(const Weapon& weapon, const Character& character, const Target& target,
+                         const Assumptions& assumptions) {
+  return Evaluate(weapon, character, target, assumptions, false).dps;
 }
 
 }  // namespace rotmg

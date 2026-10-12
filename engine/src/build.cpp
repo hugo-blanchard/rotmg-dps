@@ -26,7 +26,7 @@ double WeaponDps(const Weapon& weapon, Character character, Target target, const
       character.status.dazed |= b->effect == "Dazed";
     }
   }
-  return EvaluateWeapon(weapon, character, target, assumptions).dps;
+  return EvaluateWeaponDps(weapon, character, target, assumptions);
 }
 
 // The weapon's DPS averaged over its chance boosts being up or not, each on
