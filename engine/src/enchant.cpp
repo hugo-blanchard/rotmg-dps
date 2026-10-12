@@ -85,12 +85,16 @@ std::vector<StatBonus> RelativeBonuses(const std::vector<Enchanted::Relative>& r
   return out;
 }
 
-bool Fits(const Enchantment& e, const Weapon& w) {
+bool FitsLabels(const Enchantment& e, const std::vector<std::string>& labels, const std::string& id) {
   return !e.compatible.empty() &&
-         std::ranges::all_of(e.compatible, [&](const std::string& l) { return Has(w.labels, l); }) &&
-         std::ranges::none_of(e.incompatible, [&](const std::string& l) { return Has(w.labels, l); }) &&
-         !Has(e.incompatible_items, w.id);
+         std::ranges::all_of(e.compatible, [&](const std::string& l) { return Has(labels, l); }) &&
+         std::ranges::none_of(e.incompatible, [&](const std::string& l) { return Has(labels, l); }) &&
+         !Has(e.incompatible_items, id);
 }
+
+bool Fits(const Enchantment& e, const Weapon& w) { return FitsLabels(e, w.labels, w.id); }
+
+bool Fits(const Enchantment& e, const Gear& g) { return FitsLabels(e, g.labels, g.id); }
 
 bool FitsSlot(const Enchantment& e, const std::string& slot_label) {
   const auto generic = [&](const std::string& l) { return l == "EQUIPMENT" || l == slot_label; };

@@ -21,13 +21,16 @@
 //    "defense": 25, "speed": 50, "maxHitPoints": 700, "maxMagicPoints": 300,
 //    "status": {"weak", "damaging", "berserk", "dazed"},
 //    "target": {"defense", "armored", "armorBroken", "exposed", "cursed"},
+//    "armor": "Robe of the Grand Sorcerer", "ring": "Ring of Unbound Attack",
 //    "wearing": [14381, 14382], "enchantments": ["Damage_Bonus_4"], "class": "Archer",
 //    "hitsPerVolley": [null, 1.5], "curatedHitsPerVolley": [2, null],
 //    "hitModel": {"distance": 4, "radius": 0.5},
 //    "curve": {"from": 0, "to": 150, "step": 5},
 //    "hitCurve": {"from": 0.5, "to": 10, "step": 0.25}}
-// Only "weapon" is required. "wearing" lists the item types of other gear
-// worn, like a set's armor or a ring a weapon's procs need.
+// Only "weapon" is required. "armor" and "ring" name the armor and ring worn:
+// their stats add to the character's, and they count for sets and for what
+// on-shoot effects need. "wearing" lists the item types of other gear worn
+// when they aren't named that way.
 // "enchantments" are ids of up to 4 enchantments on the weapon, and
 // "gearEnchantments" up to 4 each on {"ring", "armor", "ability"}; relative
 // ones ("% of Bonus ATT") need "class", the class id. "curve" adds
@@ -161,6 +164,10 @@ struct Request {
   std::vector<StatBonus> enchantment_stats;
   // Assumptions the request's gear brings, for the build's list.
   std::vector<std::string> notes;
+  const Gear* armor = nullptr;
+  const Gear* ring = nullptr;
+  // What the armor and ring do that isn't modelled.
+  std::vector<std::string> gear_unsupported;
 };
 
 // Reads the parts of a request Evaluate and StartSimulation share. Throws on
@@ -206,9 +213,25 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
     r.assumptions.distance = it->value("distance", 4.0);
     r.assumptions.target_radius = it->value("radius", kDefaultTargetRadius);
   }
+  // The armor and ring add their stats like the weapon and ability do.
+  std::vector<int> worn = req.value("wearing", std::vector<int>{});
+  for (const auto& [key, list, into] : {std::tuple{"armor", &dataset.armors, &r.armor}, {"ring", &dataset.rings, &r.ring}}) {
+    if (auto it = req.find(key); it != req.end() && !it->is_null()) {
+      *into = FindGear(*list, it->get<std::string>());
+      if (*into == nullptr) {
+        throw std::runtime_error(std::string("no ") + key + " named \"" + it->get<std::string>() + "\"");
+      }
+      r.character = r.character.With((*into)->stat_bonuses);
+      worn.push_back((*into)->type);
+      for (const std::string& tag : (*into)->unsupported) {
+        if (std::ranges::find(r.gear_unsupported, tag) == r.gear_unsupported.end()) {
+          r.gear_unsupported.push_back(tag);
+        }
+      }
+    }
+  }
   // Set bonuses count the weapon and ability plus the other pieces worn,
   // and add to the character like gear does.
-  std::vector<int> worn = req.value("wearing", std::vector<int>{});
   if (r.weapon) {
     worn.push_back(r.weapon->type);
   }
@@ -252,10 +275,14 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
                                : pick(*on_weapon, r.weapon->name, [&](const Enchantment& e) { return Fits(e, *r.weapon); });
     GearEnchantments gear;
     if (on_gear != req.end()) {
-      for (const auto& [key, label] : {std::pair{"ring", "RING"}, {"armor", "ARMOR"}, {"ability", "ABILITY"}}) {
+      for (const auto& [key, label, item] :
+           {std::tuple{"ring", "RING", r.ring}, {"armor", "ARMOR", r.armor}, {"ability", "ABILITY", nullptr}}) {
         if (auto ids = on_gear->find(key); ids != on_gear->end()) {
-          gear.emplace_back(label, pick(*ids, std::string("your ") + key,
-                                        [&](const Enchantment& e) { return FitsSlot(e, label); }));
+          // A named armor or ring takes what its own labels allow; otherwise
+          // any item of the slot.
+          gear.emplace_back(label, pick(*ids, item ? item->name : std::string("your ") + key, [&](const Enchantment& e) {
+                              return item ? Fits(e, *item) : FitsSlot(e, label);
+                            }));
         }
       }
     }
@@ -494,7 +521,7 @@ std::string Api::Evaluate(std::string_view request_json) const {
     const json req = json::parse(request_json);
     const Request r = ParseRequest(req, *dataset_);
     const auto& [weapon, ability, unknown_ability, character, target, assumptions, sets, enchanted, enchanted_ability,
-                 enchantment_stats, notes] = r;
+                 enchantment_stats, notes, armor, ring, gear_unsupported] = r;
     if (weapon == nullptr) {
       return Error("no weapon named \"" + req.at("weapon").get<std::string>() + "\"").dump();
     }
@@ -504,6 +531,12 @@ std::string Api::Evaluate(std::string_view request_json) const {
 
     const BuildBreakdown build = EvaluateBuild(*weapon, ability, character, target, assumptions);
     json res = {{"ok", true}, {"breakdown", ToJson(build.weapon)}, {"build", ToJson(build)}};
+    json& listed = res["breakdown"]["unsupported"];
+    for (const std::string& tag : gear_unsupported) {
+      if (std::find(listed.begin(), listed.end(), json(tag)) == listed.end()) {
+        listed.push_back(tag);
+      }
+    }
     if (build.ability) {
       res["ability"] = ToJson(*build.ability);
     }

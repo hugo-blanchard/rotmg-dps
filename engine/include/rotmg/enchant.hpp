@@ -15,6 +15,9 @@ bool Fits(const Enchantment& enchantment, const Weapon& weapon);
 /// ARMOR or ABILITY): it asks for no label beyond EQUIPMENT and that one.
 bool FitsSlot(const Enchantment& enchantment, const std::string& slot_label);
 
+/// Whether it can go on this armor or ring, by the item's own labels.
+bool Fits(const Enchantment& enchantment, const Gear& gear);
+
 /// Whether two enchantments can share an item.
 bool Conflict(const Enchantment& a, const Enchantment& b);
 

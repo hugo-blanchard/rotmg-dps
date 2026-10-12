@@ -3,6 +3,7 @@
 //
 // - every weapon evaluates to a finite, non-negative DPS
 // - every ability evaluates and simulates
+// - every armor and ring evaluates
 // - the hit estimate agrees with what the wiki documents about real weapons
 //
 // Usage: node smoke.mjs <engine.js> <dataset.json>
@@ -155,6 +156,25 @@ for (const a of abilities) {
   abilityBuilds++;
 }
 
+// Every armor and ring evaluates when worn by a class that can wear it.
+const { armors = [], rings = [] } = JSON.parse(text);
+let gearWorn = 0;
+for (const [kind, list] of [["armor", armors], ["ring", rings]]) {
+  for (const g of list) {
+    const cls = classes.find((c) => (kind === "armor" ? c.armorSlotType : c.ringSlotType) === g.slotType);
+    const weapon = cls && weapons.find((w) => w.slotType === cls.weaponSlotType);
+    if (!weapon) {
+      failures.push(`${g.name}: no class wears it`);
+      continue;
+    }
+    const res = evaluate({ weapon: weapon.name, [kind]: g.name, attack: cls.attack.max, dexterity: cls.dexterity.max });
+    if (!res.ok || !Number.isFinite(res.build.dps)) {
+      failures.push(`${g.name}: ${res.ok ? `DPS ${res.build.dps}` : res.error}`);
+    }
+    gearWorn++;
+  }
+}
+
 // Every enchantment that changes a weapon, rather than only adding stats,
 // evaluates on the first weapon it fits. Ones for other gear are skipped.
 const { enchantments = [] } = JSON.parse(text);
@@ -213,7 +233,8 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(
-  `${weapons.length} weapons, ${abilityBuilds} abilities and ${enchanted} weapon enchantments evaluated, ` +
+  `${weapons.length} weapons, ${abilityBuilds} abilities, ${gearWorn} armors and rings and ${enchanted} weapon ` +
+    `enchantments evaluated, ` +
     `hit estimate checks passed, ` +
     `${simulated} simulations agree with the estimate`,
 );

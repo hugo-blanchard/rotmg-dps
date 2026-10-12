@@ -458,3 +458,32 @@ TEST_CASE("many runs with random rolls show how time to kill spreads") {
   CHECK(kill[15] == Catch::Approx(3000 / 564.0).margin(0.5));
   CHECK(res["compare"]["timeToKill"][15].get<double>() < kill[15]);
 }
+
+TEST_CASE("an armor and a ring add their stats and count for sets") {
+  rotmg::Api api = LoadedApi();
+  const json plain = json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "attack": 50, "dexterity": 50})"));
+  // Plain Mail +4 ATT, Plain Ring +6 ATT, and with the sword that's 3 of the
+  // Swordsman Set: +5 and +5 more ATT. 70 ATT in all.
+  const json worn = json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "attack": 50, "dexterity": 50,
+      "armor": "Plain Mail", "ring": "Plain Ring"})"));
+  const json typed = json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "attack": 70, "dexterity": 50})"));
+  REQUIRE(worn["ok"] == true);
+  CHECK(worn["build"]["dps"].get<double>() == Catch::Approx(typed["build"]["dps"].get<double>()));
+  CHECK(worn["build"]["dps"].get<double>() > plain["build"]["dps"].get<double>());
+  REQUIRE(worn["sets"].size() == 1);
+  CHECK(worn["sets"][0]["pieces"] == 3);
+  CHECK(worn["breakdown"]["unsupported"] == json::array({"OnPlayerHitActivate"}));
+}
+
+TEST_CASE("enchantments on a named ring follow the ring's own labels") {
+  rotmg::Api api = LoadedApi();
+  CHECK(json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "ring": "Plain Ring",
+      "gearEnchantments": {"ring": ["Lucky_Ring", "Attack_Bonus_1"]}})"))["ok"] == true);
+  // The amulet has neither EQUIPMENT nor RING, so it takes neither.
+  const json amulet = json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "ring": "Plain Amulet",
+      "gearEnchantments": {"ring": ["Lucky_Ring"]}})"));
+  CHECK(amulet["ok"] == false);
+  CHECK(amulet["error"].get<std::string>().find("Plain Amulet") != std::string::npos);
+  CHECK(json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "armor": "Nope"})"))["error"] ==
+        "bad request: no armor named \"Nope\"");
+}

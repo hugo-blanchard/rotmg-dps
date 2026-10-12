@@ -42,6 +42,8 @@ Class ReadClass(const json& j) {
   j.at("id").get_to(c.id);
   j.at("weaponSlotType").get_to(c.weapon_slot_type);
   ReadDefault(j, "abilitySlotType", c.ability_slot_type);
+  ReadDefault(j, "armorSlotType", c.armor_slot_type);
+  ReadDefault(j, "ringSlotType", c.ring_slot_type);
   c.attack = ReadStat(j.at("attack"));
   c.dexterity = ReadStat(j.at("dexterity"));
   ReadOptionalStat(j, "maxHitPoints", c.max_hit_points);
@@ -198,6 +200,19 @@ std::map<int, Projectile> ReadCreatedProjectiles(const json& j) {
   return out;
 }
 
+Gear ReadGear(const json& j) {
+  Gear g;
+  j.at("type").get_to(g.type);
+  j.at("id").get_to(g.id);
+  j.at("name").get_to(g.name);
+  j.at("slotType").get_to(g.slot_type);
+  ReadOptional(j, "tier", g.tier);
+  g.stat_bonuses = ReadStatBonuses(j);
+  ReadDefault(j, "labels", g.labels);
+  ReadDefault(j, "unsupported", g.unsupported);
+  return g;
+}
+
 Ability ReadAbility(const json& j) {
   Ability a;
   j.at("type").get_to(a.type);
@@ -302,6 +317,13 @@ Dataset ParseDataset(std::string_view text) {
         d.abilities.push_back(ReadAbility(a));
       }
     }
+    for (const auto& [key, into] : {std::pair{"armors", &d.armors}, {"rings", &d.rings}}) {
+      if (auto it = j.find(key); it != j.end()) {
+        for (const json& g : *it) {
+          into->push_back(ReadGear(g));
+        }
+      }
+    }
     if (auto it = j.find("sets"); it != j.end()) {
       for (const json& s : *it) {
         d.sets.push_back(ReadSet(s));
@@ -326,6 +348,11 @@ const Weapon* FindWeapon(const Dataset& dataset, std::string_view name) {
 const Ability* FindAbility(const Dataset& dataset, std::string_view name) {
   auto it = std::ranges::find(dataset.abilities, name, &Ability::name);
   return it == dataset.abilities.end() ? nullptr : &*it;
+}
+
+const Gear* FindGear(const std::vector<Gear>& gear, std::string_view name) {
+  auto it = std::ranges::find(gear, name, &Gear::name);
+  return it == gear.end() ? nullptr : &*it;
 }
 
 std::optional<double> Activate::Number(std::string_view key) const {

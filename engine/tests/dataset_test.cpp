@@ -70,6 +70,21 @@ TEST_CASE("loads abilities and the rest of the class stats") {
   CHECK(rotmg::FindAbility(d, "No Such Ability") == nullptr);
 }
 
+TEST_CASE("loads armor, rings and the slots classes wear them in") {
+  const rotmg::Dataset d = LoadSmallDataset();
+  CHECK(d.classes[0].armor_slot_type == 7);
+  CHECK(d.classes[0].ring_slot_type == 9);
+  REQUIRE(d.armors.size() == 1);
+  REQUIRE(d.rings.size() == 2);
+  const rotmg::Gear* ring = rotmg::FindGear(d.rings, "Plain Ring");
+  REQUIRE(ring != nullptr);
+  CHECK(ring->type == 28690);
+  CHECK(ring->stat_bonuses.size() == 1);
+  CHECK(ring->labels == std::vector<std::string>{"EQUIPMENT", "RING", "UT"});
+  CHECK(ring->unsupported == std::vector<std::string>{"OnPlayerHitActivate"});
+  CHECK(rotmg::FindGear(d.armors, "Plain Ring") == nullptr);
+}
+
 TEST_CASE("a dataset without abilities still loads") {
   const rotmg::Dataset d = rotmg::ParseDataset(R"({"schemaVersion": 1, "build": "old",
     "classes": [{"type": 1, "id": "Old", "weaponSlotType": 1, "attack": {"base": 1, "max": 2}, "dexterity": {"base": 1, "max": 2}}],

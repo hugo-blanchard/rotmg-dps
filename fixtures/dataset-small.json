@@ -6,6 +6,8 @@
       "type": 768,
       "id": "Swordsman",
       "weaponSlotType": 1,
+      "armorSlotType": 7,
+      "ringSlotType": 9,
       "attack": {
         "base": 15,
         "max": 75
@@ -811,6 +813,42 @@
           }
         }
       ]
+    }
+  ],
+  "armors": [
+    {
+      "type": 28689,
+      "id": "Plain Mail",
+      "name": "Plain Mail",
+      "slotType": 7,
+      "tier": 10,
+      "texture": { "file": "exampleSheet", "index": 80 },
+      "statBonuses": [
+        { "stat": "DEF", "amount": 15 },
+        { "stat": "ATT", "amount": 4 }
+      ],
+      "labels": ["EQUIPMENT", "ARMOR", "TIERED"]
+    }
+  ],
+  "rings": [
+    {
+      "type": 28690,
+      "id": "Plain Ring",
+      "name": "Plain Ring",
+      "slotType": 9,
+      "texture": { "file": "exampleSheet", "index": 81 },
+      "statBonuses": [{ "stat": "ATT", "amount": 6 }],
+      "labels": ["EQUIPMENT", "RING", "UT"],
+      "unsupported": ["OnPlayerHitActivate"]
+    },
+    {
+      "type": 28691,
+      "id": "Plain Amulet",
+      "name": "Plain Amulet",
+      "slotType": 9,
+      "texture": { "file": "exampleSheet", "index": 82 },
+      "statBonuses": [{ "stat": "DEX", "amount": 3 }],
+      "labels": ["XPBONUS"]
     }
   ]
 }

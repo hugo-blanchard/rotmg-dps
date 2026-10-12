@@ -24,6 +24,9 @@ struct Class {
   /// 0 in datasets from before abilities were added, as are the stats below
   /// that ATT and DEX.
   int ability_slot_type = 0;
+  /// 0 in datasets from before armor and rings were added.
+  int armor_slot_type = 0;
+  int ring_slot_type = 0;
   StatRange max_hit_points;
   StatRange max_magic_points;
   StatRange attack;
@@ -196,12 +199,27 @@ struct EquipmentSet {
   std::vector<std::string> unsupported;
 };
 
+/// An armor or a ring.
+struct Gear {
+  int type = 0;
+  std::string id;
+  std::string name;
+  int slot_type = 0;
+  std::optional<int> tier;
+  std::vector<StatBonus> stat_bonuses;
+  /// What enchantments match against.
+  std::vector<std::string> labels;
+  std::vector<std::string> unsupported;
+};
+
 struct Dataset {
   int schema_version = 0;
   std::string build;
   std::vector<Class> classes;
   std::vector<Weapon> weapons;
   std::vector<Ability> abilities;
+  std::vector<Gear> armors;
+  std::vector<Gear> rings;
   std::vector<EquipmentSet> sets;
   std::vector<Enchantment> enchantments;
 };
