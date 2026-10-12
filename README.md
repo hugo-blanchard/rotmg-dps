@@ -89,7 +89,7 @@ The fields from `abilitySlotType` down were added with abilities and are missing
 
 ### Weapons
 
-An item is a weapon when its `<Class>` is `Equipment`, its `<SlotType>` is some class's weapon slot, and it has at least one `<Projectile>`. Admin-only items, test files (`testing/*.xml`, `equipTest.xml`) and enchantment procs (`equipSubs.xml`) are left out.
+An item is a weapon when its `<Class>` is `Equipment`, its `<SlotType>` is some class's weapon slot, and it has at least one `<Projectile>`. Items in test files (`testing/*.xml`, `equipTest.xml`) are left out unless they're admin items, which stay as `unobtainable`, and so are enchantment procs (`equipSubs.xml`). When several items share a name and stats, the one players can get stays.
 
 Many weapons have Shiny or Retro reskins with the same `<DisplayId>`. A reskin with the same stats as the base item is dropped; a different projectile `<ObjectId>`, or a different `color`, `objectId` or `type` in an on-shoot effect, counts as looks, not stats. One with different stats is kept, with its `id` as its name so names stay unique.
 
@@ -107,7 +107,8 @@ A reskin under its own name stays in, with `reskinOf` naming the item it plays l
 | `enchantmentSlots` | how many enchantments the item can hold: 4 for every item with `<EnchantmentSlots>`, whose `slotChance` is the chance each slot rolls when the item drops. Missing for items without it, which take none |
 | `enchantmentPool` | `<EnchantmentSlots enchantmentList>`, the pool its enchantments roll from, or the default pool when the client doesn't define that list (the Void weapons name ones like "Tiered Flail Table 5") |
 | `reskinOf` | the name of the item this one plays exactly like, when it's a reskin (above) |
-| `unobtainable` | `true` for items whose `<ExtraTooltipData>` says "not available to players" or "only available for testing", and for tiered items past T0 without `<EnchantmentSlots>`: every tiered item players can get has slots, and today these are the Tier 8 abilities, which RealmEye lists as unobtainable |
+| `variantOf` | the name of the item this one plays like when the only difference is the enchantments it can take, like Cupid's Bow and its Valentine enchantments |
+| `unobtainable` | `true` for admin items (`<AdminOnly>`, or ADMIN in the `id`), for items whose `<ExtraTooltipData>` says "not available to players" or "only available for testing", and for tiered items past T0 without `<EnchantmentSlots>`: every tiered item players can get has slots, and today these are the Tier 8 abilities, which RealmEye lists as unobtainable |
 | `projectiles` | one per `<Projectile>` |
 | `subattacks` | one per `<Subattack>` |
 | `onShoot` | one `{"type", "params"}` per `<OnPlayerShootActivate>`, read like an ability's `activates` (below) |
@@ -147,12 +148,12 @@ Older weapons have no `<Subattack>` and set their firing values on the item itse
 
 ### Abilities
 
-An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is some class's ability slot, and it has `<Usable/>`. Items without it sit in ability slots only to hold a proc's projectiles. Admin-only items, test files and enchantment procs are left out, and reskins are merged, as with weapons.
+An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is some class's ability slot, and it has `<Usable/>`. Items without it sit in ability slots only to hold a proc's projectiles. Test files and enchantment procs are left out, and reskins are merged, as with weapons.
 
 | Field | Client source |
 |---|---|
 | `type`, `id`, `name`, `slotType`, `tier`, `texture`, `statBonuses`, `labels` | as for weapons |
-| `onShoot`, `onEquip`, `onAbility`, `enchantmentSlots`, `enchantmentPool`, `reskinOf`, `unobtainable` | as for weapons. `onShoot` effects go off as the weapon fires |
+| `onShoot`, `onEquip`, `onAbility`, `enchantmentSlots`, `enchantmentPool`, `reskinOf`, `variantOf`, `unobtainable` | as for weapons. `onShoot` effects go off as the weapon fires |
 | `mpCost`, `cooldown` | `<MpCost>`, `<Cooldown>` in seconds, when set |
 | `projectiles`, `subattacks` | as for weapons, when the ability fires any |
 | `activates` | one `{"type", "params"}` per `<Activate>`: its text, like `BulletNova`, and its attributes |
@@ -163,12 +164,12 @@ An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is som
 
 ### Armor and rings
 
-An item is an armor or a ring when its `<Class>` is `Equipment` and its `<SlotType>` is some class's armor or ring slot. Admin-only items and test files are left out, and reskins are merged, as with weapons. So are items without a `<BagType>` or with a `<Projectile>`: they only hold a proc's shots, or stand in for something else, like fishing rods.
+An item is an armor or a ring when its `<Class>` is `Equipment` and its `<SlotType>` is some class's armor or ring slot. Test files are left out, and reskins are merged, as with weapons. So are items without a `<BagType>` or with a `<Projectile>`: they only hold a proc's shots, or stand in for something else, like fishing rods.
 
 | Field | Client source |
 |---|---|
 | `type`, `id`, `name`, `slotType`, `tier`, `texture`, `statBonuses`, `labels` | as for weapons |
-| `onShoot`, `createdProjectiles`, `onEquip`, `onAbility`, `enchantmentSlots`, `enchantmentPool`, `reskinOf`, `unobtainable` | as for weapons. `onShoot` effects go off as the weapon fires |
+| `onShoot`, `createdProjectiles`, `onEquip`, `onAbility`, `enchantmentSlots`, `enchantmentPool`, `reskinOf`, `variantOf`, `unobtainable` | as for weapons. `onShoot` effects go off as the weapon fires |
 | `unsupported` | tags on the item that can change damage but aren't modelled, e.g. `OnPlayerHitActivate` |
 
 ### Targets
