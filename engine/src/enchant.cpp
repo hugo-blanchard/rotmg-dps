@@ -145,8 +145,19 @@ Enchanted Enchant(const Weapon& weapon, const std::vector<const Enchantment*>& e
       }
     }
   }
+  // Awakened subattacks go in before any multiplier, so a fire rate or
+  // projectile bonus reaches them whatever order the enchantments come in.
+  std::vector<const Enchantment*> failed;
   for (const Enchantment* e : enchantments) {
-    bool modelled = true;
+    for (const Mutator& m : e->mutators) {
+      if ((m.tag == "SetSubAttack" || m.tag == "AddSubAttack") && !TakeSubattack(w, *e, m) &&
+          std::ranges::find(failed, e) == failed.end()) {
+        failed.push_back(e);
+      }
+    }
+  }
+  for (const Enchantment* e : enchantments) {
+    bool modelled = std::ranges::find(failed, e) == failed.end();
     for (const Mutator& m : e->mutators) {
       const double n = m.number.value_or(1);
       if (m.tag == "MultiplyMinDamage") {
@@ -169,7 +180,6 @@ Enchanted Enchant(const Weapon& weapon, const std::vector<const Enchantment*>& e
           }
         }
       } else if (m.tag == "SetSubAttack" || m.tag == "AddSubAttack") {
-        modelled = TakeSubattack(w, *e, m) && modelled;
       } else if (!shared(m)) {
         modelled = false;
       }

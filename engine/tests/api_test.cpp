@@ -322,3 +322,20 @@ TEST_CASE("set bonuses count as bonus stats for relative enchantments") {
   CHECK(res["enchantmentStats"] == json::parse(R"([{"stat": "DEX", "amount": 4}])"));
 }
 
+
+TEST_CASE("enchantments give the same result in any order") {
+  const rotmg::Api api = LoadedApi();
+  const auto evaluate = [&](const char* enchantments) {
+    return json::parse(api.Evaluate(std::string(R"({"weapon": "Plain Sword", "attack": 50, "dexterity": 50,
+        "enchantments": )") + enchantments + "}"));
+  };
+  const json a = evaluate(R"(["FireRate_Bonus_4", "Awakened_Test"])");
+  const json b = evaluate(R"(["Awakened_Test", "FireRate_Bonus_4"])");
+  REQUIRE(a["ok"] == true);
+  CHECK(a["breakdown"] == b["breakdown"]);
+  // The fire rate bonus reaches the subattack the awakened enchantment added.
+  const json awakened = evaluate(R"(["Awakened_Test"])");
+  CHECK(a["breakdown"]["subattacks"][1]["volleysPerSecond"].get<double>() ==
+        Catch::Approx(awakened["breakdown"]["subattacks"][1]["volleysPerSecond"].get<double>() * 1.05));
+}
+
