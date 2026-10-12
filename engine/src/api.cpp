@@ -886,16 +886,16 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 // An optimize request is an evaluate request, which must name the class,
 // plus
 //   "optimize": {"lock": ["weapon", ...], "pools": ["tiered", "untiered", "set"],
-//                "enchantments": "keep" | "none" | "best", "slots": 4, "artifacts": true,
+//                "enchantments": "keep" | "none" | "best", "slots": 2, "artifacts": true,
 //                "results": 5}
 // "lock" keeps the request's items in those slots. "pools" says which other
 // items may be tried: tiered ones, set pieces, and the rest (untiered).
 // Reskins and unobtainable items are never tried, but the request's own
 // stay unless something beats them.
 // "enchantments" keeps the request's where they still fit, removes them, or
-// fills up to "slots" per item, and no more than the item has, with the best
-// ones. "artifacts" lets it use enchantments only an artifact or engraving
-// puts on an item. Returns
+// fills up to "slots" per item (2 unless set, at most 4), and no more than
+// the item has, with the best ones. "artifacts" lets it use enchantments
+// only an artifact or engraving puts on an item. Returns
 //   {"ok": true, "baseline", "evaluated",
 //    "builds": [{"dps", "weapon", "ability", "armor", "ring",
 //                "enchantments": {"weapon": [...], "ability", "armor", "ring"}}]}
@@ -919,7 +919,7 @@ std::string Api::Optimize(std::string_view request_json) const {
     const std::set<std::string> locked = opt.value("lock", std::set<std::string>{});
     const std::set<std::string> pools = opt.value("pools", std::set<std::string>{"tiered", "untiered", "set"});
     const std::string mode = opt.value("enchantments", std::string("keep"));
-    const int max_slots = std::clamp(opt.value("slots", 4), 0, 4);
+    const int max_slots = std::clamp(opt.value("slots", 2), 0, 4);
     const bool artifacts = opt.value("artifacts", true);
     base["artifacts"] = artifacts;
     const auto results = static_cast<std::size_t>(std::clamp(opt.value("results", 5), 1, 20));

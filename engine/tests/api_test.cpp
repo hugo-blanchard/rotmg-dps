@@ -669,11 +669,18 @@ TEST_CASE("the optimizer keeps locked slots and fills enchantments legally") {
   CHECK(best["dps"].get<double>() > filled["baseline"].get<double>());
   const auto on_weapon = best["enchantments"]["weapon"].get<std::vector<std::string>>();
   CHECK_FALSE(on_weapon.empty());
-  CHECK(on_weapon.size() <= 4);
+  // 2 per item unless the request asks for more.
+  CHECK(on_weapon.size() <= 2);
+  const json four = json::parse(api.Optimize(R"({"class": "Swordsman", "weapon": "Plain Sword", "attack": 75,
+      "dexterity": 50, "optimize": {"lock": ["ability", "armor", "ring"], "enchantments": "best", "slots": 4}})"));
+  REQUIRE(four["ok"] == true);
+  const json& on_four = four["builds"][0]["enchantments"]["weapon"];
+  CHECK(on_four.size() <= 4);
+  CHECK(std::ranges::find(on_four, json("Damage_Bonus_4")) != on_four.end());
+  CHECK(four["builds"][0]["dps"].get<double>() >= best["dps"].get<double>());
   // Two single-stat bonuses can't share an item.
   const auto has = [&](const char* id) { return std::ranges::find(on_weapon, id) != on_weapon.end(); };
   CHECK_FALSE((has("Attack_Bonus_1") && has("Dexterity_Bonus_2")));
-  CHECK(has("Damage_Bonus_4"));
   // What it found evaluates to the same DPS on its own.
   json check = {{"class", "Swordsman"}, {"weapon", "Plain Sword"}, {"attack", 75}, {"dexterity", 50},
                 {"enchantments", on_weapon}};
