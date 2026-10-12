@@ -59,7 +59,7 @@ double ExpectedHitDamage(const Projectile& projectile, Multiplier multiplier, co
   // Averaging every roll is slow for wide ranges, and a build's DPS asks
   // for the same averages once per buff window, so they're remembered. The
   // key is everything the average depends on.
-  static std::map<std::tuple<int, int, int, int, int, bool>, double> known;
+  thread_local std::map<std::tuple<int, int, int, int, int, bool>, double> known;
   if (known.size() > 65536) {
     known.clear();
   }

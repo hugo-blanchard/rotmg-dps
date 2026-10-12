@@ -1,15 +1,18 @@
 #include "rotmg/optimize.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <map>
+#include <mutex>
 #include <set>
 #include <string_view>
 #include <tuple>
 #include <unordered_map>
 #include <utility>
 
+#include "parallel.hpp"
 #include "rotmg/dataset.hpp"
 #include "rotmg/enchant.hpp"
 
@@ -118,6 +121,7 @@ class BuildSearch {
   const Fitting& Fits(std::size_t slot, const std::string& item);
   void Adapt(Build& b, std::size_t slot);
   std::optional<double> Score(const Build& b, const Stats& extra = {});
+  std::vector<std::optional<double>> ScoreAll(const std::vector<Build>& builds, const Stats& extra = {});
   Rates StatRates(const Build& b);
   Mask Sensitive(const Build& b);
   std::vector<const Enchantment*> Relevant(const Build& b, std::size_t slot);
@@ -129,7 +133,7 @@ class BuildSearch {
   std::vector<const Enchantment*> OwnEnchantments(std::size_t slot, const std::string& item);
   std::pair<double, Build> Descend(Build current);
   std::vector<std::string> Seeds();
-  OptimizerResult Results() const;
+  OptimizerResult Results();
   void Report();
   static std::string Key(const Build& b);
 
@@ -147,7 +151,11 @@ class BuildSearch {
   std::map<std::tuple<std::size_t, std::string, const Enchantment*>, bool> tested_;
   // Relevant's answers, by slot, item and which stats matter.
   std::map<std::tuple<std::size_t, std::string, unsigned>, std::vector<const Enchantment*>> relevant_;
-  long evaluated_ = 0;
+  // Guards the caches above, which the search's threads share. Each is
+  // looked up and filled under it, and worked out outside it; two threads
+  // may work out the same thing, which only costs time.
+  std::mutex mu_;
+  std::atomic<long> evaluated_ = 0;
   double baseline_ = 0;
   // For progress reports: how far along the search is, and the share of it
   // the current step started at and takes.
@@ -171,8 +179,11 @@ std::string BuildSearch::Key(const Build& b) {
 
 const BuildSearch::Fitting& BuildSearch::Fits(std::size_t slot, const std::string& item) {
   const auto key = std::pair{slot, item};
-  if (auto it = fitting_.find(key); it != fitting_.end()) {
-    return it->second;
+  {
+    std::lock_guard lock(mu_);
+    if (auto it = fitting_.find(key); it != fitting_.end()) {
+      return it->second;
+    }
   }
   const Weapon* w = slot == 0 ? FindWeapon(d_, item) : nullptr;
   const Ability* a = slot == 1 ? FindAbility(d_, item) : nullptr;
@@ -191,7 +202,8 @@ const BuildSearch::Fitting& BuildSearch::Fits(std::size_t slot, const std::strin
       out.options.push_back(&e);
     }
   }
-  return fitting_.emplace(key, std::move(out)).first->second;
+  std::lock_guard lock(mu_);
+  return fitting_.try_emplace(key, std::move(out)).first->second;
 }
 
 // Keeps the enchantments that still fit the slot's item, in order, as many
@@ -216,49 +228,76 @@ std::optional<double> BuildSearch::Score(const Build& b, const Stats& extra) {
   if (!plain) {
     for (int x : extra) key += std::to_string(x) + ",";
   }
-  if (auto it = scores_.find(key); it != scores_.end()) {
-    return it->second;
+  {
+    std::lock_guard lock(mu_);
+    if (auto it = scores_.find(key); it != scores_.end()) {
+      return it->second;
+    }
   }
-  ++evaluated_;
-  if (p_.progress && evaluated_ % 64 == 0) {
+  // Only the thread that started the search can call back into the caller.
+  if (const long n = ++evaluated_; p_.progress && n % 64 == 0 && !OnHelperThread()) {
     Report();
   }
   const std::optional<double> dps = p_.score(b, extra);
+  std::lock_guard lock(mu_);
   scores_.emplace(key, dps);
-  if (!plain) {
+  if (!plain || !dps) {
     return dps;
   }
-  // One entry per set of items, with its best enchantments.
+  // One entry per set of items, with its best enchantments. Of two that
+  // score the same, the first by key stays, whichever thread got there
+  // first, so the result doesn't depend on the order.
   std::string items_key;
   for (const std::string& item : b.items) {
     items_key += item + "\n";
   }
-  if (auto it = seen_.find(items_key); dps && (it == seen_.end() || it->second.first < *dps)) {
+  auto it = seen_.find(items_key);
+  if (it == seen_.end() || it->second.first < *dps || (it->second.first == *dps && key < Key(it->second.second))) {
     seen_[items_key] = {*dps, b};
   }
   return dps;
+}
+
+// Scores builds that don't depend on each other at once, spread over the
+// engine's threads. What the search does with them stays in order, so a
+// search finds the same builds however many threads it has.
+std::vector<std::optional<double>> BuildSearch::ScoreAll(const std::vector<Build>& builds, const Stats& extra) {
+  std::vector<std::optional<double>> out(builds.size());
+  ParallelFor(builds.size(), [&](std::size_t i) { out[i] = Score(builds[i], extra); });
+  return out;
 }
 
 // How much DPS a point of each stat adds to the build, over the smallest
 // probe that shows any.
 Rates BuildSearch::StatRates(const Build& b) {
   const std::string key = Key(b);
-  if (auto it = rates_.find(key); it != rates_.end()) {
-    return it->second;
+  {
+    std::lock_guard lock(mu_);
+    if (auto it = rates_.find(key); it != rates_.end()) {
+      return it->second;
+    }
   }
   Rates out{};
   const double base = Score(b).value_or(0);
-  for (std::size_t i = 0; i < out.size(); ++i) {
-    for (const int probe : kProbes) {
-      Stats extra{};
-      extra[i] = probe;
-      if (const auto s = Score(b, extra); s && Better(*s, base)) {
-        out[i] = (*s - base) / probe;
-        break;
+  std::array<bool, 8> found{};
+  for (const int probe : kProbes) {
+    std::vector<std::optional<double>> probed(out.size());
+    ParallelFor(out.size(), [&](std::size_t i) {
+      if (!found[i]) {
+        Stats extra{};
+        extra[i] = probe;
+        probed[i] = Score(b, extra);
+      }
+    });
+    for (std::size_t i = 0; i < out.size(); ++i) {
+      if (!found[i] && probed[i] && Better(*probed[i], base)) {
+        out[i] = (*probed[i] - base) / probe;
+        found[i] = true;
       }
     }
   }
-  return rates_.emplace(key, out).first->second;
+  std::lock_guard lock(mu_);
+  return rates_.try_emplace(key, out).first->second;
 }
 
 // The stats that would raise the build's DPS.
@@ -286,10 +325,36 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
     bits |= matters[i] ? 1u << i : 0u;
   }
   const auto cache_key = std::tuple{slot, b.items[slot], bits};
-  if (auto it = relevant_.find(cache_key); it != relevant_.end()) {
-    return it->second;
+  {
+    std::lock_guard lock(mu_);
+    if (auto it = relevant_.find(cache_key); it != relevant_.end()) {
+      return it->second;
+    }
   }
   const double without = Score(bare).value_or(0);
+  // Enchantments that do more than add stats, each on its own, at once.
+  {
+    std::vector<const Enchantment*> untested;
+    const Fitting& fits = Fits(slot, b.items[slot]);
+    {
+      std::lock_guard lock(mu_);
+      for (const Enchantment* e : fits.options) {
+        if (!effects_.at(e).by_stats && !tested_.contains(std::tuple{slot, b.items[slot], e})) {
+          untested.push_back(e);
+        }
+      }
+    }
+    std::vector<Build> ones(untested.size(), bare);
+    for (std::size_t i = 0; i < untested.size(); ++i) {
+      ones[i].enchants[slot] = {untested[i]->id};
+    }
+    const std::vector<std::optional<double>> scored = ScoreAll(ones);
+    std::lock_guard lock(mu_);
+    for (std::size_t i = 0; i < untested.size(); ++i) {
+      const auto& s = scored[i];
+      tested_.try_emplace(std::tuple{slot, b.items[slot], untested[i]}, s && std::abs(*s - without) > without * 1e-9);
+    }
+  }
   std::vector<const Enchantment*> out;
   for (const Enchantment* e : Fits(slot, b.items[slot]).options) {
     const StatEffect& effect = effects_.at(e);
@@ -304,14 +369,22 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
       continue;
     }
     const auto key = std::tuple{slot, b.items[slot], e};
-    auto it = tested_.find(key);
-    if (it == tested_.end()) {
+    std::optional<bool> changes;
+    {
+      std::lock_guard lock(mu_);
+      if (auto it = tested_.find(key); it != tested_.end()) {
+        changes = it->second;
+      }
+    }
+    if (!changes) {
       Build one = bare;
       one.enchants[slot] = {e->id};
       const auto s = Score(one);
-      it = tested_.emplace(key, s && std::abs(*s - without) > without * 1e-9).first;
+      changes = s && std::abs(*s - without) > without * 1e-9;
+      std::lock_guard lock(mu_);
+      tested_.try_emplace(key, *changes);
     }
-    if (it->second) {
+    if (*changes) {
       out.push_back(e);
     }
   }
@@ -341,7 +414,8 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
       kept.push_back(x);
     }
   }
-  return relevant_.emplace(cache_key, std::move(kept)).first->second;
+  std::lock_guard lock(mu_);
+  return relevant_.try_emplace(cache_key, std::move(kept)).first->second;
 }
 
 // The enchantments to combine on the slot's item, with b's slot left
@@ -356,7 +430,16 @@ std::vector<const Enchantment*> BuildSearch::Shortlist(Build& b, std::size_t slo
   std::vector<const Enchantment*> options = Relevant(b, slot);
   const std::size_t extra = p_.thorough ? 24 : 12;
   const Rates rates = StatRates(b);
+  std::vector<Build> ones;
+  for (const Enchantment* e : options) {
+    if (!effects_.at(e).flat_only) {
+      ones.push_back(b);
+      ones.back().enchants[slot] = {e->id};
+    }
+  }
+  const std::vector<std::optional<double>> scored = ScoreAll(ones);
   std::vector<std::pair<double, const Enchantment*>> alone;
+  std::size_t next_scored = 0;
   for (const Enchantment* e : options) {
     const StatEffect& effect = effects_.at(e);
     if (effect.flat_only) {
@@ -367,8 +450,7 @@ std::vector<const Enchantment*> BuildSearch::Shortlist(Build& b, std::size_t slo
       alone.emplace_back(bare + gain, e);
       continue;
     }
-    b.enchants[slot] = {e->id};
-    alone.emplace_back(Score(b).value_or(0), e);
+    alone.emplace_back(scored[next_scored++].value_or(0), e);
   }
   std::ranges::stable_sort(alone, [](const auto& x, const auto& y) { return x.first > y.first; });
   options.clear();
@@ -403,7 +485,8 @@ double BuildSearch::Fill(Build& b, std::size_t slot) {
   std::pair<double, Set> best = {bare, {}};
   for (int depth = 0; depth < size; ++depth) {
     std::set<std::vector<std::string>> made;
-    std::vector<std::pair<double, Set>> next;
+    std::vector<Set> grown_sets;
+    std::vector<Build> grown_builds;
     for (const auto& [dps, set] : level) {
       for (const Enchantment* e : options) {
         const bool clash =
@@ -419,10 +502,16 @@ double BuildSearch::Fill(Build& b, std::size_t slot) {
         if (!made.insert(ids).second) {
           continue;
         }
-        b.enchants[slot] = ids;
-        if (const auto s = Score(b)) {
-          next.emplace_back(*s, std::move(grown));
-        }
+        grown_builds.push_back(b);
+        grown_builds.back().enchants[slot] = ids;
+        grown_sets.push_back(std::move(grown));
+      }
+    }
+    const std::vector<std::optional<double>> scored = ScoreAll(grown_builds);
+    std::vector<std::pair<double, Set>> next;
+    for (std::size_t i = 0; i < scored.size(); ++i) {
+      if (scored[i]) {
+        next.emplace_back(*scored[i], std::move(grown_sets[i]));
       }
     }
     if (next.empty()) {
@@ -500,15 +589,18 @@ double BuildSearch::Exchange(Build& b) {
     // Each item's single changes, best first; only the best few are paired.
     constexpr std::size_t kPaired = 15;
     for (std::size_t i = 0; i < kSlotCount; ++i) {
+      std::vector<Build> tried(moves[i].size(), b);
+      for (std::size_t k = 0; k < moves[i].size(); ++k) {
+        tried[k].enchants[i] = moves[i][k];
+      }
+      const std::vector<std::optional<double>> scores = ScoreAll(tried);
       std::vector<std::pair<double, std::vector<std::string>>> scored;
-      for (const auto& m : moves[i]) {
-        Build t = b;
-        t.enchants[i] = m;
-        if (const auto s = Score(t)) {
-          scored.emplace_back(*s, m);
+      for (std::size_t k = 0; k < tried.size(); ++k) {
+        if (const auto& s = scores[k]) {
+          scored.emplace_back(*s, moves[i][k]);
           if (Better(*s, next_dps)) {
             next_dps = *s;
-            next = t;
+            next = tried[k];
           }
         }
       }
@@ -521,15 +613,19 @@ double BuildSearch::Exchange(Build& b) {
     if (!Better(next_dps, best)) {
       for (std::size_t i = 0; i < kSlotCount; ++i) {
         for (std::size_t j = i + 1; j < kSlotCount; ++j) {
+          std::vector<Build> tried;
           for (const auto& mi : moves[i]) {
             for (const auto& mj : moves[j]) {
-              Build t = b;
-              t.enchants[i] = mi;
-              t.enchants[j] = mj;
-              if (const auto s = Score(t); s && Better(*s, next_dps)) {
-                next_dps = *s;
-                next = t;
-              }
+              tried.push_back(b);
+              tried.back().enchants[i] = mi;
+              tried.back().enchants[j] = mj;
+            }
+          }
+          const std::vector<std::optional<double>> scores = ScoreAll(tried);
+          for (std::size_t k = 0; k < tried.size(); ++k) {
+            if (scores[k] && Better(*scores[k], next_dps)) {
+              next_dps = *scores[k];
+              next = tried[k];
             }
           }
         }
@@ -596,8 +692,18 @@ std::pair<double, Build> BuildSearch::LinearFill(Build b) {
       Build around = context;
       around.enchants[slot].clear();
       const double without = Score(around).value_or(0);
+      const std::vector<const Enchantment*> relevant = Relevant(around, slot);
+      std::vector<Build> ones;
+      for (const Enchantment* e : relevant) {
+        if (!effects_.at(e).flat_only) {
+          ones.push_back(around);
+          ones.back().enchants[slot] = {e->id};
+        }
+      }
+      const std::vector<std::optional<double>> scored = ScoreAll(ones);
+      std::size_t next_scored = 0;
       std::vector<std::pair<double, const Enchantment*>> valued;
-      for (const Enchantment* e : Relevant(around, slot)) {
+      for (const Enchantment* e : relevant) {
         const StatEffect& effect = effects_.at(e);
         double value = 0;
         if (effect.flat_only) {
@@ -605,8 +711,7 @@ std::pair<double, Build> BuildSearch::LinearFill(Build b) {
             value += rates[i] * effect.flat[i];
           }
         } else {
-          around.enchants[slot] = {e->id};
-          value = Score(around).value_or(0) - without;
+          value = scored[next_scored++].value_or(0) - without;
         }
         if (value > 0) {
           valued.emplace_back(value, e);
@@ -663,7 +768,11 @@ std::vector<const Enchantment*> BuildSearch::OwnEnchantments(std::size_t slot, c
   constexpr int kFew = 6;
   std::vector<const Enchantment*> out;
   for (const Enchantment* e : Fits(slot, item).options) {
-    if (std::ranges::any_of(e->compatible, [&](const std::string& l) { return carriers_[l] <= kFew; })) {
+    const auto few = [&](const std::string& l) {
+      const auto it = carriers_.find(l);
+      return it == carriers_.end() || it->second <= kFew;
+    };
+    if (std::ranges::any_of(e->compatible, few)) {
       out.push_back(e);
     }
   }
@@ -721,26 +830,39 @@ std::pair<double, Build> BuildSearch::Descend(Build current) {
     // Each slot's candidates, best first, for pairing below.
     std::array<std::vector<std::string>, kSlotCount> ranked;
     for (std::size_t slot = 0; slot < kSlotCount; ++slot) {
-      std::vector<std::pair<double, Build>> tried;
+      std::vector<Build> nexts;
       for (const std::string& name : p_.candidates[slot]) {
-        if (name == current.items[slot]) {
-          continue;
+        if (name != current.items[slot]) {
+          nexts.push_back(current);
+          nexts.back().items[slot] = name;
+          Adapt(nexts.back(), slot);
         }
-        Build next = current;
-        next.items[slot] = name;
-        Adapt(next, slot);
-        std::optional<double> s = Score(next);
-        if (best && s) {
-          for (const Enchantment* e : OwnEnchantments(slot, name)) {
-            Build with = next;
-            with.enchants[slot] = {e->id};
-            if (const auto own = Score(with); own && *own > *s) {
-              s = own;
+      }
+      std::vector<std::optional<double>> scores = ScoreAll(nexts);
+      if (best) {
+        // Each candidate with each of the enchantments made for it.
+        std::vector<std::size_t> of;
+        std::vector<Build> withs;
+        for (std::size_t k = 0; k < nexts.size(); ++k) {
+          if (scores[k]) {
+            for (const Enchantment* e : OwnEnchantments(slot, nexts[k].items[slot])) {
+              of.push_back(k);
+              withs.push_back(nexts[k]);
+              withs.back().enchants[slot] = {e->id};
             }
           }
         }
-        if (s) {
-          tried.emplace_back(*s, std::move(next));
+        const std::vector<std::optional<double>> own = ScoreAll(withs);
+        for (std::size_t w = 0; w < withs.size(); ++w) {
+          if (own[w] && *own[w] > *scores[of[w]]) {
+            scores[of[w]] = own[w];
+          }
+        }
+      }
+      std::vector<std::pair<double, Build>> tried;
+      for (std::size_t k = 0; k < nexts.size(); ++k) {
+        if (scores[k]) {
+          tried.emplace_back(*scores[k], std::move(nexts[k]));
         }
       }
       std::ranges::stable_sort(tried, [](const auto& a, const auto& b) { return a.first > b.first; });
@@ -761,17 +883,21 @@ std::pair<double, Build> BuildSearch::Descend(Build current) {
     units += improved ? 0 : 6;
     for (std::size_t i = 0; !improved && i < kSlotCount; ++i) {
       for (std::size_t j = i + 1; !improved && j < kSlotCount; ++j) {
-        std::vector<std::pair<double, Build>> pairs;
+        std::vector<Build> nexts;
         for (std::size_t a = 0; a < ranked[i].size() && a < kPairs; ++a) {
           for (std::size_t b = 0; b < ranked[j].size() && b < kPairs; ++b) {
-            Build next = current;
-            next.items[i] = ranked[i][a];
-            next.items[j] = ranked[j][b];
-            Adapt(next, i);
-            Adapt(next, j);
-            if (const auto s = Score(next)) {
-              pairs.emplace_back(*s, std::move(next));
-            }
+            nexts.push_back(current);
+            nexts.back().items[i] = ranked[i][a];
+            nexts.back().items[j] = ranked[j][b];
+            Adapt(nexts.back(), i);
+            Adapt(nexts.back(), j);
+          }
+        }
+        const std::vector<std::optional<double>> scores = ScoreAll(nexts);
+        std::vector<std::pair<double, Build>> pairs;
+        for (std::size_t k = 0; k < nexts.size(); ++k) {
+          if (scores[k]) {
+            pairs.emplace_back(*scores[k], std::move(nexts[k]));
           }
         }
         std::ranges::stable_sort(pairs, [](const auto& x, const auto& y) { return x.first > y.first; });
@@ -782,7 +908,7 @@ std::pair<double, Build> BuildSearch::Descend(Build current) {
     }
     at(1, improved);
     // Whole sets: ranked as they are, then the best few get the full look.
-    std::vector<std::tuple<double, Build, std::size_t>> sets;
+    std::vector<std::pair<Build, std::size_t>> set_moves;
     for (const EquipmentSet& set : d_.sets) {
       Build next = current;
       int changed = 0;
@@ -798,8 +924,19 @@ std::pair<double, Build> BuildSearch::Descend(Build current) {
           last = slot;
         }
       }
-      if (const auto s = changed >= 2 ? Score(next) : std::nullopt) {
-        sets.emplace_back(*s, std::move(next), last);
+      if (changed >= 2) {
+        set_moves.emplace_back(std::move(next), last);
+      }
+    }
+    std::vector<Build> set_builds;
+    for (const auto& [next, last] : set_moves) {
+      set_builds.push_back(next);
+    }
+    const std::vector<std::optional<double>> set_scores = ScoreAll(set_builds);
+    std::vector<std::tuple<double, Build, std::size_t>> sets;
+    for (std::size_t k = 0; k < set_moves.size(); ++k) {
+      if (set_scores[k]) {
+        sets.emplace_back(*set_scores[k], std::move(set_moves[k].first), set_moves[k].second);
       }
     }
     std::ranges::stable_sort(sets, [](const auto& a, const auto& b) { return std::get<0>(a) > std::get<0>(b); });
@@ -828,17 +965,19 @@ std::vector<std::string> BuildSearch::Seeds() {
     if (!p_.restart_stats[stat]) {
       continue;
     }
+    std::vector<Build> builds(abilities.size(), p_.start);
+    for (std::size_t k = 0; k < abilities.size(); ++k) {
+      builds[k].items[1] = abilities[k];
+      Adapt(builds[k], 1);
+    }
+    Stats extra{};
+    extra[stat] = kLots;
+    const std::vector<std::optional<double>> plain = ScoreAll(builds);
+    const std::vector<std::optional<double>> more = ScoreAll(builds, extra);
     std::vector<std::pair<double, std::string>> gains;
-    for (const std::string& ability : abilities) {
-      Build b = p_.start;
-      b.items[1] = ability;
-      Adapt(b, 1);
-      Stats extra{};
-      extra[stat] = kLots;
-      const auto plain = Score(b);
-      const auto more = Score(b, extra);
-      if (plain && more && Better(*more, *plain)) {
-        gains.emplace_back(*more - *plain, ability);
+    for (std::size_t k = 0; k < abilities.size(); ++k) {
+      if (plain[k] && more[k] && Better(*more[k], *plain[k])) {
+        gains.emplace_back(*more[k] - *plain[k], abilities[k]);
       }
     }
     std::ranges::stable_sort(gains, [](const auto& a, const auto& b) { return a.first > b.first; });
@@ -851,12 +990,15 @@ std::vector<std::string> BuildSearch::Seeds() {
   return out;
 }
 
-OptimizerResult BuildSearch::Results() const {
+OptimizerResult BuildSearch::Results() {
   OptimizerResult out;
   out.baseline = baseline_;
   out.evaluated = evaluated_;
-  for (const auto& [key, entry] : seen_) {
-    out.builds.push_back(entry);
+  {
+    std::lock_guard lock(mu_);
+    for (const auto& [key, entry] : seen_) {
+      out.builds.push_back(entry);
+    }
   }
   std::ranges::stable_sort(out.builds, [](const auto& a, const auto& b) { return a.first > b.first; });
   if (out.builds.size() > p_.results) {

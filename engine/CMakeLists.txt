@@ -18,9 +18,12 @@ option(ROTMG_WERROR "Treat warnings as errors" OFF)
 option(ROTMG_SANITIZE "Build with AddressSanitizer and UBSan" OFF)
 
 if(EMSCRIPTEN)
-  # The dataset loader reports errors with exceptions.
-  add_compile_options(-fwasm-exceptions)
-  add_link_options(-fwasm-exceptions)
+  # The dataset loader reports errors with exceptions, and the optimizer
+  # runs on several threads.
+  add_compile_options(-fwasm-exceptions -pthread)
+  add_link_options(-fwasm-exceptions -pthread)
+else()
+  find_package(Threads REQUIRED)
 endif()
 
 if(ROTMG_SANITIZE)
@@ -43,9 +46,12 @@ FetchContent_Declare(
   SYSTEM)
 FetchContent_MakeAvailable(nlohmann_json)
 
-add_library(rotmg_engine src/schema.cpp src/dataset.cpp src/damage.cpp src/fire_rate.cpp src/evaluate.cpp src/api.cpp src/hits.cpp src/path.cpp src/sim.cpp src/ability.cpp src/build.cpp src/sets.cpp src/enchant.cpp src/optimize.cpp)
+add_library(rotmg_engine src/schema.cpp src/dataset.cpp src/damage.cpp src/fire_rate.cpp src/evaluate.cpp src/api.cpp src/hits.cpp src/path.cpp src/sim.cpp src/ability.cpp src/build.cpp src/sets.cpp src/enchant.cpp src/optimize.cpp src/parallel.cpp)
 target_include_directories(rotmg_engine PUBLIC include)
 target_link_libraries(rotmg_engine PRIVATE rotmg_warnings nlohmann_json::nlohmann_json)
+if(NOT EMSCRIPTEN)
+  target_link_libraries(rotmg_engine PUBLIC Threads::Threads)
+endif()
 
 if(ROTMG_BUILD_TOOLS)
   add_executable(rotmg-dps tools/dps.cpp)
@@ -63,7 +69,13 @@ if(EMSCRIPTEN)
     -sEXPORT_ES6=1
     -sEXPORT_NAME=createEngine
     -sENVIRONMENT=web,worker,node
-    -sALLOW_MEMORY_GROWTH=1)
+    -sALLOW_MEMORY_GROWTH=1
+    # Workers for the optimizer's threads, started as the engine loads: at
+    # least as many as src/parallel.cpp's kMaxThreads helpers.
+    -sPTHREAD_POOL_SIZE=8
+    # The default allocator takes one lock for every thread, and evaluating
+    # a build allocates a lot; mimalloc keeps a heap per thread.
+    -sMALLOC=mimalloc)
 endif()
 
 if(ROTMG_BUILD_TESTS)

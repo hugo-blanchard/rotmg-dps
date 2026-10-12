@@ -100,7 +100,7 @@ int HitsPerVolley(const Weapon& weapon, const Subattack& subattack, double dista
   // Tracing long-lived or circling shots is slow, and the optimizer asks
   // about the same volleys over and over, so estimates are remembered. The
   // answer depends only on the key, so this can't change a result.
-  static std::map<std::vector<double>, int, KeyLess> known;
+  thread_local std::map<std::vector<double>, int, KeyLess> known;
   if (known.size() > 4096) {
     known.clear();
   }
