@@ -196,6 +196,22 @@ export function enchantmentsForSlot(dataset: Dataset, slot: string): DatasetEnch
   );
 }
 
+/**
+ * The ids, in order, that can go on one item together: ones among
+ * `options`, no repeats or clashes with an earlier one, at most 4. A link
+ * from an older dataset can hold any of these mistakes.
+ */
+export function usableEnchantments(ids: string[], options: DatasetEnchantment[]): string[] {
+  const kept: DatasetEnchantment[] = [];
+  for (const id of ids) {
+    const e = options.find((x) => x.id === id);
+    if (e && kept.length < 4 && !kept.some((k) => k.id === e.id || clash(k, e))) {
+      kept.push(e);
+    }
+  }
+  return kept.map((e) => e.id);
+}
+
 /** Whether two enchantments can't share an item. */
 export function clash(a: DatasetEnchantment, b: DatasetEnchantment): boolean {
   const meets = (x: DatasetEnchantment, y: DatasetEnchantment) =>

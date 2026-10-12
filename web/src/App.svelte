@@ -7,12 +7,14 @@
   import {
     abilitiesFor,
     enchantmentsFor,
+    enchantmentsForSlot,
     loadDataset,
     loadStatus,
     gearFor,
     maxStats,
     otherPieces,
     setsFor,
+    usableEnchantments,
     weaponsFor,
     type Dataset,
     type DatasetStatus,
@@ -72,13 +74,14 @@
     const gear = cls ? gearFor(weapon, cls, pieces).flatMap((g) => g.items.map((i) => i.itemType)) : [];
     return wearing.filter((t) => pieces.includes(t) || gear.includes(t));
   });
-  // Only enchantments that fit the current weapon are sent.
-  const enchanted = $derived.by(() => {
-    if (!dataset) {
-      return [];
-    }
-    const fitting = enchantmentsFor(dataset, weapon).map((e) => e.id);
-    return enchantments.filter((id) => fitting.includes(id));
+  // Only enchantments that can be on the current items together are sent.
+  const enchanted = $derived(dataset ? usableEnchantments(enchantments, enchantmentsFor(dataset, weapon)) : []);
+  const gearEnchanted = $derived<GearEnchantments>({
+    ring: dataset ? usableEnchantments(gearEnchantments.ring, enchantmentsForSlot(dataset, "RING")) : [],
+    armor: dataset ? usableEnchantments(gearEnchantments.armor, enchantmentsForSlot(dataset, "ARMOR")) : [],
+    // Ability enchantments only mean something with an ability.
+    ability:
+      dataset && abilityName ? usableEnchantments(gearEnchantments.ability, enchantmentsForSlot(dataset, "ABILITY")) : [],
   });
 
   // What evaluating and simulating share; evaluating adds the two charts.
@@ -95,14 +98,27 @@
     wearing: [...worn],
     enchantments: [...enchanted],
     gearEnchantments: {
-      ring: [...gearEnchantments.ring],
-      armor: [...gearEnchantments.armor],
-      // Ability enchantments only mean something with an ability.
-      ability: abilityName ? [...gearEnchantments.ability] : [],
+      ring: [...gearEnchanted.ring],
+      armor: [...gearEnchanted.armor],
+      ability: [...gearEnchanted.ability],
     },
     class: classId,
     hitsPerVolley: [...hitOverrides],
     hitModel: { distance: hitDistance, radius: Math.max(0.05, Number(radius) || 0.5) },
+  });
+
+  // Drop what can't be on the items from the editor too, so its selects
+  // never hold an id they can't show.
+  $effect(() => {
+    if (!dataset) {
+      return;
+    }
+    if (enchanted.join() !== enchantments.join()) {
+      enchantments = [...enchanted];
+    }
+    if (JSON.stringify(gearEnchanted) !== JSON.stringify(gearEnchantments)) {
+      gearEnchantments = { ...gearEnchanted };
+    }
   });
 
   // Hits typed in for one weapon don't carry over to the next.
@@ -185,7 +201,7 @@
       radius,
       wearing: worn,
       enchantments: enchanted,
-      gearEnchantments,
+      gearEnchantments: gearEnchanted,
     });
     history.replaceState(null, "", `${location.pathname}?${query}`);
   });
