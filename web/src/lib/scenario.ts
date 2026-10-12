@@ -29,6 +29,8 @@ export interface ScenarioTarget {
   movement?: Movement;
   /** Hit points; none for a dummy that can't die. */
   hp?: number;
+  /** Seconds it's invulnerable for, every so many seconds. */
+  invulnerable?: { every: number; for: number };
 }
 
 export interface Scenario {
@@ -173,6 +175,9 @@ export interface SimOptions extends PlacementOptions, MovementOptions {
   customHp: number;
   respawn: boolean;
   randomRolls: boolean;
+  /** Seconds between invulnerable windows, 0 for none, and how long each lasts. */
+  invulnerableEvery: number;
+  invulnerableFor: number;
 }
 
 export const defaultSimOptions: SimOptions = {
@@ -190,6 +195,8 @@ export const defaultSimOptions: SimOptions = {
   customHp: 10000,
   respawn: false,
   randomRolls: false,
+  invulnerableEvery: 0,
+  invulnerableFor: 2,
 };
 
 // Short names in the link. Only options that differ from the defaults are
@@ -209,6 +216,8 @@ const queryKeys: Record<keyof SimOptions, string> = {
   customHp: "hpn",
   respawn: "respawn",
   randomRolls: "rolls",
+  invulnerableEvery: "inv",
+  invulnerableFor: "invfor",
 };
 
 export function simToQuery(options: SimOptions, q: URLSearchParams): void {

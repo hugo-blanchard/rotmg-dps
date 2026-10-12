@@ -81,7 +81,9 @@
   const distance = $derived(request.hitModel?.distance ?? 4);
   const scenario = $derived.by(() => {
     const s = withMovement(layOut(options, distance, request.hitModel?.radius ?? 0.5), options, distance);
-    const targets = targetHp > 0 ? s.targets.map((t) => ({ ...t, hp: targetHp })) : s.targets;
+    const invulnerable =
+      options.invulnerableEvery > 0 ? { every: options.invulnerableEvery, for: options.invulnerableFor } : undefined;
+    const targets = s.targets.map((t) => ({ ...t, hp: targetHp > 0 ? targetHp : undefined, invulnerable }));
     const { fullMp, respawn, randomRolls } = options;
     return { ...s, targets, fullMp, respawn, randomRolls };
   });
@@ -341,10 +343,12 @@
       ctx.restore();
     };
 
-    // Targets, sized by their hitbox; the one aimed at gets a marker.
+    // Targets, sized by their hitbox; the one aimed at gets a marker. They
+    // fade while invulnerable.
     targets.forEach((target, i) => {
       const flashing = performance.now() < (flashUntil[i] ?? 0);
       const size = tile * 2 * target.radius;
+      ctx.globalAlpha = target.invulnerable ? 0.35 : 1;
       if (sprites?.index.target[2]) {
         blit(sprites.index.target, sx(target.x), sy(target.y), size);
       } else {
@@ -366,10 +370,12 @@
         ctx.fillStyle = i === aim ? color("--accent") : color("--text-2");
         ctx.fillText(i === aim ? `${i + 1} (aim)` : String(i + 1), sx(target.x), sy(target.y) - target.radius * tile - 4);
       }
-      if (target.statuses.length) {
+      const statuses = target.invulnerable ? ["Invulnerable", ...target.statuses] : target.statuses;
+      if (statuses.length) {
         ctx.fillStyle = color("--text-2");
-        ctx.fillText(target.statuses.join(", "), sx(target.x), sy(target.y) + target.radius * tile + 14);
+        ctx.fillText(statuses.join(", "), sx(target.x), sy(target.y) + target.radius * tile + 14);
       }
+      ctx.globalAlpha = 1;
     });
 
     // Player, in an attack pose for a moment after each volley.
@@ -635,6 +641,18 @@
     {/if}
     {#if targetHp > 0}
       <label><input type="checkbox" bind:checked={options.respawn} /> Respawn</label>
+    {/if}
+    <label>
+      Invulnerable every
+      <input type="number" min="0" step="1" bind:value={options.invulnerableEvery} />
+      s
+    </label>
+    {#if options.invulnerableEvery > 0}
+      <label>
+        for
+        <input type="number" min="0.1" step="0.5" bind:value={options.invulnerableFor} />
+        s
+      </label>
     {/if}
     <label><input type="checkbox" bind:checked={options.randomRolls} /> Random rolls</label>
     {#if options.randomRolls}

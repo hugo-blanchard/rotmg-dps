@@ -193,6 +193,7 @@ export interface SimTarget {
   killedMs: number | null;
   /** How long each debuff has been up on it. */
   uptimeMs: Record<string, number>;
+  invulnerable: boolean;
 }
 
 export interface SimEffect {
