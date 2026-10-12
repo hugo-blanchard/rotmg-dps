@@ -67,6 +67,7 @@ This section is enough to write your own extractor. Values keep the client's uni
 | `classes` | Player classes, sorted by `type` | `<Object>` elements with `<Player/>` in `players.xml` |
 | `weapons` | Weapons, sorted by `type` | object XML files listed under `objects` in the client's `manifest` |
 | `abilities` | Abilities, sorted by `type`. Missing from datasets made before abilities were added | the same object XML files |
+| `targets` | Bosses the site offers as targets. Optional | the same object XML files |
 
 ### Classes
 
@@ -142,6 +143,17 @@ An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is som
 | `unsupported` | names of tags on the item that change how it's used but aren't modelled, e.g. `MpCostPerSecond` |
 
 `params` keeps the attributes as the client has them: numbers where they parse as numbers, `true` and `false` as booleans, everything else, including hex colours, as strings. The engine reads the ones it understands and lists every effect type it doesn't model.
+
+### Targets
+
+A short list of current endgame bosses, chosen by hand by object `id`. Most bosses also have old, legacy or event copies under other ids; the list names the ones in today's dungeons. The site uses them to fill in the target's DEF.
+
+| Field | Client source |
+|---|---|
+| `id` | the enemy's `id` attribute |
+| `name` | `<DisplayId>`, or a clearer name where several bosses share one (Oryx the Mad God 1, 2 and 3) |
+| `defense` | `<Defense>`, 0 if missing |
+| `maxHitPoints` | `<MaxHitPoints>` |
 
 ### Example
 
