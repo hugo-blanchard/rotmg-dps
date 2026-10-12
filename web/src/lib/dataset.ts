@@ -33,6 +33,9 @@ interface ItemRules {
   unobtainable?: boolean;
   /** The item this one plays exactly like, when it's a reskin of it. */
   reskinOf?: string;
+  /** The item this one plays like, when it only differs in the
+   * enchantments it can take (Cupid's Bow and its Valentine ones). */
+  variantOf?: string;
 }
 
 export interface DatasetAbility extends ItemRules {
@@ -181,9 +184,9 @@ export function ringsFor(dataset: Dataset, cls: DatasetClass): DatasetGear[] {
 }
 
 /** Whether an item is one to suggest: one players can get, and not a reskin
- * of another. */
+ * or enchantment variant of another. */
 export function suggested(item: Item): boolean {
-  return !item.unobtainable && !item.reskinOf;
+  return !item.unobtainable && !item.reskinOf && !item.variantOf;
 }
 
 /** The four equipment slots, in the game's order. */

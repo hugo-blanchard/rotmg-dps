@@ -84,6 +84,7 @@
     { key: "tiered", label: "Tiered" },
     { key: "untiered", label: "Untiered" },
     { key: "set", label: "Set pieces" },
+    { key: "variant", label: "Special reskins" },
     { key: "unobtainable", label: "Unobtainable" },
     { key: "reskin", label: "Reskins" },
   ];
@@ -108,15 +109,28 @@
     const slot = picking.slot;
     if (picking.kind === "item") {
       const none: PickerOption[] = slot === "weapon" ? [] : [{ key: "", name: `No ${slotNames[slot].toLowerCase()}` }];
-      // Items no one can get, then reskins, which play exactly like another
-      // item, go last under their own headings.
-      const kind = (i: Item) => (i.unobtainable ? "unobtainable" : i.reskinOf ? "reskin" : "");
+      // Reskins that take their own enchantments, items no one can get, then
+      // reskins, which play exactly like another item, go last under their
+      // own headings.
+      const kind = (i: Item) =>
+        i.unobtainable ? "unobtainable" : i.reskinOf ? "reskin" : i.variantOf ? "variant" : "";
+      const detail = (i: Item) =>
+        kind(i) === "reskin"
+          ? `Reskin of ${i.reskinOf}`
+          : kind(i) === "variant"
+            ? `${i.variantOf} with its own enchantments`
+            : describe(i);
       const option = (i: Item): PickerOption => ({
         key: i.name,
         name: i.name,
         icon: itemIcon(sprites, i.type),
-        detail: kind(i) === "reskin" ? `Reskin of ${i.reskinOf}` : describe(i),
-        group: { unobtainable: "Unobtainable", reskin: "Reskins", "": undefined }[kind(i)],
+        detail: detail(i),
+        group: {
+          variant: "Reskins with special enchantments",
+          unobtainable: "Unobtainable",
+          reskin: "Reskins",
+          "": undefined,
+        }[kind(i)],
         tags: [
           i.tier !== undefined ? "tiered" : "untiered",
           ...(setTypes.has(i.type) ? ["set"] : []),
@@ -128,7 +142,7 @@
         title: slotNames[slot],
         selected: items[slot],
         filters: itemFilters,
-        options: [...none, ...of(""), ...of("unobtainable"), ...of("reskin")],
+        options: [...none, ...of(""), ...of("variant"), ...of("unobtainable"), ...of("reskin")],
       };
     }
     const index = picking.index;
