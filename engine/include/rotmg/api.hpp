@@ -33,6 +33,11 @@ class Api {
   /// running simulation alone.
   std::string SimulateMany(std::string_view request_json) const;
 
+  /// Looks for the build with the most calculated DPS: the items in the
+  /// slots the request doesn't lock, and their enchantments if asked.
+  /// Shapes are in api.cpp.
+  std::string Optimize(std::string_view request_json) const;
+
  private:
   std::optional<Dataset> dataset_;
   std::unique_ptr<Simulation> simulation_;

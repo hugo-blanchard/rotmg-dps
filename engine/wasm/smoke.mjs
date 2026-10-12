@@ -4,6 +4,7 @@
 // - every weapon evaluates to a finite, non-negative DPS
 // - every ability evaluates and simulates
 // - every armor and ring evaluates
+// - the optimizer works for every class
 // - the hit estimate agrees with what the wiki documents about real weapons
 //
 // Usage: node smoke.mjs <engine.js> <dataset.json>
@@ -175,6 +176,30 @@ for (const [kind, list] of [["armor", armors], ["ring", rings]]) {
   }
 }
 
+// The optimizer runs for every class and never ends below where it started.
+let optimized = 0;
+for (const cls of classes) {
+  const weapon = weapons.find((w) => w.slotType === cls.weaponSlotType);
+  if (!weapon) continue;
+  const res = JSON.parse(
+    api.optimize(
+      JSON.stringify({
+        class: cls.id,
+        weapon: weapon.name,
+        attack: cls.attack.max,
+        dexterity: cls.dexterity.max,
+        wisdom: cls.wisdom?.max ?? 0,
+        hitModel: { distance: 4 },
+        optimize: { enchantments: "none" },
+      }),
+    ),
+  );
+  if (!res.ok || !(res.builds[0]?.dps >= res.baseline)) {
+    failures.push(`optimizing ${cls.id}: ${res.ok ? `${res.builds[0]?.dps} below ${res.baseline}` : res.error}`);
+  }
+  optimized++;
+}
+
 // Every enchantment that changes a weapon, rather than only adding stats,
 // evaluates on the first weapon it fits. Ones for other gear are skipped.
 const { enchantments = [] } = JSON.parse(text);
@@ -235,6 +260,6 @@ if (failures.length) {
 console.log(
   `${weapons.length} weapons, ${abilityBuilds} abilities, ${gearWorn} armors and rings and ${enchanted} weapon ` +
     `enchantments evaluated, ` +
-    `hit estimate checks passed, ` +
+    `hit estimate checks passed, ${optimized} classes optimized, ` +
     `${simulated} simulations agree with the estimate`,
 );

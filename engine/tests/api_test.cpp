@@ -487,3 +487,64 @@ TEST_CASE("enchantments on a named ring follow the ring's own labels") {
   CHECK(json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "armor": "Nope"})"))["error"] ==
         "bad request: no armor named \"Nope\"");
 }
+
+TEST_CASE("the optimizer finds the build with the most DPS") {
+  rotmg::Api api = LoadedApi();
+  const std::string start = R"({"class": "Swordsman", "weapon": "Plain Sword", "ability": "Plain Spell",
+      "armor": "Plain Mail", "ring": "Plain Amulet", "attack": 75, "dexterity": 50, "wisdom": 60,
+      "hitModel": {"distance": 3}, "optimize": {"enchantments": "none"}})";
+  const json res = json::parse(api.Optimize(start));
+  REQUIRE(res["ok"] == true);
+  const json& best = res["builds"][0];
+  CHECK(best["dps"].get<double>() >= res["baseline"].get<double>());
+  for (std::size_t i = 1; i < res["builds"].size(); ++i) {
+    CHECK(res["builds"][i]["dps"].get<double>() <= res["builds"][i - 1]["dps"].get<double>());
+  }
+
+  // Every build there is for the Swordsman: one weapon, four abilities, one
+  // armor, two rings. The best of them by brute force is the optimizer's.
+  double most = 0;
+  for (const char* ability : {"Plain Spell", "War Helm", "Battle Seal", "Curse Orb"}) {
+    for (const char* ring : {"Plain Ring", "Plain Amulet"}) {
+      const json r = json::parse(api.Evaluate(json{{"class", "Swordsman"}, {"weapon", "Plain Sword"},
+                                                   {"ability", ability}, {"armor", "Plain Mail"}, {"ring", ring},
+                                                   {"attack", 75}, {"dexterity", 50}, {"wisdom", 60},
+                                                   {"hitModel", {{"distance", 3}}}}
+                                                  .dump()));
+      most = std::max(most, r["build"]["dps"].get<double>());
+    }
+  }
+  CHECK(best["dps"].get<double>() == Catch::Approx(most));
+  // The ring with ATT, which also makes 4 pieces of the Swordsman Set with
+  // the helm, beats the amulet's DEX.
+  CHECK(best["ring"] == "Plain Ring");
+}
+
+TEST_CASE("the optimizer keeps locked slots and fills enchantments legally") {
+  rotmg::Api api = LoadedApi();
+  const json locked = json::parse(api.Optimize(R"({"class": "Swordsman", "weapon": "Plain Sword",
+      "ring": "Plain Amulet", "attack": 75, "dexterity": 50,
+      "optimize": {"lock": ["ring", "ability", "armor"], "enchantments": "keep"}})"));
+  REQUIRE(locked["ok"] == true);
+  CHECK(locked["builds"][0]["ring"] == "Plain Amulet");
+  CHECK(locked["builds"][0]["dps"].get<double>() == Catch::Approx(locked["baseline"].get<double>()));
+
+  const json filled = json::parse(api.Optimize(R"({"class": "Swordsman", "weapon": "Plain Sword",
+      "attack": 75, "dexterity": 50, "optimize": {"lock": ["ability", "armor", "ring"], "enchantments": "best"}})"));
+  REQUIRE(filled["ok"] == true);
+  const json& best = filled["builds"][0];
+  CHECK(best["dps"].get<double>() > filled["baseline"].get<double>());
+  const auto on_weapon = best["enchantments"]["weapon"].get<std::vector<std::string>>();
+  CHECK_FALSE(on_weapon.empty());
+  CHECK(on_weapon.size() <= 4);
+  // Two single-stat bonuses can't share an item.
+  const auto has = [&](const char* id) { return std::ranges::find(on_weapon, id) != on_weapon.end(); };
+  CHECK_FALSE((has("Attack_Bonus_1") && has("Dexterity_Bonus_2")));
+  CHECK(has("Damage_Bonus_4"));
+  // What it found evaluates to the same DPS on its own.
+  json check = {{"class", "Swordsman"}, {"weapon", "Plain Sword"}, {"attack", 75}, {"dexterity", 50},
+                {"enchantments", on_weapon}};
+  CHECK(json::parse(api.Evaluate(check.dump()))["build"]["dps"].get<double>() ==
+        Catch::Approx(best["dps"].get<double>()));
+  CHECK(json::parse(api.Optimize(R"({"weapon": "Plain Sword"})"))["ok"] == false);
+}
