@@ -10,7 +10,7 @@ Unofficial fan tool, not affiliated with DECA. Game assets © DECA Live Operatio
 
 ## How it works
 
-- `engine/` (C++20) does all the math: damage per hit, fire rate, how many shots of a volley land on a round target, on-shoot effects, ability damage, MP and buff uptime, gear, set bonuses, enchantments and DPS, with the source of every rule it applies. It also searches for the build with the most DPS: one slot at a time and whole sets at once, then each item's enchantments. It also runs the step-by-step simulation the site animates: projectiles move with the same code as the hit estimate, against any number of round targets that can move and die, while the ability is cast whenever MP allows and the weapon's on-shoot effects go off. With one still target it agrees with the calculated numbers. It builds natively for the tests and to WebAssembly for the site.
+- `engine/` (C++20) does all the math: damage per hit, fire rate, how many shots of a volley land on a round target, ability damage, MP and buff uptime, what every item does when you shoot or use your ability, gear, set bonuses, enchantments and DPS, with the source of every rule it applies. It also searches for the build with the most DPS: one slot at a time and whole sets at once, then each item's enchantments. It also runs the step-by-step simulation the site animates: projectiles move with the same code as the hit estimate, against any number of round targets that can move and die, while the ability is cast whenever MP allows and the weapon's on-shoot effects go off. With one still target it agrees with the calculated numbers. It builds natively for the tests and to WebAssembly for the site.
 - `web/` (Svelte and TypeScript) is the site. It runs the WebAssembly engine in a Web Worker.
 - Item data and sprites come from the game client. An extractor that isn't part of this repo turns them into the files described below and publishes them as a `data-*` release, and the site deploys the newest one.
 
@@ -70,7 +70,8 @@ This section is enough to write your own extractor. Values keep the client's uni
 | `armors`, `rings` | Armor and rings, each sorted by `type`. Missing from datasets made before they were added | the same object XML files |
 | `targets` | Bosses the site offers as targets. Optional | the same object XML files |
 | `sets` | Equipment sets with a piece in the dataset, sorted by `type`. Optional | `equipmentsets.xml` |
-| `enchantments` | Enchantments that fit at least one weapon in the dataset, or any ring, armor or ability, sorted by `type`. Optional | `enchantments.xml` |
+| `enchantments` | Enchantments that fit at least one item in the dataset, sorted by `type`. Optional | `enchantments.xml` |
+| `enchantmentPools` | `{"name", "enchantments"}` for each pool an item rolls from: the pool's `id` and the `id` of every enchantment in it (see Enchantments). Optional | `enchantmentLists.xml` |
 
 ### Classes
 
@@ -92,6 +93,8 @@ An item is a weapon when its `<Class>` is `Equipment`, its `<SlotType>` is some 
 
 Many weapons have Shiny or Retro reskins with the same `<DisplayId>`. A reskin with the same stats as the base item is dropped; a different projectile `<ObjectId>`, or a different `color`, `objectId` or `type` in an on-shoot effect, counts as looks, not stats. One with different stats is kept, with its `id` as its name so names stay unique.
 
+A reskin under its own name stays in, with `reskinOf` naming the item it plays like: one of the same kind with every element and attribute the same, apart from looks (texture, sound, description, animation, labels, tier and the like), in the same sets, with as many enchantment slots and the same enchantments it can roll or get by artifact (see Enchantments). Of such a group, the base is the one not labelled `RESKIN` or `SHINY`, then a tiered one, then the lowest `type`.
+
 | Field | Client source |
 |---|---|
 | `type`, `id` | `type` and `id` attributes |
@@ -99,11 +102,16 @@ Many weapons have Shiny or Retro reskins with the same `<DisplayId>`. A reskin w
 | `slotType`, `tier` | `<SlotType>`, `<Tier>` (no tier for untiered items) |
 | `texture` | `{"file", "index"}` from `<Texture>` |
 | `statBonuses` | `{"stat", "amount"}` from each `<ActivateOnEquip>IncrementStat</ActivateOnEquip>` |
+| `onEquip` | the other `<ActivateOnEquip>` effects, read like an ability's `activates`, e.g. `IncrementStatRelative` (`amount` % of the whole `statRelativeTo` stat added to `stat`), `BonusStatRelative` (the same of the bonus stat) and `AbilityUseDiscount` (MP costs times `multiplier`) |
+| `onAbility` | one `{"type", "params"}` per `<OnPlayerAbilityActivate>`: what goes off when the wearer uses their ability, whichever slot the item is in |
+| `enchantmentSlots` | how many enchantments the item can hold: 4 for every item with `<EnchantmentSlots>`, whose `slotChance` is the chance each slot rolls when the item drops. Missing for items without it, which take none |
+| `enchantmentPool` | `<EnchantmentSlots enchantmentList>`, the pool its enchantments roll from, or the default pool when the client doesn't define that list (the Void weapons name ones like "Tiered Flail Table 5") |
+| `reskinOf` | the name of the item this one plays exactly like, when it's a reskin (above) |
 | `projectiles` | one per `<Projectile>` |
 | `subattacks` | one per `<Subattack>` |
 | `onShoot` | one `{"type", "params"}` per `<OnPlayerShootActivate>`, read like an ability's `activates` (below) |
-| `createdProjectiles` | as for abilities (below): the projectiles on-shoot effects name by `type` |
-| `gear` | `{"itemType", "name", "slotType"}` for each item an on-shoot effect's `mustWear` names; `mustWear` items must all be worn |
+| `createdProjectiles` | as for abilities (below): the projectiles on-shoot and on-ability effects name by `type` |
+| `gear` | `{"itemType", "name", "slotType"}` for each item an on-shoot effect's `mustWear` names. An effect goes off when every `mustWear` item, one of the `mustWearOR` ones and none of the `mustNotWear` ones are worn |
 | `labels` | `<Labels>`, split on commas. Enchantments match against them |
 | `unsupported` | names of tags on the item that can change its damage but aren't modelled yet, e.g. `OnEnemyHitActivate` or `TurnRate` |
 
@@ -142,23 +150,24 @@ An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is som
 
 | Field | Client source |
 |---|---|
-| `type`, `id`, `name`, `slotType`, `tier`, `texture`, `statBonuses` | as for weapons |
+| `type`, `id`, `name`, `slotType`, `tier`, `texture`, `statBonuses`, `labels` | as for weapons |
+| `onShoot`, `onEquip`, `onAbility`, `enchantmentSlots`, `enchantmentPool`, `reskinOf` | as for weapons. `onShoot` effects go off as the weapon fires |
 | `mpCost`, `cooldown` | `<MpCost>`, `<Cooldown>` in seconds, when set |
 | `projectiles`, `subattacks` | as for weapons, when the ability fires any |
 | `activates` | one `{"type", "params"}` per `<Activate>`: its text, like `BulletNova`, and its attributes |
-| `createdProjectiles` | `{"type", "projectile"}` for each item an activate names in its `type` attribute (e.g. `type="0xD866"` on Midnight Star's afterimages): that item's `type` as a number and its first `<Projectile>`. Missing when no such item has one |
+| `createdProjectiles` | `{"type", "projectile"}` for each item an activate or other effect names in its `type` attribute (e.g. `type="0xD866"` on Midnight Star's afterimages): that item's `type` as a number and its first `<Projectile>`. Missing when no such item has one |
 | `unsupported` | names of tags on the item that change how it's used but aren't modelled, e.g. `MpCostPerSecond` |
 
 `params` keeps the attributes as the client has them: numbers where they parse as numbers, `true` and `false` as booleans, everything else, including hex colours, as strings. The engine reads the ones it understands and lists every effect type it doesn't model.
 
 ### Armor and rings
 
-An item is an armor or a ring when its `<Class>` is `Equipment` and its `<SlotType>` is some class's armor or ring slot. Admin-only items and test files are left out, and reskins are merged, as with weapons.
+An item is an armor or a ring when its `<Class>` is `Equipment` and its `<SlotType>` is some class's armor or ring slot. Admin-only items and test files are left out, and reskins are merged, as with weapons. So are items without a `<BagType>` or with a `<Projectile>`: they only hold a proc's shots, or stand in for something else, like fishing rods.
 
 | Field | Client source |
 |---|---|
-| `type`, `id`, `name`, `slotType`, `tier`, `texture`, `statBonuses` | as for weapons |
-| `labels` | `<Labels>`, split on commas; enchantments match against them |
+| `type`, `id`, `name`, `slotType`, `tier`, `texture`, `statBonuses`, `labels` | as for weapons |
+| `onShoot`, `createdProjectiles`, `onEquip`, `onAbility`, `enchantmentSlots`, `enchantmentPool`, `reskinOf` | as for weapons. `onShoot` effects go off as the weapon fires |
 | `unsupported` | tags on the item that can change damage but aren't modelled, e.g. `OnPlayerHitActivate` |
 
 ### Targets
@@ -185,7 +194,9 @@ Each `<EquipmentSet>` lists its pieces with `<Setpiece slot itemtype>`, where sl
 
 ### Enchantments
 
-An enchantment fits an item that has every label in `compatible` and none in `incompatible`, and isn't named in `incompatibleItems`. An armor or ring is matched on its own `labels`. An ability, which has none in the dataset, takes an enchantment when `compatible` only asks for `EQUIPMENT` and `ABILITY`, and `incompatible` rules out neither. Two enchantments can't share an item when one's `incompatibleLabels` includes one of the other's `labels`. An item holds up to 4.
+An enchantment fits an item that has every label in `compatible` and none in `incompatible`, and isn't named in `incompatibleItems`. Datasets from before abilities had `labels` match an ability when `compatible` only asks for `EQUIPMENT` and `ABILITY`, and `incompatible` rules out neither. Two enchantments can't share an item when one's `incompatibleLabels` includes one of the other's `labels`. An item holds as many as its `enchantmentSlots`, at most 4.
+
+An item rolls the enchantments in its pool. An `<EnchantmentList>` takes every enchantment with one of the labels in an `<EnchantmentEntryLabel includeLabelsOR>` and none in its `excludeLabelsOR`, plus each one an `<EnchantmentEntry id>` names, minus any that a `<ModifyEnchantmentWeightLabel>` or `<ModifyEnchantmentWeight>` gives a `mult` of 0. One that fits but isn't in the pool, like a non-awakened Alien enchantment, only gets there with an artifact or an engraving. Enchantments labelled `LEGACY` can't be obtained.
 
 | Field | Client source |
 |---|---|
