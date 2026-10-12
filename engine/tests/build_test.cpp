@@ -1,6 +1,9 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
+#include <utility>
+
 #include "fixture.hpp"
 #include "rotmg/build.hpp"
 
@@ -93,4 +96,65 @@ TEST_CASE("a poison's damage boost raises weapon damage while it lasts") {
   const auto b = EvaluateBuild(Sword(), Find("Toxic Vial"), kChar, {}, {});
   const double share = 4.5 / (100 / 7.7);
   CHECK(b.weapon_dps == Approx(b.weapon.dps * (1 + 0.1175 * share)));
+}
+
+namespace {
+
+// Damage in one volley of the sword's only subattack, and how many volleys
+// it fires from the start of a window this long.
+std::pair<double, int> Volleys(const rotmg::Character& c, double length) {
+  const auto w = EvaluateWeapon(Sword(), c, {}, {});
+  const double rate = w.subattacks[0].volleys_per_second;
+  return {w.subattacks[0].dps / rate, static_cast<int>(std::floor(length * rate)) + 1};
+}
+
+rotmg::Character WithMp(int mp) {
+  rotmg::Character c = kChar;
+  c.max_magic_points = mp;
+  return c;
+}
+
+}  // namespace
+
+TEST_CASE("a burst in a single moment is one volley and one cast") {
+  const auto b = rotmg::EvaluateBurst(Sword(), Find("Plain Spell"), WithMp(200), {}, {}, {0, 20});
+  const auto build = EvaluateBuild(Sword(), Find("Plain Spell"), WithMp(200), {}, {});
+  CHECK(b.casts == Approx(1));
+  CHECK(b.weapon_damage == Approx(Volleys(kChar, 0).first));
+  CHECK(b.ability_damage == Approx(build.ability->damage_per_cast));
+  CHECK(b.damage == Approx(b.weapon_damage + b.ability_damage));
+}
+
+TEST_CASE("a burst's casts are limited by the MP that regenerates between windows") {
+  // 200 MP holds two 80 MP casts in 3 seconds, but 7.7 MP/s over 10 seconds
+  // only pays for 0.9625 of one per window in the long run.
+  const auto b = rotmg::EvaluateBurst(Sword(), Find("Plain Spell"), WithMp(200), {}, {}, {3, 10});
+  const auto build = EvaluateBuild(Sword(), Find("Plain Spell"), WithMp(200), {}, {});
+  const auto [per_volley, volleys] = Volleys(kChar, 3);
+  CHECK(b.casts == Approx(77.0 / 80));
+  CHECK(b.ability_damage == Approx(77.0 / 80 * build.ability->damage_per_cast));
+  CHECK(b.weapon_damage == Approx(volleys * per_volley));
+
+  // With 30 seconds between windows, 231 MP regenerates, enough for both.
+  const auto rested = rotmg::EvaluateBurst(Sword(), Find("Plain Spell"), WithMp(200), {}, {}, {3, 30});
+  CHECK(rested.casts == Approx(2));
+  CHECK(rested.ability_damage == Approx(2 * build.ability->damage_per_cast));
+}
+
+TEST_CASE("a burst's buffs are up from the window's first volley") {
+  // War Helm's Berserk lasts 7 seconds at 60 WIS, the whole window.
+  rotmg::Character berserk = kChar;
+  berserk.status.berserk = true;
+  const auto [per_volley, volleys] = Volleys(berserk, 2);
+  const auto b = rotmg::EvaluateBurst(Sword(), Find("War Helm"), WithMp(200), {}, {}, {2, 20});
+  CHECK(b.weapon_damage == Approx(volleys * per_volley));
+  CHECK(b.ability_damage == 0);
+}
+
+TEST_CASE("only the part of a poison that lands in the window counts") {
+  // Toxic Vial at 60 WIS: 380 on impact and 1230 over 4.5 seconds, a
+  // second of which is in the window.
+  const auto b = rotmg::EvaluateBurst(Sword(), Find("Toxic Vial"), WithMp(100), {}, {}, {1, 20});
+  CHECK(b.casts == Approx(1));
+  CHECK(b.ability_damage == Approx(380 + 1230 / 4.5));
 }

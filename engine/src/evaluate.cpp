@@ -174,9 +174,10 @@ Character Character::With(const std::vector<StatBonus>& bonuses) const {
 
 namespace {
 
-// The weapon's DPS and, with `details`, everything that explains it. The
-// optimizer and the buff windows of a build only need the DPS, and building
-// the explanation's text takes most of the time.
+// The weapon's DPS, subattacks and procs and, with `details`, everything
+// that explains them. The optimizer and the buff windows of a build only
+// need the numbers, and building the explanation's text takes most of the
+// time.
 Breakdown Evaluate(const Weapon& weapon, const Character& character, const Target& target,
                    const Assumptions& assumptions, bool details) {
   Breakdown out;
@@ -286,8 +287,8 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
     p.dps = p.per_second * p.damage;
     p.reference = "RealmEye: Poisons";
     out.dps += p.dps;
+    out.procs.push_back(p);
     if (details) {
-      out.procs.push_back(p);
       out.assumptions.push_back("the target is inside every poison burst");
       if (target.cursed) {
         out.assumptions.push_back("Curse adds 25% to poison damage too");
@@ -316,6 +317,8 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
     out.dps += shots_per_second / shots_between * count * each;
     any_shots = true;
     if (!details) {
+      out.procs.push_back({"", shots_per_second / shots_between, count * each,
+                           shots_per_second / shots_between * count * each, ""});
       continue;
     }
     const std::string name = "Extra shots (" + p.object_id + ")";
@@ -384,9 +387,14 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
   return Evaluate(weapon, character, target, assumptions, true);
 }
 
+Breakdown EvaluateWeaponNumbers(const Weapon& weapon, const Character& character, const Target& target,
+                                const Assumptions& assumptions) {
+  return Evaluate(weapon, character, target, assumptions, false);
+}
+
 double EvaluateWeaponDps(const Weapon& weapon, const Character& character, const Target& target,
                          const Assumptions& assumptions) {
-  return Evaluate(weapon, character, target, assumptions, false).dps;
+  return EvaluateWeaponNumbers(weapon, character, target, assumptions).dps;
 }
 
 }  // namespace rotmg
