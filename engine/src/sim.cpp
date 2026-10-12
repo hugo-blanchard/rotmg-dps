@@ -336,6 +336,7 @@ Target Simulation::TargetNow(std::size_t i) const {
       continue;
     }
     t.cursed |= d.effect == "Curse";
+    t.damage_taken = std::max(t.damage_taken, d.factor);
     t.exposed |= d.effect == "Exposed";
     t.armor_broken |= d.effect == "Armor Broken";
   }
@@ -359,20 +360,22 @@ std::vector<std::string> Simulation::TargetStatuses(std::size_t i) const {
 }
 
 double Simulation::HitDamage(const Group& group, Multiplier multiplier, std::size_t target) {
-  const Target t = TargetNow(target);
+  Target t = TargetNow(target);
+  const double boost = t.damage_taken;
+  t.damage_taken = 1;
   const Projectile& p = *group.projectile;
   if (start_.random_rolls) {
     // The listed max is never rolled (RealmEye: Weapon Attributes).
     const int roll = Roll(p.min_damage, p.max_damage - 1);
-    return group.subattack >= 0
-               ? DamageAfterDefense(rotmg::HitDamage(roll, multiplier), EffectiveDefense(t, p.armor_piercing), t.cursed)
-               : ExpectedAbilityDamage(roll, roll, group.bonus, t, p.armor_piercing);
+    return boost * (group.subattack >= 0 ? DamageAfterDefense(rotmg::HitDamage(roll, multiplier),
+                                                              EffectiveDefense(t, p.armor_piercing), t.cursed)
+                                         : ExpectedAbilityDamage(roll, roll, group.bonus, t, p.armor_piercing));
   }
   const int flags = (t.armored ? 1 : 0) | (t.armor_broken ? 2 : 0) | (t.exposed ? 4 : 0) | (t.cursed ? 8 : 0) |
                     (group.subattack >= 0 ? 16 : 0);
   const auto key = std::tuple{group.projectile, multiplier.num, multiplier.den, t.defense, flags, group.bonus};
   if (const auto it = damage_cache_.find(key); it != damage_cache_.end()) {
-    return it->second;
+    return boost * it->second;
   }
   // The weapon's damage goes through ATT; an ability's or a proc's doesn't,
   // but takes its StatMod bonus (RealmEye: Character Stats).
@@ -380,7 +383,7 @@ double Simulation::HitDamage(const Group& group, Multiplier multiplier, std::siz
                             ? ExpectedHitDamage(p, multiplier, t)
                             : ExpectedAbilityDamage(p.min_damage, p.max_damage - 1, group.bonus, t, p.armor_piercing);
   damage_cache_.emplace(key, damage);
-  return damage;
+  return boost * damage;
 }
 
 double Simulation::AbilityHit(int low, int high, double bonus, std::size_t target, bool armor_piercing) {
@@ -577,7 +580,7 @@ void Simulation::Cast() {
   constexpr double degrees = std::numbers::pi / 180;
   for (std::size_t i = 0; i < a.activates.size(); ++i) {
     const Activate& act = a.activates[i];
-    if (const auto buff = BuffOf(act, base_)) {
+    if (const auto buff = act.type == "PoisonGrenade" ? std::nullopt : BuffOf(act, base_)) {
       if (buff->on == Buff::On::kPlayer) {
         Boost(buff->effect, buff->amount, buff->duration_s, "ability");
       } else {
@@ -854,6 +857,9 @@ void Simulation::RunPending() {
         }
         poison.targets.push_back(t);
         Damage(t, impact * (TargetNow(t).cursed ? 1.25 : 1), p.from);
+        if (const auto boost = BuffOf(act, base_)) {
+          Debuff(t, boost->effect, boost->duration_s, 0, boost->factor);
+        }
         if (const std::string effect = act.Text("condEffect"); !effect.empty()) {
           Debuff(t, effect, act.Number("condDuration").value_or(0));
         }
@@ -947,10 +953,11 @@ void Simulation::Explode(const Trap& trap) {
   }
 }
 
-void Simulation::Debuff(std::size_t target, const std::string& raw, double duration_s, double delay_ms) {
+void Simulation::Debuff(std::size_t target, const std::string& raw, double duration_s, double delay_ms,
+                        double factor) {
   const std::string effect = raw == "ArmorBroken" ? "Armor Broken" : raw;
   // Only the statuses that change damage matter here.
-  if (effect != "Curse" && effect != "Exposed" && effect != "Armor Broken") {
+  if (effect != "Curse" && effect != "Exposed" && effect != "Armor Broken" && effect != kPoisonBoost) {
     return;
   }
   const double from = TimeMs() + delay_ms;
@@ -958,9 +965,10 @@ void Simulation::Debuff(std::size_t target, const std::string& raw, double durat
   auto& list = target_debuffs_[target];
   const auto same = std::ranges::find(list, effect, &Timed::effect);
   if (same == list.end()) {
-    list.push_back({effect, 0, until, from, ""});
+    list.push_back({effect, 0, until, from, "", factor});
   } else {
     same->until_ms = std::max(same->until_ms, until);
+    same->factor = std::max(same->factor, factor);
   }
 }
 

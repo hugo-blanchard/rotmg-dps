@@ -96,6 +96,15 @@ std::optional<Buff> BuffOf(const Activate& a, const Character& c) {
       }
       return Buff{Buff::On::kTarget, NormalizeStatus(effect), 0, duration};
     }
+  } else if (a.type == "PoisonGrenade" && a.Number("damageBoost").value_or(1) > 1) {
+    // RealmEye, Poisons: what you poison takes more damage from you, the
+    // highest boost if several. Baneserpent Poison's page gives its 9.5%
+    // (+0.225% per WIS over 50) as damageBoost 1.095 and
+    // statModDamageBoost 0.00225. That it lasts as long as the poison is an
+    // assumption.
+    Buff boost{Buff::On::kTarget, kPoisonBoost, 0, Param(a, "duration")};
+    boost.factor = *a.Number("damageBoost") + StatModBonus(a, "statModDamageBoost", c);
+    return boost;
   }
   return std::nullopt;
 }
@@ -226,8 +235,9 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
       const double total = Param(a, "totalDamage") + StatModBonus(a, "statModDamage", c);
       const double damage = (impact + total) * (target.cursed ? 1.25 : 1);
       assume("Curse adds 25% to poison damage too");
-      if (a.Number("damageBoost")) {
-        unsupported("poison's damage boost to poisoned targets");
+      if (const auto boost = BuffOf(a, c)) {
+        out.buffs.push_back(*boost);
+        assume("a poison's damage boost lasts as long as the poison and covers your other damage, not the poison's own");
       }
       out.parts.push_back({"Poison, impact and over time", damage, "RealmEye: Poisons"});
     } else if (a.type == "Trap") {

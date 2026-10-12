@@ -58,7 +58,7 @@ double ExpectedHitDamage(const Projectile& projectile, Multiplier multiplier, co
   for (int roll = low; roll <= high; ++roll) {
     total += DamageAfterDefense(HitDamage(roll, multiplier), defense, target.cursed);
   }
-  return total / (high - low + 1);
+  return total / (high - low + 1) * target.damage_taken;
 }
 
 double ExpectedAbilityDamage(int low, int high, double bonus, const Target& target, bool armor_piercing) {
@@ -68,7 +68,7 @@ double ExpectedAbilityDamage(int low, int high, double bonus, const Target& targ
   for (int roll = low; roll <= high; ++roll) {
     total += DamageAfterDefense(roll + bonus, defense, target.cursed);
   }
-  return total / (high - low + 1);
+  return total / (high - low + 1) * target.damage_taken;
 }
 
 }  // namespace rotmg

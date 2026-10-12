@@ -264,6 +264,8 @@ class Simulation {
     // Boosts of one effect on the same channel don't stack: the larger
     // amount holds until the later end.
     std::string channel{};
+    // A damage boost: what damage taken is multiplied by.
+    double factor = 1;
   };
   // Something an ability set going that happens later.
   struct Pending {
@@ -323,7 +325,8 @@ class Simulation {
   void TickPoisons();
   void CheckTraps();
   void Explode(const Trap& trap);
-  void Debuff(std::size_t target, const std::string& effect, double duration_s, double delay_ms = 0);
+  void Debuff(std::size_t target, const std::string& effect, double duration_s, double delay_ms = 0,
+              double factor = 1);
   // Deals damage, at most what the target has left, and returns what was
   // dealt. `shown` puts it in RecentHits.
   double Damage(std::size_t target, double amount, From from, bool shown = true);

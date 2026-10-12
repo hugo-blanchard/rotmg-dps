@@ -11,6 +11,7 @@ double WeaponDps(const Weapon& weapon, Character character, Target target, const
                  const std::vector<const Buff*>& active) {
   for (const Buff* b : active) {
     if (b->on == Buff::On::kTarget) {
+      target.damage_taken = std::max(target.damage_taken, b->factor);
       target.cursed |= b->effect == "Curse";
       target.exposed |= b->effect == "Exposed";
       target.armor_broken |= b->effect == "Armor Broken";

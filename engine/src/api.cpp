@@ -102,7 +102,8 @@ json ToJson(const Buff& b) {
   return {{"effect", b.effect},
           {"on", b.on == Buff::On::kPlayer ? "player" : "target"},
           {"amount", b.amount},
-          {"durationS", b.duration_s}};
+          {"durationS", b.duration_s},
+          {"factor", b.factor}};
 }
 
 json ToJson(const AbilityBreakdown& a) {

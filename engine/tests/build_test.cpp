@@ -87,3 +87,10 @@ TEST_CASE("a buff can't be up longer than the time between casts") {
                               {})
                    .dps));
 }
+
+TEST_CASE("a poison's damage boost raises weapon damage while it lasts") {
+  // Toxic Vial at 60 WIS: 11.75% more damage for 4.5 s of every 100 / 7.7 s.
+  const auto b = EvaluateBuild(Sword(), Find("Toxic Vial"), kChar, {}, {});
+  const double share = 4.5 / (100 / 7.7);
+  CHECK(b.weapon_dps == Approx(b.weapon.dps * (1 + 0.1175 * share)));
+}

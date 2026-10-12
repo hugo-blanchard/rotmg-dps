@@ -311,3 +311,19 @@ TEST_CASE("the time each buff and debuff is up is measured") {
   orb.Advance(10'000);
   CHECK(orb.TargetUptime(0).at("Curse") == Approx(4500).margin(10));
 }
+
+TEST_CASE("a poison makes the weapon do more to what it poisons") {
+  // From when the vial lands, 0.8 s in, the sword's hits on the poisoned
+  // target do 11.75% more for 4.5 s.
+  Simulation plain(Sword(), kWis60, At({{0, 3}}));
+  Simulation poisoned(Sword(), kWis60, At({{0, 3}}), &Ability("Toxic Vial"));
+  plain.Advance(1000);
+  poisoned.Advance(1000);
+  const double before = poisoned.Totals().damage;
+  CHECK(before > plain.Totals().damage);
+  const double plain_before = plain.Totals().damage;
+  plain.Advance(3000);
+  poisoned.Advance(3000);
+  CHECK(poisoned.Totals().damage - before == Approx(1.1175 * (plain.Totals().damage - plain_before)));
+  CHECK(poisoned.TargetStatuses(0) == std::vector<std::string>{rotmg::kPoisonBoost});
+}

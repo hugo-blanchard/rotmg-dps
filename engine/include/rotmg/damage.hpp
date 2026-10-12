@@ -20,6 +20,9 @@ struct Target {
   bool armor_broken = false;
   bool exposed = false;
   bool cursed = false;
+  /// Multiplies the damage it takes after everything else, like a poison's
+  /// damage boost.
+  double damage_taken = 1;
 };
 
 /// An exact fraction, so per-hit damage can be rounded down without floating

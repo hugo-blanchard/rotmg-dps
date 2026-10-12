@@ -160,13 +160,19 @@ TEST_CASE("a quiver's shots use the hit estimate and expose the target") {
   CHECK(EvaluateAbility(Ability("Plain Quiver"), kWis60, {}, a).parts[0].damage == Approx(2 * per_hit));
 }
 
-TEST_CASE("poison ignores DEF and flags its damage boost") {
-  // 60 WIS: impact 350 + 30, over time 1050 + 180.
+TEST_CASE("poison ignores DEF and boosts damage to what it poisons") {
+  // 60 WIS: impact 350 + 30, over time 1050 + 180, and a damage boost of
+  // 9.5% + 0.225% * 10 for the poison's 4.5 seconds.
   const auto open = EvaluateAbility(Ability("Toxic Vial"), kWis60, {}, {});
   const auto armored = EvaluateAbility(Ability("Toxic Vial"), kWis60, {.defense = 100}, {});
   CHECK(open.damage_per_cast == Approx(1610));
   CHECK(armored.damage_per_cast == Approx(1610));
-  CHECK(Has(open.unsupported, "poison's damage boost to poisoned targets"));
+  REQUIRE(open.buffs.size() == 1);
+  CHECK(open.buffs[0].effect == rotmg::kPoisonBoost);
+  CHECK(open.buffs[0].on == Buff::On::kTarget);
+  CHECK(open.buffs[0].factor == Approx(1.1175));
+  CHECK(open.buffs[0].duration_s == Approx(4.5));
+  CHECK(open.unsupported.empty());
 }
 
 TEST_CASE("lightning, traps and damage novas") {

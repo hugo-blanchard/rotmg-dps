@@ -35,6 +35,8 @@ struct Buff {
   std::string effect;
   int amount = 0;
   double duration_s = 0;
+  /// For a damage boost on targets, what their damage taken is multiplied by.
+  double factor = 1;
 };
 
 /// A scepter's lightning: damage on the first target, falling by decrDamage
@@ -56,8 +58,12 @@ int ShockblastTargets(const Activate& lightning, const Character& character);
 
 /// The buff or debuff one effect gives at these stats, if it changes weapon
 /// DPS: Damaging, Berserk, Weak or Dazed, ATT or DEX boosts on the player,
-/// Curse, Exposed or Armor Broken on targets.
+/// Curse, Exposed or Armor Broken on targets, or a poison's damage boost on
+/// what it poisons (kPoisonBoost).
 std::optional<Buff> BuffOf(const Activate& effect, const Character& character);
+
+/// The name of a poison's damage boost as a Buff effect.
+inline constexpr const char* kPoisonBoost = "Poison damage boost";
 
 /// The ability's default cooldown when it doesn't set one, in seconds. The
 /// client's default isn't documented.
