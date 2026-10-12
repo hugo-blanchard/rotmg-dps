@@ -1,6 +1,8 @@
 #include "rotmg/damage.hpp"
 
 #include <algorithm>
+#include <map>
+#include <tuple>
 #include <cmath>
 
 namespace rotmg {
@@ -54,11 +56,23 @@ double ExpectedHitDamage(const Projectile& projectile, Multiplier multiplier, co
   const int low = projectile.min_damage;
   // When min == max (placeholder projectiles are 0-0) there is a single roll.
   const int high = std::max(low, projectile.max_damage - 1);
-  double total = 0;
-  for (int roll = low; roll <= high; ++roll) {
-    total += DamageAfterDefense(HitDamage(roll, multiplier), defense, target.cursed);
+  // Averaging every roll is slow for wide ranges, and a build's DPS asks
+  // for the same averages once per buff window, so they're remembered. The
+  // key is everything the average depends on.
+  static std::map<std::tuple<int, int, int, int, int, bool>, double> known;
+  if (known.size() > 65536) {
+    known.clear();
   }
-  return total / (high - low + 1) * target.damage_taken;
+  const auto key = std::tuple{low, high, multiplier.num, multiplier.den, defense, target.cursed};
+  auto it = known.find(key);
+  if (it == known.end()) {
+    double total = 0;
+    for (int roll = low; roll <= high; ++roll) {
+      total += DamageAfterDefense(HitDamage(roll, multiplier), defense, target.cursed);
+    }
+    it = known.emplace(key, total / (high - low + 1)).first;
+  }
+  return it->second * target.damage_taken;
 }
 
 double ExpectedAbilityDamage(int low, int high, double bonus, const Target& target, bool armor_piercing) {

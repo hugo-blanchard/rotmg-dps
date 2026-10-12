@@ -1,6 +1,9 @@
 #include "rotmg/build.hpp"
 
 #include <algorithm>
+#include <map>
+#include <string>
+#include <vector>
 
 namespace rotmg {
 namespace {
@@ -30,10 +33,20 @@ double WeaponDps(const Weapon& weapon, Character character, Target target, const
 }
 
 // The weapon's DPS averaged over its chance boosts being up or not, each on
-// its own, with whatever else is up.
+// its own, with whatever else is up. Boosts of stats the weapon doesn't
+// read leave its DPS as it is, so mixes that differ only in those are
+// evaluated once: ATT and DEX count, and any stat an on-shoot effect
+// scales with.
 double MixedDps(const Weapon& weapon, const Character& character, const Target& target,
                 const Assumptions& assumptions, const std::vector<const Buff*>& active,
                 const std::vector<ChanceBoost>& boosts) {
+  std::vector<std::string> read = {"ATT", "DEX"};
+  for (const Activate& a : weapon.on_shoot) {
+    if (const std::string stat = a.Text("scalingStat"); !stat.empty() && std::ranges::find(read, stat) == read.end()) {
+      read.push_back(stat);
+    }
+  }
+  std::map<std::vector<int>, double> known;
   double total = 0;
   for (unsigned mask = 0; mask < (1u << boosts.size()); ++mask) {
     double weight = 1;
@@ -46,7 +59,15 @@ double MixedDps(const Weapon& weapon, const Character& character, const Target& 
       }
     }
     if (weight > 0) {
-      total += weight * WeaponDps(weapon, c, target, assumptions, active);
+      std::vector<int> key;
+      for (const std::string& stat : read) {
+        key.push_back(c.Stat(stat));
+      }
+      auto it = known.find(key);
+      if (it == known.end()) {
+        it = known.emplace(key, WeaponDps(weapon, c, target, assumptions, active)).first;
+      }
+      total += weight * it->second;
     }
   }
   return total;
