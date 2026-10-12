@@ -33,7 +33,8 @@
 //    "hitsPerVolley": [null, 1.5], "curatedHitsPerVolley": [2, null],
 //    "hitModel": {"distance": 4, "radius": 0.5},
 //    "curve": {"from": 0, "to": 150, "step": 5},
-//    "hitCurve": {"from": 0.5, "to": 10, "step": 0.25}}
+//    "hitCurve": {"from": 0.5, "to": 10, "step": 0.25},
+//    "burst": {"window": 1, "every": 10}}
 // Only "weapon" is required. "armor" and "ring" name the armor and ring worn:
 // their stats add to the character's, and they count for sets and for what
 // on-shoot effects need. "wearing" lists the item types of other gear worn
@@ -45,7 +46,9 @@
 // default) also the ones an artifact or engraving puts on it. "curve" adds
 // the build's DPS at each DEF in the range, with everything else in the
 // request unchanged. "hitCurve" adds the geometric estimate's total hits
-// per volley at each distance.
+// per volley at each distance. "burst" adds the damage dealt in a window of
+// that many seconds (0 for a single moment) every so many seconds, as
+// EvaluateBurst works it out.
 //
 // Response:
 //   {"ok": true, "breakdown": {...the weapon on its own...},
@@ -53,7 +56,9 @@
 //    "ability": {...}, "sets": [{"type", "name", "pieces", "stats", "unsupported"}],
 //    "enchantmentStats": [{"stat", "amount"}], "itemStats": [{"stat", "amount"}],
 //    "curve": [{"defense", "dps"}],
-//    "hitCurve": [{"distance", "hits"}], "hitModelGaps": ["..."]}
+//    "hitCurve": [{"distance", "hits"}], "hitModelGaps": ["..."],
+//    "burst": {"window", "every", "damage", "weaponDamage", "abilityDamage", "casts",
+//              "assumptions"}}
 // "ability" is only there when the request names one.
 //   {"ok": false, "error": "..."}
 namespace rotmg {
@@ -638,6 +643,27 @@ json StateOf(const Simulation& sim, std::size_t& history_sent) {
 }
 
 
+// A burst window from {"window", "every"}, in seconds. Throws on one that
+// isn't a window at all.
+BurstWindow ParseBurst(const json& j) {
+  const BurstWindow w{j.value("window", 0.0), j.value("every", 10.0)};
+  if (!(w.length_s >= 0 && w.length_s <= 60 && w.every_s > w.length_s && w.every_s <= 600)) {
+    throw std::invalid_argument("burst window of " + json(w.length_s).dump() + " s every " + json(w.every_s).dump() +
+                                " s");
+  }
+  return w;
+}
+
+json ToJson(const BurstBreakdown& b, const BurstWindow& w) {
+  return {{"window", w.length_s},
+          {"every", w.every_s},
+          {"damage", b.damage},
+          {"weaponDamage", b.weapon_damage},
+          {"abilityDamage", b.ability_damage},
+          {"casts", b.casts},
+          {"assumptions", b.assumptions}};
+}
+
 }  // namespace
 
 std::string Api::Load(std::string_view dataset_json) {
@@ -723,6 +749,10 @@ std::string Api::Evaluate(std::string_view request_json) const {
       }
       res["hitCurve"] = points;
       res["hitModelGaps"] = HitModelGaps(*weapon);
+    }
+    if (auto it = req.find("burst"); it != req.end()) {
+      const BurstWindow window = ParseBurst(*it);
+      res["burst"] = ToJson(EvaluateBurst(*weapon, ability, character, target, assumptions, window), window);
     }
     return res.dump();
   } catch (const std::exception& e) {
@@ -889,7 +919,8 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 //   "optimize": {"lock": ["weapon", ...], "pools": ["tiered", "untiered", "set"],
 //                "enchantments": "keep" | "none" | "best", "slots": 2, "artifacts": true,
 //                "around": "every stat" | "nothing" | "ATT" | ...,
-//                "weights": {"weapon": 1, "ability": 1}, "thorough": false, "results": 5}
+//                "weights": {"weapon": 1, "ability": 1}, "burst": {"window": 1, "every": 10},
+//                "thorough": false, "results": 5}
 // "lock" keeps the request's items in those slots. "pools" says which other
 // items may be tried: tiered ones, set pieces, and the rest (untiered).
 // Reskins and unobtainable items are never tried, but the request's own
@@ -902,15 +933,17 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 // that scales best with: every one (the default), none, which is quicker,
 // or just one. Builds are ranked by their weapon DPS, with the ability's
 // buffs, and the ability's own DPS, each times its weight, which is 1 for
-// both unless set. "thorough" searches much longer, for checking the normal
-// search. Returns
+// both unless set. With "burst", they're ranked by the weapon's and the
+// ability's damage in each burst window instead, weighted the same way.
+// "thorough" searches much longer, for checking the normal search. Returns
 //   {"ok": true, "baseline", "evaluated",
-//    "builds": [{"score", "dps", "weaponDps", "abilityDps",
+//    "builds": [{"score", "dps", "weaponDps", "abilityDps", "burst",
 //                "weapon", "ability", "armor", "ring",
 //                "enchantments": {"weapon": [...], "ability", "armor", "ring"}}]}
 // with the best build first and the next best, with other items, after it.
 // "score" is what builds are ranked by and "baseline" is the request's own
-// build's score. Each progress report is
+// build's score. "burst" is there with a burst window, shaped as in
+// Evaluate's response. Each progress report is
 //   {"done", "baseline", "evaluated", "builds"}
 // with "done" from 0 to 1, a rough guess, and the best builds so far.
 std::string Api::Optimize(std::string_view request_json,
@@ -1012,8 +1045,13 @@ std::string Api::Optimize(std::string_view request_json,
     if (weapon_weight == 0 && ability_weight == 0) {
       return Error("the weapon and ability weights can't both be 0").dump();
     }
-    const auto evaluate = [&](const OptimizerBuild& b,
-                              const std::array<int, 8>& extra) -> std::optional<BuildBreakdown> {
+    std::optional<BurstWindow> burst;
+    if (auto it = opt.find("burst"); it != opt.end()) {
+      burst = ParseBurst(*it);
+    }
+    // The build as a request the engine has read, or nothing for one it
+    // rejects.
+    const auto read = [&](const OptimizerBuild& b, const std::array<int, 8>& extra) -> std::optional<Request> {
       json r = base;
       for (std::size_t i = 0; i < extra.size(); ++i) {
         if (extra[i] != 0) {
@@ -1030,9 +1068,9 @@ std::string Api::Optimize(std::string_view request_json,
       r["enchantments"] = b.enchants[0];
       r["gearEnchantments"] = {{"ability", b.enchants[1]}, {"armor", b.enchants[2]}, {"ring", b.enchants[3]}};
       try {
-        const Request p = ParseRequest(r, d);
+        Request p = ParseRequest(r, d);
         if (p.weapon != nullptr && !p.unknown_ability) {
-          return EvaluateBuild(*p.weapon, p.ability, p.character, p.target, p.assumptions);
+          return p;
         }
       } catch (const std::exception&) {
         // A combination the engine rejects, like an enchantment that no
@@ -1040,16 +1078,27 @@ std::string Api::Optimize(std::string_view request_json,
       }
       return std::nullopt;
     };
+    const auto evaluate = [](const Request& p) {
+      return EvaluateBuild(*p.weapon, p.ability, p.character, p.target, p.assumptions);
+    };
+    const auto evaluate_burst = [&](const Request& p) {
+      return EvaluateBurst(*p.weapon, p.ability, p.character, p.target, p.assumptions, *burst);
+    };
     const auto ability_dps = [](const BuildBreakdown& b) { return b.ability ? b.ability->dps : 0.0; };
     problem.score = [&](const OptimizerBuild& b, const std::array<int, 8>& extra) -> std::optional<double> {
-      const std::optional<BuildBreakdown> e = evaluate(b, extra);
-      if (!e) {
+      const std::optional<Request> p = read(b, extra);
+      if (!p) {
         return std::nullopt;
       }
-      // Ties, common when a weight is 0, go to the build with the most DPS
-      // in all: a millionth of it is enough to tell them apart.
+      // Ties, common when a weight is 0, go to the build with the most
+      // damage in all: a millionth of it is enough to tell them apart.
       constexpr double kTieBreak = 1e-6;
-      return weapon_weight * e->weapon_dps + ability_weight * ability_dps(*e) + kTieBreak * e->dps;
+      if (burst) {
+        const BurstBreakdown e = evaluate_burst(*p);
+        return weapon_weight * e.weapon_damage + ability_weight * e.ability_damage + kTieBreak * e.damage;
+      }
+      const BuildBreakdown e = evaluate(*p);
+      return weapon_weight * e.weapon_dps + ability_weight * ability_dps(e) + kTieBreak * e.dps;
     };
 
     const auto builds = [&](const OptimizerResult& result) {
@@ -1057,10 +1106,14 @@ std::string Api::Optimize(std::string_view request_json,
       for (const auto& [score, b] : result.builds) {
         json enchants = json::object();
         json entry = {{"score", score}};
-        if (const std::optional<BuildBreakdown> e = evaluate(b, {})) {
-          entry["dps"] = e->dps;
-          entry["weaponDps"] = e->weapon_dps;
-          entry["abilityDps"] = ability_dps(*e);
+        if (const std::optional<Request> p = read(b, {})) {
+          const BuildBreakdown e = evaluate(*p);
+          entry["dps"] = e.dps;
+          entry["weaponDps"] = e.weapon_dps;
+          entry["abilityDps"] = ability_dps(e);
+          if (burst) {
+            entry["burst"] = ToJson(evaluate_burst(*p), *burst);
+          }
         }
         for (std::size_t slot = 0; slot < kSlots.size(); ++slot) {
           entry[kSlots[slot]] = b.items[slot];

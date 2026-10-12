@@ -663,6 +663,50 @@ TEST_CASE("the optimizer ranks by the weapon and ability DPS weighted as asked")
   CHECK(none["ok"] == false);
 }
 
+TEST_CASE("a burst window adds the damage dealt in each") {
+  rotmg::Api api = LoadedApi();
+  const json res = json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "ability": "Plain Spell",
+      "attack": 50, "dexterity": 50, "wisdom": 60, "maxMagicPoints": 200, "burst": {"window": 0, "every": 20}})"));
+  REQUIRE(res["ok"] == true);
+  const json& burst = res["burst"];
+  CHECK(burst["window"] == 0);
+  CHECK(burst["every"] == 20);
+  CHECK(burst["casts"] == 1);
+  CHECK(burst["damage"].get<double>() ==
+        Catch::Approx(burst["weaponDamage"].get<double>() + burst["abilityDamage"].get<double>()));
+  CHECK(burst["abilityDamage"].get<double>() == Catch::Approx(res["ability"]["damagePerCast"].get<double>()));
+
+  for (const char* bad : {R"({"window": 5, "every": 5})", R"({"window": -1, "every": 5})"}) {
+    const json r = json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "burst": )" + std::string(bad) + "}"));
+    CHECK(r["ok"] == false);
+  }
+}
+
+TEST_CASE("the optimizer can rank builds by their damage in a burst window") {
+  rotmg::Api api = LoadedApi();
+  const std::string stats = R"("attack": 75, "dexterity": 50, "wisdom": 60, "maxMagicPoints": 200,
+      "hitModel": {"distance": 3})";
+  const json res = json::parse(api.Optimize(R"({"class": "Swordsman", "weapon": "Plain Sword",
+      "ability": "Plain Spell", "armor": "Plain Mail", "ring": "Plain Amulet", )" + stats +
+                                            R"(, "optimize": {"enchantments": "none",
+      "burst": {"window": 1, "every": 10}}})"));
+  REQUIRE(res["ok"] == true);
+  const json& best = res["builds"][0];
+  CHECK(best["score"].get<double>() == Catch::Approx(best["burst"]["damage"].get<double>()));
+
+  // The most damage in a window of every Swordsman build, by brute force.
+  double most = 0;
+  for (const char* ability : {"Plain Spell", "War Helm", "Battle Seal", "Curse Orb"}) {
+    for (const char* ring : {"Plain Ring", "Plain Amulet"}) {
+      const json r = json::parse(api.Evaluate(R"({"class": "Swordsman", "weapon": "Plain Sword", "armor": "Plain Mail",
+          "ability": ")" + std::string(ability) + R"(", "ring": ")" + ring + R"(", )" + stats +
+                                              R"(, "burst": {"window": 1, "every": 10}})"));
+      most = std::max(most, r["burst"]["damage"].get<double>());
+    }
+  }
+  CHECK(best["burst"]["damage"].get<double>() == Catch::Approx(most));
+}
+
 TEST_CASE("the optimizer works from a reskin or an unobtainable item you chose") {
   rotmg::Api api = LoadedApi();
   const auto optimize = [&](const std::string& extra) {
