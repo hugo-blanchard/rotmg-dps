@@ -24,5 +24,7 @@
   { "weapon": "Plain Sword", "attack": 60, "dexterity": 40, "enchantments": ["Damage_Bonus_4", "FireRate_Bonus_4", "Attack_Bonus_1"],
     "target": { "defense": 25 } },
   { "weapon": "Plain Sword", "enchantments": ["Attack_Bonus_1", "Dexterity_Bonus_2"] },
+  { "weapon": "Plain Sword", "class": "Swordsman", "attack": 95, "dexterity": 60,
+    "enchantments": ["Relative_Attack_Bonus_4", "Dexterity_To_Attack_Bonus_3", "OnShoot_Attack_Bonus_4"] },
   { "weapon": "No Such Weapon" }
 ]

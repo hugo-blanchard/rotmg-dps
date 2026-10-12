@@ -17,7 +17,35 @@ bool Targets(const Mutator& m, const char* key, int index) {
   return !n || *n < 0 || static_cast<int>(*n) == index;
 }
 
+int ClassMax(const Class& c, const std::string& stat) {
+  if (stat == "ATT") return c.attack.max;
+  if (stat == "DEX") return c.dexterity.max;
+  if (stat == "WIS") return c.wisdom.max;
+  if (stat == "VIT") return c.vitality.max;
+  if (stat == "DEF") return c.defense.max;
+  if (stat == "SPD") return c.speed.max;
+  if (stat == "MAXHP") return c.max_hit_points.max;
+  if (stat == "MAXMP") return c.max_magic_points.max;
+  return 0;
+}
+
 }  // namespace
+
+std::vector<StatBonus> RelativeBonuses(const std::vector<Enchanted::Relative>& relative, const Class& cls,
+                                       const Character& character) {
+  std::map<std::string, double> gains;
+  for (const Enchanted::Relative& r : relative) {
+    const int bonus = std::max(0, character.Stat(r.from) - ClassMax(cls, r.from));
+    gains[r.stat] += r.percent / 100 * bonus;
+  }
+  std::vector<StatBonus> out;
+  for (const auto& [stat, amount] : gains) {
+    if (const int whole = static_cast<int>(std::floor(amount + 1e-9)); whole != 0) {
+      out.push_back({stat, whole});
+    }
+  }
+  return out;
+}
 
 bool Fits(const Enchantment& e, const Weapon& w) {
   return !e.compatible.empty() &&
@@ -34,7 +62,7 @@ bool Conflict(const Enchantment& a, const Enchantment& b) {
 }
 
 Enchanted Enchant(const Weapon& weapon, const std::vector<const Enchantment*>& enchantments) {
-  Enchanted out{weapon, {}, {}};
+  Enchanted out{weapon, {}, {}, {}};
   Weapon& w = out.weapon;
   std::map<std::string, double> stats;
   for (const Enchantment* e : enchantments) {
@@ -64,6 +92,9 @@ Enchanted Enchant(const Weapon& weapon, const std::vector<const Enchantment*>& e
         Activate effect = m.attributes;
         effect.type = m.text;
         w.on_shoot.push_back(std::move(effect));
+      } else if (m.tag == "ActivateOnEquip" && m.text == "BonusStatRelative") {
+        out.relative.push_back({m.attributes.Text("stat"), m.attributes.Text("statRelativeTo"),
+                                m.attributes.Number("amount").value_or(0)});
       } else if (m.tag == "ActivateOnEquip" && m.text == "IncrementStat") {
         stats[m.attributes.Text("stat")] += m.attributes.Number("amount").value_or(0);
       } else {

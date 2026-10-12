@@ -20,14 +20,15 @@
 //    "defense": 25, "speed": 50, "maxHitPoints": 700, "maxMagicPoints": 300,
 //    "status": {"weak", "damaging", "berserk", "dazed"},
 //    "target": {"defense", "armored", "armorBroken", "exposed", "cursed"},
-//    "wearing": [14381, 14382], "enchantments": ["Damage_Bonus_4"],
+//    "wearing": [14381, 14382], "enchantments": ["Damage_Bonus_4"], "class": "Archer",
 //    "hitsPerVolley": [null, 1.5], "curatedHitsPerVolley": [2, null],
 //    "hitModel": {"distance": 4, "radius": 0.5},
 //    "curve": {"from": 0, "to": 150, "step": 5},
 //    "hitCurve": {"from": 0.5, "to": 10, "step": 0.25}}
 // Only "weapon" is required. "wearing" lists the item types of other gear
 // worn, like a set's armor or a ring a weapon's procs need.
-// "enchantments" are ids of up to 4 enchantments on the weapon. "curve" adds
+// "enchantments" are ids of up to 4 enchantments on the weapon; relative
+// ones ("% of Bonus ATT") need "class", the class id. "curve" adds
 // the build's DPS at each DEF in the range, with everything else in the
 // request unchanged. "hitCurve" adds the geometric estimate's total hits
 // per volley at each distance.
@@ -153,6 +154,8 @@ struct Request {
   // The weapon with its enchantments, when it has any; `weapon` points here.
   std::shared_ptr<const Weapon> enchanted;
   std::vector<StatBonus> enchantment_stats;
+  // Assumptions the request's gear brings, for the build's list.
+  std::vector<std::string> notes;
 };
 
 // Reads the parts of a request Evaluate and StartSimulation share. Throws on
@@ -231,11 +234,36 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
       throw std::runtime_error("an item holds at most 4 enchantments");
     }
     Enchanted en = Enchant(*r.weapon, picked);
+    r.enchantment_stats = en.stats;
+    r.character = r.character.With(en.stats);
+    if (!en.stats.empty()) {
+      r.notes.emplace_back("fractional stat bonuses from enchantments add up and the total rounds down");
+    }
+    const auto cls = std::ranges::find(dataset.classes, req.value("class", std::string()), &Class::id);
+    if (!en.relative.empty() && cls == dataset.classes.end()) {
+      en.unsupported.emplace_back("relative stat bonuses, which need the class");
+    } else if (!en.relative.empty()) {
+      Character everything = r.character.With(r.weapon->stat_bonuses);
+      if (r.ability != nullptr) {
+        everything = everything.With(r.ability->stat_bonuses);
+      }
+      const std::vector<StatBonus> gains = RelativeBonuses(en.relative, *cls, everything);
+      r.character = r.character.With(gains);
+      for (const StatBonus& g : gains) {
+        const auto same = std::ranges::find(r.enchantment_stats, g.stat, &StatBonus::stat);
+        if (same == r.enchantment_stats.end()) {
+          r.enchantment_stats.push_back(g);
+        } else {
+          same->amount += g.amount;
+        }
+      }
+      r.notes.emplace_back(
+          "relative enchantments count stats above the class's max as bonus stats, as on a maxed character, and "
+          "round down");
+    }
     en.weapon.unsupported.insert(en.weapon.unsupported.end(), en.unsupported.begin(), en.unsupported.end());
     r.enchanted = std::make_shared<const Weapon>(std::move(en.weapon));
     r.weapon = r.enchanted.get();
-    r.enchantment_stats = en.stats;
-    r.character = r.character.With(en.stats);
   }
   for (const WornSet& s : r.sets) {
     r.character = r.character.With(s.stats);
@@ -283,8 +311,8 @@ std::string Api::Evaluate(std::string_view request_json) const {
   try {
     const json req = json::parse(request_json);
     const Request r = ParseRequest(req, *dataset_);
-    const auto& [weapon, ability, unknown_ability, character, target, assumptions, sets, enchanted, enchantment_stats] =
-        r;
+    const auto& [weapon, ability, unknown_ability, character, target, assumptions, sets, enchanted, enchantment_stats,
+                 notes] = r;
     if (weapon == nullptr) {
       return Error("no weapon named \"" + req.at("weapon").get<std::string>() + "\"").dump();
     }
@@ -305,8 +333,8 @@ std::string Api::Evaluate(std::string_view request_json) const {
     for (const StatBonus& b : enchantment_stats) {
       res["enchantmentStats"].push_back({{"stat", b.stat}, {"amount", b.amount}});
     }
-    if (!enchantment_stats.empty()) {
-      res["build"]["assumptions"].push_back("fractional stat bonuses from enchantments add up and the total rounds down");
+    for (const std::string& note : notes) {
+      res["build"]["assumptions"].push_back(note);
     }
     if (auto it = req.find("curve"); it != req.end()) {
       const int from = it->value("from", 0);

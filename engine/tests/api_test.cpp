@@ -227,3 +227,23 @@ TEST_CASE("an on-shoot boost with a chance is up part of the time") {
   };
   CHECK(res["build"]["weaponDps"].get<double>() == Catch::Approx((1 - share) * dps(50) + share * dps(58)));
 }
+
+TEST_CASE("relative enchantments add a share of the bonus stats, all at once") {
+  // Swordsman maxes at 75 ATT and 50 DEX. At 95 ATT and 60 DEX with the
+  // sword's +4 DEX, bonus ATT is 20 and bonus DEX 14: 16% of 20 plus 13% of
+  // 14 is 5.02 ATT, rounded down to 5. The ATT gain doesn't feed back in.
+  const rotmg::Api api = LoadedApi();
+  const std::string request =
+      R"({"weapon": "Plain Sword", "attack": 95, "dexterity": 60,
+          "enchantments": ["Relative_Attack_Bonus_4", "Dexterity_To_Attack_Bonus_3"])";
+  const json res = json::parse(api.Evaluate(request + R"(, "class": "Swordsman"})"));
+  REQUIRE(res["ok"] == true);
+  CHECK(res["enchantmentStats"] == json::parse(R"([{"stat": "ATT", "amount": 5}])"));
+  CHECK(res["breakdown"]["unsupported"].empty());
+
+  // Without the class there's no max to measure bonus stats from.
+  const json classless = json::parse(api.Evaluate(request + "}"));
+  REQUIRE(classless["ok"] == true);
+  CHECK(classless["enchantmentStats"].empty());
+  CHECK(classless["breakdown"]["unsupported"].back() == "relative stat bonuses, which need the class");
+}
