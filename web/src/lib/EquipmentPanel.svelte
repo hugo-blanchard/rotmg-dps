@@ -5,27 +5,35 @@
   import Picker, { type PickerOption } from "./Picker.svelte";
   import Sprite from "./Sprite.svelte";
   import {
+    canHold,
     clash,
     enchantmentSlotsOf,
     enchantmentsForItem,
     itemsFor,
     slots,
+    usableSlots,
     type Dataset,
     type EnchantmentOption,
     type Item,
     type Slot,
   } from "./dataset";
+  import type { Choice, Engine, EvaluateRequest } from "./engine";
   import { itemIcon, type Sprites } from "./sprites";
 
   let {
     dataset,
     sprites,
+    engine,
+    request,
     classId = $bindable(),
     items = $bindable(),
     enchants = $bindable(),
   }: {
     dataset: Dataset;
     sprites: Sprites | null;
+    engine: Engine | null;
+    /** The build as the engine sees it, for each choice's DPS change. */
+    request: EvaluateRequest;
     classId: string;
     /** Item names by slot; "" for an empty slot. */
     items: Record<Slot, string>;
@@ -176,6 +184,35 @@
     };
   });
 
+  // Each option's DPS change on the build as it is, worked out when the
+  // picker opens. An item keeps the slot's enchantments it can hold, as
+  // picking it does.
+  let changes = $state<Map<string, number | null> | null>(null);
+  let asked = 0;
+  $effect(() => {
+    const p = picking;
+    const keys = picker.options.map((o) => o.key);
+    if (!open || !engine || !p || p.kind === "class") return;
+    const slot = p.slot;
+    const choice = (key: string): Choice => {
+      if (p.kind === "enchant") {
+        const now = enchants[slot].map((id, i) => (i === p.index ? key : id));
+        return { item: items[slot], enchantments: now.filter(Boolean) };
+      }
+      const item = choices[slot].find((i) => i.name === key);
+      const current = enchants[slot].map(enchantment).filter((e) => !!e);
+      const fits = item ? current.filter((e) => canHold(dataset, slot, item, e)) : [];
+      const kept = usableSlots(enchants[slot], fits, enchantmentSlotsOf(dataset, item));
+      return { item: key, enchantments: kept.filter(Boolean) };
+    };
+    const id = ++asked;
+    changes = null;
+    engine.evaluateChoices($state.snapshot(request), slot, keys.map(choice)).then((res) => {
+      if (id !== asked || !res.ok) return;
+      changes = new Map(keys.map((k, i) => [k, res.options[i] === null ? null : res.options[i]! - res.dps]));
+    });
+  });
+
   function pick(key: string) {
     if (!picking) return;
     if (picking.kind === "class") {
@@ -256,6 +293,7 @@
   options={picker.options}
   selected={picker.selected}
   filters={picker.filters ?? []}
+  changes={picking?.kind === "class" ? undefined : changes}
   onpick={pick}
 />
 

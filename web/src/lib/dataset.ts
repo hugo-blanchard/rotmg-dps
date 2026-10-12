@@ -238,26 +238,30 @@ export function enchantmentsForItem(dataset: Dataset, slot: Slot, item: Item | u
   if (!item) {
     return [];
   }
+  const pool = pools(dataset).size > 0 ? pools(dataset).get(item.enchantmentPool ?? "") : undefined;
+  return (dataset.enchantments ?? [])
+    .filter((e) => canHold(dataset, slot, item, e))
+    .map((e) => ({ enchantment: e, rolls: !pool || pool.has(e.id) }));
+}
+
+/** Whether the item can have the enchantment, by roll or with an artifact. */
+export function canHold(dataset: Dataset, slot: Slot, item: Item, e: DatasetEnchantment): boolean {
   const labels = item.labels ?? [];
   const byPool = pools(dataset).size > 0;
-  const bySlot = slot === "ability" && labels.length === 0 && !byPool;
   if (byPool && !item.enchantmentSlots) {
-    return [];
+    return false;
   }
-  const pool = byPool ? pools(dataset).get(item.enchantmentPool ?? "") : undefined;
+  const bySlot = slot === "ability" && labels.length === 0 && !byPool;
   const generic = (l: string) => l === "EQUIPMENT" || l === "ABILITY";
-  return (dataset.enchantments ?? [])
-    .filter(
-      (e) =>
-        e.compatible.length > 0 &&
-        !e.labels.includes("LEGACY") &&
-        (bySlot
-          ? e.compatible.every(generic) && !(e.incompatible ?? []).some(generic)
-          : e.compatible.every((l) => labels.includes(l)) &&
-            !(e.incompatible ?? []).some((l) => labels.includes(l)) &&
-            !(e.incompatibleItems ?? []).includes(item.id)),
-    )
-    .map((e) => ({ enchantment: e, rolls: !pool || pool.has(e.id) }));
+  return (
+    e.compatible.length > 0 &&
+    !e.labels.includes("LEGACY") &&
+    (bySlot
+      ? e.compatible.every(generic) && !(e.incompatible ?? []).some(generic)
+      : e.compatible.every((l) => labels.includes(l)) &&
+        !(e.incompatible ?? []).some((l) => labels.includes(l)) &&
+        !(e.incompatibleItems ?? []).includes(item.id))
+  );
 }
 
 /** How many enchantments an item holds: its slots, or 4 in datasets from

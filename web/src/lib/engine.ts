@@ -331,6 +331,15 @@ export interface OptimizeProgress {
   builds: OptimizedBuild[];
 }
 
+/** One way to fill a slot: an item ("" for none) and the enchantments on it. */
+export interface Choice {
+  item: string;
+  enchantments: string[];
+}
+
+/** The build's DPS and each choice's, null for one the engine rejects; see Api::EvaluateChoices. */
+export type ChoicesResponse = { ok: true; dps: number; options: (number | null)[] } | { ok: false; error: string };
+
 /** Roughly how long a search would take here; see Api::EstimateOptimize. */
 export type EstimateResponse =
   | { ok: true; evaluationS: number; evaluations: [number, number]; seconds: [number, number] }
@@ -355,7 +364,8 @@ type Message =
   | { kind: "simAdvance"; ms: number }
   | { kind: "simMany"; request: string }
   | { kind: "optimize"; request: string }
-  | { kind: "estimate"; request: string };
+  | { kind: "estimate"; request: string }
+  | { kind: "choices"; request: string };
 
 export type WorkerRequest = Message & { id: number };
 
@@ -434,6 +444,15 @@ export class Engine {
       return { ok: false, error: res.error };
     }
     return JSON.parse(res.result!) as EvaluateResponse;
+  }
+
+  /** The build's DPS with one slot filled each way; see Api::EvaluateChoices. */
+  async evaluateChoices(request: EvaluateRequest, slot: string, options: Choice[]): Promise<ChoicesResponse> {
+    const res = await this.send({ kind: "choices", request: JSON.stringify({ ...request, choices: { slot, options } }) });
+    if (res.error) {
+      return { ok: false, error: res.error };
+    }
+    return JSON.parse(res.result!) as ChoicesResponse;
   }
 
   /** Starts a simulation, replacing any running one. Resolves to an error message, or "". */

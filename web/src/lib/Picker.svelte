@@ -28,6 +28,7 @@
     selected = "",
     filters = [],
     sprites,
+    changes,
     onpick,
   }: {
     open: boolean;
@@ -37,12 +38,18 @@
     /** Buttons that narrow the list to options with that tag. */
     filters?: { key: string; label: string }[];
     sprites: Sprites | null;
+    /** Each option's DPS change, null for one that can't be worked out; still coming if null itself. */
+    changes?: Map<string, number | null> | null;
     onpick: (key: string) => void;
   } = $props();
 
   let dialog = $state<HTMLDialogElement>();
   let search = $state("");
   let filter = $state("");
+  let byDps = $state(false);
+  const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
+  const change = (key: string) => changes?.get(key);
+  const changeText = (n: number) => (Math.abs(n) < 0.5 ? "±0" : `${n > 0 ? "+" : "−"}${whole.format(Math.abs(n))}`);
 
   $effect(() => {
     if (!dialog) return;
@@ -57,11 +64,20 @@
 
   const shown = $derived.by(() => {
     const words = search.toLowerCase().split(/\s+/).filter(Boolean);
-    return options.filter(
+    const matching = options.filter(
       (o) =>
         (!filter || (o.tags ?? []).includes(filter)) &&
         words.every((w) => o.name.toLowerCase().includes(w) || (o.detail ?? "").toLowerCase().includes(w)),
     );
+    if (!byDps || !changes) return matching;
+    // Within each group, so reskins and the like stay apart and in place.
+    const order = new Map<string, number>();
+    for (const o of matching) {
+      if (!order.has(o.group ?? "")) order.set(o.group ?? "", order.size);
+    }
+    const value = (o: PickerOption) => change(o.key) ?? -Infinity;
+    const place = (o: PickerOption) => order.get(o.group ?? "")!;
+    return [...matching].sort((a, b) => place(a) - place(b) || value(b) - value(a));
   });
   const groups = $derived.by(() => {
     const out: { name: string; options: PickerOption[] }[] = [];
@@ -101,6 +117,13 @@
         {/each}
       </div>
     {/if}
+    {#if changes !== undefined}
+      <label class="sort">
+        <input type="checkbox" bind:checked={byDps} />
+        Most DPS first
+        {#if changes === null}<span class="detail">working out each one's DPS…</span>{/if}
+      </label>
+    {/if}
     <div class="list">
       {#each groups as g (g.name)}
         {#if g.name}<h3>{g.name}</h3>{/if}
@@ -123,6 +146,10 @@
                     <span class="detail">{o.detail}</span>
                   {/if}
                 </span>
+                {#if typeof change(o.key) === "number" && o.key !== selected}
+                  {@const n = change(o.key)!}
+                  <span class="change" class:up={n >= 0.5} title="DPS change on your build">{changeText(n)}</span>
+                {/if}
               </button>
             </li>
           {/each}
@@ -149,7 +176,7 @@
   }
   .panel {
     display: grid;
-    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto minmax(0, 1fr);
     gap: 0.6rem;
     padding: 1rem;
     max-height: min(38rem, calc(100vh - 4rem));
@@ -243,6 +270,24 @@
   .text {
     display: grid;
     min-width: 0;
+    flex: 1;
+  }
+  .sort {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    font-size: 0.85rem;
+    color: var(--text-2);
+  }
+  .change {
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-2);
+    white-space: nowrap;
+  }
+  .change.up {
+    color: var(--text);
+    font-weight: 600;
   }
   .name {
     font-size: 0.95rem;

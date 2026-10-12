@@ -108,7 +108,7 @@
 <form class="editor" onsubmit={(e) => e.preventDefault()}>
   <fieldset>
     <legend>Build</legend>
-    <EquipmentPanel {dataset} {sprites} bind:classId bind:items bind:enchants />
+    <EquipmentPanel {dataset} {sprites} {engine} {request} bind:classId bind:items bind:enchants />
     <Optimizer {engine} {request} {dataset} {cls} {sprites} bind:items bind:enchants bind:burst />
   </fieldset>
 
