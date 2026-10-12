@@ -272,15 +272,34 @@ export interface OptimizeOptions {
   around?: string;
   /** What the weapon's DPS, with the ability's buffs, and the ability's own count for; 1 each unless set. */
   weights?: { weapon: number; ability: number };
+  /** Rank by damage in a window this many seconds long (0 for a moment) every so many seconds. */
+  burst?: BurstWindow;
   results?: number;
 }
 
+export interface BurstWindow {
+  window: number;
+  every: number;
+}
+
+/** Damage in each burst window; see EvaluateBurst in engine/include/rotmg/build.hpp. */
+export interface Burst extends BurstWindow {
+  damage: number;
+  weaponDamage: number;
+  abilityDamage: number;
+  /** On average over many windows. */
+  casts: number;
+  assumptions: string[];
+}
+
 export interface OptimizedBuild {
-  /** What builds are ranked by: the weighted weapon and ability DPS. */
+  /** What builds are ranked by: the weighted weapon and ability DPS, or burst damage. */
   score: number;
   dps: number;
   weaponDps: number;
   abilityDps: number;
+  /** With a burst window. */
+  burst?: Burst;
   weapon: string;
   ability: string;
   armor: string;

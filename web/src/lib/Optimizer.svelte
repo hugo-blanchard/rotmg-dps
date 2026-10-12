@@ -41,10 +41,13 @@
   let artifacts = $state(true);
   let perItem = $state(2);
   let around = $state("every stat");
-  // From 0, weapon DPS only, through 0.5, both in full, to 1, ability DPS only.
+  // From 0, the weapon only, through 0.5, both in full, to 1, the ability only.
   let balance = $state(0.5);
-  // The balance of the search whose builds are shown.
-  let rankedBy = $state(0.5);
+  let goal = $state<"sustained" | "burst">("sustained");
+  let burstWindow = $state(1);
+  let burstEvery = $state(10);
+  // How the search whose builds are shown ranked them.
+  let rankedBy = $state({ balance: 0.5, burst: false });
   let searching = $state(false);
   let found = $state<OptimizeResponse | null>(null);
   // The running search's last report, and whether the builds shown are
@@ -71,13 +74,27 @@
 
   const weights = (t: number) => ({ weapon: Math.min(1, 2 * (1 - t)), ability: Math.min(1, 2 * t) });
   const balanceText: Record<number, string> = {
-    0: "Weapon DPS only",
-    0.25: "Weapon DPS, plus half the ability's",
-    0.5: "Weapon and ability DPS",
-    0.75: "Ability DPS, plus half the weapon's",
-    1: "Ability DPS only",
+    0: "Weapon only",
+    0.25: "Weapon, plus half the ability",
+    0.5: "Weapon and ability",
+    0.75: "Ability, plus half the weapon",
+    1: "Ability only",
   };
-  const scoreUnit: Record<number, string> = { 0: " weapon DPS", 0.5: "", 1: " ability DPS" };
+  // What a gain on the start's score is in, for the search shown.
+  const scoreUnit = $derived.by(() => {
+    const what = rankedBy.burst ? "damage" : "DPS";
+    const units: Record<number, string> = { 0: ` weapon ${what}`, 0.5: rankedBy.burst ? " damage" : "", 1: ` ability ${what}` };
+    return units[rankedBy.balance] ?? " weighted";
+  });
+  // An emptied number box reads as null.
+  const burstValid = $derived(
+    Number.isFinite(burstWindow) &&
+      Number.isFinite(burstEvery) &&
+      burstWindow >= 0 &&
+      burstWindow <= 60 &&
+      burstEvery > burstWindow &&
+      burstEvery <= 600,
+  );
 
   const asResponse = (p: OptimizeProgress | null): OptimizeResponse | null =>
     p && { ok: true, baseline: p.baseline, evaluated: p.evaluated, builds: p.builds };
@@ -88,7 +105,7 @@
     found = null;
     progress = null;
     stopped = false;
-    rankedBy = balance;
+    rankedBy = { balance, burst: goal === "burst" };
     startedAt = now = performance.now();
     const ticking = setInterval(() => (now = performance.now()), 500);
     const options: OptimizeOptions = {
@@ -99,6 +116,7 @@
       slots: perItem,
       around,
       weights: weights(balance),
+      burst: goal === "burst" ? { window: burstWindow, every: burstEvery } : undefined,
       results: 5,
     };
     const res = await engine.optimize({ ...$state.snapshot(request), optimize: options }, (p) => (progress = p));
@@ -139,6 +157,8 @@
     itemIcon(sprites, itemsFor(dataset, cls, slot).find((i) => i.name === name)?.type);
   const enchantCount = (b: OptimizedBuild) => slots.reduce((n, s) => n + b.enchantments[s].length, 0);
   const signed = (n: number) => `${n >= 0 ? "+" : ""}${whole.format(n)}`;
+  const tenths = new Intl.NumberFormat("en", { maximumFractionDigits: 1 });
+  const casts = (n: number) => `${tenths.format(n)} ${n === 1 ? "cast" : "casts"}`;
 </script>
 
 <div class="optimizer">
@@ -196,6 +216,28 @@
         </select>
       </label>
       <label class="mode">
+        Optimize for
+        <select bind:value={goal}>
+          <option value="sustained">Sustained DPS</option>
+          <option value="burst">Burst damage</option>
+        </select>
+      </label>
+      {#if goal === "burst"}
+        <div class="burst">
+          <label>A window of <input type="number" min="0" max="60" step="0.1" bind:value={burstWindow} /> s</label>
+          <label>every <input type="number" min="1" max="600" step="1" bind:value={burstEvery} /> s</label>
+        </div>
+        {#if !burstValid}
+          <p role="alert">The window has to be 0 to 60 seconds, and shorter than the time between windows.</p>
+        {/if}
+        <p class="hint">
+          For bosses you can only hurt now and then. A window of 0 s is a single moment: one volley and one cast. Only
+          what you fire or cast in the window counts, and of a poison only what lands in it. The ability is cast as
+          the window opens and again as soon as cooldown and MP allow, and over many windows each only gets the MP
+          that regenerates in between.
+        </p>
+      {/if}
+      <label class="mode">
         Rank by
         <input type="range" min="0" max="1" step="0.25" bind:value={balance} />
         <span class="balance">{balanceText[balance]}</span>
@@ -211,10 +253,12 @@
           <button type="button" onclick={stop}>Stop</button>
         </div>
       {:else}
-        <button type="button" class="primary" onclick={search} disabled={!engine}>Find the most DPS</button>
+        <button type="button" class="primary" onclick={search} disabled={!engine || (goal === "burst" && !burstValid)}>
+          {goal === "burst" ? "Find the most burst damage" : "Find the most DPS"}
+        </button>
       {/if}
       <p class="hint">
-        Against the target and distance below, using the calculated DPS. It tries items one or two slots at a time
+        Against the target and distance below, using the calculated numbers. It tries items one or two slots at a time
         and whole sets, and refits every item's enchantments around each change. Then it starts again from the
         ability that scales best with each stat you build around, since some builds only work when everything feeds
         that ability. It can still miss a better build, but never returns one worse than yours.
@@ -236,10 +280,20 @@
                 {/each}
               </div>
               <div class="figures">
-                <strong>{whole.format(b.dps)} DPS</strong>
+                {#if b.burst}
+                  <strong>{whole.format(b.burst.damage)} per window</strong>
+                  <span>
+                    {whole.format(b.burst.weaponDamage)} weapon, {whole.format(b.burst.abilityDamage)} ability from
+                    {casts(b.burst.casts)}, {whole.format(b.dps)} DPS sustained,
+                  </span>
+                {:else}
+                  <strong>{whole.format(b.dps)} DPS</strong>
+                  {#if b.abilityDps > 0}
+                    <span>{whole.format(b.weaponDps)} weapon, {whole.format(b.abilityDps)} ability,</span>
+                  {/if}
+                {/if}
                 <span>
-                  {b.abilityDps > 0 ? `${whole.format(b.weaponDps)} weapon, ${whole.format(b.abilityDps)} ability, ` : ""}
-                  {signed(b.score - shown.baseline)}{scoreUnit[rankedBy] ?? " weighted"} on yours{#if enchantCount(b)},
+                  {signed(b.score - shown.baseline)}{scoreUnit} on yours{#if enchantCount(b)},
                     {enchantCount(b)} enchantments{/if}
                 </span>
               </div>
@@ -333,6 +387,20 @@
   .progress button {
     grid-row: 1 / span 2;
     grid-column: 2;
+  }
+  .burst {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.8rem;
+  }
+  .burst input {
+    width: 4.5rem;
+    font: inherit;
+    color: var(--text);
+    background: var(--page);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.25rem 0.4rem;
   }
   input[type="range"] {
     accent-color: var(--accent);
