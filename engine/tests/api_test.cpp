@@ -297,8 +297,7 @@ TEST_CASE("enchantments on the other gear add stats and cut MP costs") {
 
 TEST_CASE("same-stat on-shoot boosts on two items count once") {
   // The enchantment "does not stack with other Enchantment procs of the
-  // same stat": on the weapon and the ring it's one +8 ATT, up whenever
-  // either is.
+  // same stat": a second copy, on the ring, adds nothing (Hugo, 2026-10-12).
   const rotmg::Api api = LoadedApi();
   const std::string weapon = R"({"weapon": "Plain Sword", "attack": 50, "dexterity": 0, "enchantments": ["OnShoot_Attack_Bonus_4"])";
   const json one = json::parse(api.Evaluate(weapon + "}"));
@@ -307,7 +306,16 @@ TEST_CASE("same-stat on-shoot boosts on two items count once") {
   REQUIRE(two["build"]["uptimes"].size() == 1);
   const double share = one["build"]["uptimes"][0]["share"].get<double>();
   CHECK(two["build"]["uptimes"][0]["amount"] == 8);
-  CHECK(two["build"]["uptimes"][0]["share"].get<double>() == Catch::Approx(1 - (1 - share) * (1 - share)));
+  CHECK(two["build"]["uptimes"][0]["share"].get<double>() == Catch::Approx(share));
+  CHECK(two["build"]["dps"].get<double>() == Catch::Approx(one["build"]["dps"].get<double>()));
+  // Of two different ones, the bigger boost is the one that counts: the
+  // Alien one's +10, with an Alien item worn, over the +8.
+  const json mixed = json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "attack": 50, "dexterity": 0,
+      "wearing": [28689], "enchantments": ["OnShoot_Attack_Bonus_4"],
+      "gearEnchantments": {"ring": ["Alien_OnShoot_Attack_Boost"]}})"));
+  REQUIRE(mixed["ok"] == true);
+  REQUIRE(mixed["build"]["uptimes"].size() == 1);
+  CHECK(mixed["build"]["uptimes"][0]["amount"] == 10);
 }
 
 

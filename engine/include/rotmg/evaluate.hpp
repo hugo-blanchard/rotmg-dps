@@ -121,9 +121,15 @@ struct ChanceBoost {
 /// The weapon's chance boosts at `shots_per_second`. After a boost goes off
 /// its cooldown runs; then each shot has the chance, so the next one comes
 /// 1 / (chance x shots per second) seconds later on average. A boost is up
-/// for its duration out of that cycle. Boosts of one stat that don't stack
-/// come back as one.
+/// for its duration out of that cycle. Only the ones CountsAsChanceBoost
+/// allows are listed.
 std::vector<ChanceBoost> ChanceBoosts(const Weapon& weapon, const std::vector<int>& worn, double shots_per_second);
+
+/// Whether one of the weapon's chance boosts counts, with `worn` including
+/// the weapon. Boosts that don't stack with others of their stat (channel
+/// noStack) don't add up at all: of those, only one per stat counts, the
+/// biggest, then the longest, then the likeliest, then the first.
+bool CountsAsChanceBoost(const Weapon& weapon, const Activate& boost, const std::vector<int>& worn);
 
 /// Single-target DPS of a weapon. Each subattack fires on its own at its own
 /// rate (RealmEye: Weapon Attributes), so the total is their sum.

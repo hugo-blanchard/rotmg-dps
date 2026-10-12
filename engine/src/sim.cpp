@@ -236,7 +236,7 @@ Simulation::Simulation(const Weapon& weapon, const Character& character, const S
       proc.group = AddGroup(p, act, From::kProc);
     }
     if (proc.model == OnShootModel::kPoisonBurst || proc.model == OnShootModel::kExtraShots ||
-        proc.model == OnShootModel::kChanceBoost) {
+        (proc.model == OnShootModel::kChanceBoost && CountsAsChanceBoost(weapon_, act, worn))) {
       procs_.push_back(proc);
     }
   }
@@ -836,8 +836,8 @@ void Simulation::OnShoot() {
         }
         proc.chance = 0;
       }
-      // Boosts of one stat on a noStack channel don't stack (RealmEye:
-      // Enchantments); any others stack.
+      // Only one boost of a stat on a noStack channel is set up (see
+      // CountsAsChanceBoost); any others stack.
       const std::string channel = act.Text("channel");
       Boost(act.Text("stat"), static_cast<int>(act.Number("amount").value_or(0)), act.Number("duration").value_or(0),
             channel.starts_with("noStack") ? channel : "proc " + std::to_string(i));

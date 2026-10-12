@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 
 #include "rotmg/ability.hpp"
@@ -105,32 +106,47 @@ OnShootModel ModelOf(const Weapon& weapon, const Activate& a, const std::vector<
   return IsChanceBoost(a) ? OnShootModel::kChanceBoost : OnShootModel::kNone;
 }
 
+bool CountsAsChanceBoost(const Weapon& weapon, const Activate& boost, const std::vector<int>& worn) {
+  const auto no_stack = [](const Activate& a) { return a.Text("channel").starts_with("noStack"); };
+  if (!no_stack(boost)) {
+    return true;
+  }
+  // Which of two non-stacking boosts of a stat wins, as a tuple compared in
+  // order; which one the game honours isn't documented.
+  const auto rank = [](const Activate& a) {
+    return std::tuple{a.Number("amount").value_or(0), a.Number("duration").value_or(0), a.Number("proc").value_or(0)};
+  };
+  bool earlier = true;
+  for (const Activate& other : weapon.on_shoot) {
+    if (&other == &boost) {
+      earlier = false;
+      continue;
+    }
+    if (!IsChanceBoost(other) || !no_stack(other) || other.Text("stat") != boost.Text("stat") ||
+        !GearWorn(other, worn)) {
+      continue;
+    }
+    if (rank(other) > rank(boost) || (earlier && rank(other) == rank(boost))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 std::vector<ChanceBoost> ChanceBoosts(const Weapon& weapon, const std::vector<int>& worn, double shots_per_second) {
   std::vector<ChanceBoost> out;
   std::vector<int> wearing = worn;
   wearing.push_back(weapon.type);
   for (const Activate& a : weapon.on_shoot) {
-    if (!IsChanceBoost(a) || !GearWorn(a, wearing) || shots_per_second <= 0) {
+    if (!IsChanceBoost(a) || !GearWorn(a, wearing) || !CountsAsChanceBoost(weapon, a, wearing) ||
+        shots_per_second <= 0) {
       continue;
     }
     const double duration = *a.Number("duration");
     const double cycle = a.Number("cooldown").value_or(0) + 1 / (*a.Number("proc") * shots_per_second);
-    const ChanceBoost boost{{a.Text("stat"), static_cast<int>(a.Number("amount").value_or(0))},
-                            duration,
-                            std::min(1.0, duration / cycle)};
-    // The enchantments "don't stack with other Enchantment procs of the same
-    // stat" (channel noStack): two on different items count as one that's
-    // up whenever either is, at the larger amount.
-    const auto same = std::ranges::find_if(out, [&](const ChanceBoost& b) {
-      return b.bonus.stat == boost.bonus.stat && a.Text("channel").starts_with("noStack");
-    });
-    if (same == out.end()) {
-      out.push_back(boost);
-    } else {
-      same->share = 1 - (1 - same->share) * (1 - boost.share);
-      same->bonus.amount = std::max(same->bonus.amount, boost.bonus.amount);
-      same->duration_s = std::max(same->duration_s, boost.duration_s);
-    }
+    out.push_back({{a.Text("stat"), static_cast<int>(a.Number("amount").value_or(0))},
+                   duration,
+                   std::min(1.0, duration / cycle)});
   }
   return out;
 }
