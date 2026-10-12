@@ -23,6 +23,8 @@
     expectedDps,
     expectedHits,
     expectedAbilityDps,
+    expectedProcDps,
+    expectedTotalDps,
   }: {
     engine: Engine;
     request: EvaluateRequest;
@@ -34,6 +36,10 @@
     /** The breakdown's hits per volley, summed over subattacks. */
     expectedHits: number;
     expectedAbilityDps?: number;
+    /** The weapon's on-shoot procs, like poison bursts. */
+    expectedProcDps: number;
+    /** Weapon, procs and ability together, with buffs at their uptime. */
+    expectedTotalDps: number;
   } = $props();
 
   const height = 360;
@@ -303,7 +309,7 @@
         const degrees = s.heading - 90 + (sprite.angleCorrection ?? 0) * 45 + spin;
         blit(sprite.rect, sx(s.x), sy(s.y), size, (degrees * Math.PI) / 180);
       } else {
-        ctx.fillStyle = s.subattack < 0 ? color("--blast") : color("--accent");
+        ctx.fillStyle = s.from === "weapon" ? color("--accent") : color("--blast");
         ctx.beginPath();
         ctx.arc(sx(s.x), sy(s.y), Math.max(2, size / 6), 0, Math.PI * 2);
         ctx.fill();
@@ -348,6 +354,9 @@
   const measuredDps = $derived(sim?.ok && seconds > 0 ? sim.totals.damage / seconds : 0);
   const aimDps = $derived(sim?.ok && seconds > 0 ? (sim.targets[sim.aim]?.damage ?? 0) / seconds : 0);
   const abilityDps = $derived(sim?.ok && seconds > 0 ? sim.ability.damage / seconds : 0);
+  const procDps = $derived(sim?.ok && seconds > 0 ? sim.procs.damage / seconds : 0);
+  const totalDps = $derived(sim?.ok && seconds > 0 ? sim.targets.reduce((n, t) => n + t.damage, 0) / seconds : 0);
+  const hasProcs = $derived(expectedProcDps > 0 || (sim?.ok && sim.procs.activations > 0));
   const measuredHits = $derived(
     sim?.ok
       ? sim.perSubattack.reduce((sum, c) => sum + (c.resolvedVolleys ? c.resolvedHits / c.resolvedVolleys : 0), 0)
@@ -476,9 +485,15 @@
         <dd>{seconds > 0 ? fine.format(sim.totals.hits / seconds) : "0"}</dd>
       </div>
       <div>
-        <dt>{sim.targets.length > 1 ? "DPS, all targets" : "DPS"}</dt>
+        <dt>{sim.targets.length > 1 ? "Weapon DPS, all targets" : "Weapon DPS"}</dt>
         <dd>{whole.format(measuredDps)} <span>engine {whole.format(expectedDps)} on one</span></dd>
       </div>
+      {#if hasProcs}
+        <div>
+          <dt>{sim.targets.length > 1 ? "Proc DPS, all targets" : "Proc DPS"}</dt>
+          <dd>{whole.format(procDps)} <span>engine {whole.format(expectedProcDps)} on one</span></dd>
+        </div>
+      {/if}
       {#if sim.targets.length > 1}
         <div>
           <dt>DPS on the aim target</dt>
@@ -498,6 +513,12 @@
         <div>
           <dt>Casts</dt>
           <dd>{sim.ability.casts}</dd>
+        </div>
+      {/if}
+      {#if ability || hasProcs}
+        <div>
+          <dt>{sim.targets.length > 1 ? "Total DPS, all targets" : "Total DPS"}</dt>
+          <dd>{whole.format(totalDps)} <span>engine {whole.format(expectedTotalDps)} on one, in the long run</span></dd>
         </div>
       {/if}
     </dl>

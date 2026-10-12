@@ -319,6 +319,8 @@
             expectedDps={result.breakdown.subattacks.reduce((n, s) => n + s.dps, 0)}
             expectedHits={result.breakdown.subattacks.reduce((n, s) => n + s.hitsPerVolley, 0)}
             expectedAbilityDps={result.ability?.dps}
+            expectedProcDps={result.breakdown.procs.reduce((n, p) => n + p.dps, 0)}
+            expectedTotalDps={result.build?.dps ?? result.breakdown.dps}
           />
         </div>
       {/if}

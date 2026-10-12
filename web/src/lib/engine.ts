@@ -154,8 +154,10 @@ export type EvaluateResponse =
   | { ok: false; error: string };
 
 export interface SimShot {
-  /** -1 for the ability's shots. */
+  /** -1 for the ability's and procs' shots. */
   subattack: number;
+  /** A proc is one of the weapon's on-shoot effects. */
+  from: "weapon" | "ability" | "proc";
   projectileId: number;
   objectId: string;
   x: number;
@@ -216,6 +218,7 @@ export type SimState =
       /** Statuses and stat boosts on the player now, like "Berserk". */
       statuses: string[];
       ability: { casts: number; hits: number; damage: number };
+      procs: { activations: number; hits: number; damage: number };
       effects: SimEffect[];
     }
   | { ok: false; error: string };
