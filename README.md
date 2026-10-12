@@ -99,6 +99,8 @@ Many weapons have Shiny or Retro reskins with the same `<DisplayId>`. A reskin w
 | `projectiles` | one per `<Projectile>` |
 | `subattacks` | one per `<Subattack>` |
 | `onShoot` | one `{"type", "params"}` per `<OnPlayerShootActivate>`, read like an ability's `activates` (below) |
+| `createdProjectiles` | as for abilities (below): the projectiles on-shoot effects name by `type` |
+| `gear` | `{"itemType", "name", "slotType"}` for each item an on-shoot effect's `mustWear` names; `mustWear` items must all be worn |
 | `unsupported` | names of tags on the item that can change its damage but aren't modelled yet, e.g. `OnEnemyHitActivate` or `TurnRate` |
 
 ### Projectiles
