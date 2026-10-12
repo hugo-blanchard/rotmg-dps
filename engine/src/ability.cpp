@@ -113,6 +113,14 @@ std::optional<Buff> BuffOf(const Activate& a, const Character& c) {
   return std::nullopt;
 }
 
+double PoisonImpact(const Activate& a, const Character& c) {
+  return Param(a, "impactDamage") + StatModBonus(a, "statModImpactDamage", c) / 10;
+}
+
+double PoisonTotal(const Activate& a, const Character& c) {
+  return Param(a, "totalDamage") + StatModBonus(a, "statModDamage", c) / 10;
+}
+
 double StatModBonus(const Activate& effect, std::string_view per_point_key, const Character& character) {
   const std::string stat = effect.Text("scalingStat");
   const auto per_point = effect.Number(per_point_key);
@@ -281,8 +289,8 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
     } else if (a.type == "PoisonGrenade") {
       // Poison ignores DEF (RealmEye: Poisons).
       const double curse = target.cursed ? 1.25 : 1;
-      const double impact = (Param(a, "impactDamage") + StatModBonus(a, "statModImpactDamage", c)) * curse;
-      const double total = (Param(a, "totalDamage") + StatModBonus(a, "statModDamage", c)) * curse;
+      const double impact = PoisonImpact(a, c) * curse;
+      const double total = PoisonTotal(a, c) * curse;
       assume("Curse adds 25% to poison damage too");
       if (const auto boost = BuffOf(a, c)) {
         add_buff(*boost);

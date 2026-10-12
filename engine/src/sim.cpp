@@ -920,8 +920,8 @@ void Simulation::RunPending() {
     } else {
       // Poison ignores DEF and every poison stacks (RealmEye: Poisons). The
       // impact lands at once and the rest evenly over the duration.
-      const double impact = act.Number("impactDamage").value_or(0) + StatModBonus(act, "statModImpactDamage", base_);
-      const double total = act.Number("totalDamage").value_or(0) + StatModBonus(act, "statModDamage", base_);
+      const double impact = PoisonImpact(act, base_);
+      const double total = PoisonTotal(act, base_);
       // With no duration it all comes on the next step.
       const double duration_ms = std::max(kStepMs, act.Number("duration").value_or(0) * 1000);
       Poison poison{{}, total * kStepMs / duration_ms, total, p.from};

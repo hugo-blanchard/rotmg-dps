@@ -171,8 +171,9 @@ TEST_CASE("a quiver's shots use the hit estimate and expose the target") {
 }
 
 TEST_CASE("poison ignores DEF and boosts damage to what it poisons") {
-  // 60 WIS: impact 350 + 30, over time 1050 + 180, and a damage boost of
-  // 9.5% + 0.225% * 10 for the poison's 4.5 seconds.
+  // 60 WIS, 10 over 50: impact 350 + 3 a point, over time 1050 + 18 a
+  // point (StatMods of 30 and 180 count per 10 points), and a damage boost
+  // of 9.5% + 0.225% * 10 for the poison's 4.5 seconds.
   const auto open = EvaluateAbility(Ability("Toxic Vial"), kWis60, {}, {});
   const auto armored = EvaluateAbility(Ability("Toxic Vial"), kWis60, {.defense = 100}, {});
   CHECK(open.damage_per_cast == Approx(1610));

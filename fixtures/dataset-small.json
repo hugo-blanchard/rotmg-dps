@@ -628,8 +628,8 @@
             "statModDamageBoost": 0.00225,
             "scalingStat": "WIS",
             "statModScalingMin": 50,
-            "statModDamage": 18,
-            "statModImpactDamage": 3
+            "statModDamage": 180,
+            "statModImpactDamage": 30
           }
         }
       ]

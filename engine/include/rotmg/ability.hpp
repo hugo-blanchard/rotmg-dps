@@ -62,6 +62,13 @@ int ShockblastTargets(const Activate& lightning, const Character& character);
 /// what it poisons (kPoisonBoost).
 std::optional<Buff> BuffOf(const Activate& effect, const Character& character);
 
+/// A thrown poison's damage on impact and over its duration, before Curse.
+/// Its StatMod amounts count per 10 points of the scaling stat: Baneserpent
+/// Poison's statModImpactDamage 30 is "+3 per WIS over 50" (RealmEye:
+/// Baneserpent Poison), Centipede Poison's 5 is "+0.5".
+double PoisonImpact(const Activate& poison, const Character& character);
+double PoisonTotal(const Activate& poison, const Character& character);
+
 /// The name of a poison's damage boost as a Buff effect.
 inline constexpr const char* kPoisonBoost = "Poison damage boost";
 
