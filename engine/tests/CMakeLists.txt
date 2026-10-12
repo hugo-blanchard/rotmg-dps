@@ -19,6 +19,7 @@ add_executable(rotmg_engine_tests
   api_test.cpp
   hits_test.cpp
   sim_test.cpp
+  sim_ability_test.cpp
   ability_test.cpp
   build_test.cpp)
 target_link_libraries(rotmg_engine_tests PRIVATE rotmg_engine rotmg_warnings Catch2::Catch2WithMain

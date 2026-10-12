@@ -2,8 +2,13 @@
 
 #include <cstddef>
 #include <deque>
+#include <map>
+#include <optional>
+#include <string>
+#include <tuple>
 #include <vector>
 
+#include "rotmg/ability.hpp"
 #include "rotmg/evaluate.hpp"
 #include "rotmg/path.hpp"
 
@@ -42,7 +47,8 @@ struct SimTarget {
 };
 
 /// Where everything starts, in tiles. The player aims at the centre of
-/// `targets[aim]` each time it fires.
+/// `targets[aim]` each time it fires, and casts at it: that centre is the
+/// cursor.
 struct Scenario {
   Point player;
   std::vector<SimTarget> targets;
@@ -50,24 +56,34 @@ struct Scenario {
   Movement player_movement{};
   /// Seeds anything random, like wandering targets.
   unsigned long long seed = 1;
+  /// Whether the MP bar starts full, or empty for the steady state.
+  bool full_mp = true;
 };
 
 /// The player's speed in tiles per second: 4 + 5.6 * SPD / 75 (RealmEye:
 /// Character Stats).
 double MovementSpeed(int speed);
 
-/// A deterministic, fixed-step simulation of a character firing a weapon at
-/// one or more round targets. Projectiles move with ProjectilePath, in its
-/// frame turned to face the aim and moved to the player, so a player and a
-/// single target that both stand still give exactly the hit estimate: once
-/// every shot of a volley has landed or expired, its hits equal the
-/// estimate's. Damage per hit is the expected damage against the target
-/// hit, so the long-run DPS matches EvaluateWeapon's.
+/// A deterministic, fixed-step simulation of a character firing a weapon,
+/// and casting its ability, at one or more round targets.
+///
+/// Projectiles move with ProjectilePath, in its frame turned to face the aim
+/// and moved to where they were fired from, so a player and a single target
+/// that both stand still give exactly the hit estimate: once every shot of a
+/// volley has landed or expired, its hits equal the estimate's. Damage per
+/// hit is the expected damage against the target hit, with the stats and
+/// statuses of the moment, so long runs match the analytic DPS.
+///
+/// The ability is cast at the aim target whenever MP and its cooldown allow.
+/// Its buffs change the weapon from the next shot; its debuffs and
+/// projectiles' status effects land on the targets they reach.
 class Simulation {
  public:
   struct Shot {
+    /// The weapon subattack it came from, or -1 for the ability's.
     int subattack = 0;
     int projectile_id = 0;
+    std::string object_id;
     Point position;
     /// Degrees from straight up (+y), turning right.
     double heading_degrees = 0;
@@ -89,14 +105,38 @@ class Simulation {
 
   struct TargetCounters {
     long hits = 0;
+    /// All damage taken, the ability's included.
+    double damage = 0;
+    double ability_damage = 0;
+  };
+
+  struct AbilityCounters {
+    long casts = 0;
+    long hits = 0;
     double damage = 0;
   };
 
-  Simulation(const Weapon& weapon, const Character& character, const Scenario& scenario);
+  /// Something an ability left in the world, for drawing.
+  struct Effect {
+    enum class Kind { kPoison, kTrap, kBlast, kBolt };
+    Kind kind = Kind::kBlast;
+    Point position;
+    double radius = 0;
+    double until_ms = 0;
+    /// Lightning: every target the bolt went through, in order.
+    std::vector<Point> chain;
+    /// Traps: whether it's waiting for a target.
+    bool armed = false;
+  };
+
+  /// `ability` is cast as often as it can be; null for none.
+  Simulation(const Weapon& weapon, const Character& character, const Scenario& scenario,
+             const Ability* ability = nullptr);
   /// One still target `distance` tiles straight ahead of a still player.
   Simulation(const Weapon& weapon, const Character& character, const Target& target, double distance,
              double radius);
-  // Shots point into the weapon this object owns, so it can't be copied or moved.
+  // Shots point into the weapon and ability this object owns, so it can't be
+  // copied or moved.
   Simulation(const Simulation&) = delete;
   Simulation& operator=(const Simulation&) = delete;
 
@@ -106,29 +146,43 @@ class Simulation {
 
   double TimeMs() const { return static_cast<double>(steps_) * kStepMs; }
   const std::vector<Shot>& Shots() const { return shots_; }
+  /// The weapon's shots only.
   const Counters& Totals() const { return totals_; }
   const std::vector<Counters>& PerSubattack() const { return per_subattack_; }
   const std::vector<TargetCounters>& PerTarget() const { return per_target_; }
+  const AbilityCounters& AbilityTotals() const { return ability_totals_; }
+  const std::vector<Effect>& Effects() const { return effects_; }
   /// Where everything is now.
   const Scenario& World() const { return world_; }
   /// The player's speed, from SPD, in tiles per second.
   double PlayerSpeed() const { return player_speed_; }
+  double Mp() const { return mp_; }
+  double MaxMp() const { return max_mp_; }
+  /// Statuses and stat boosts up now, like "Berserk" or "+10 ATT".
+  std::vector<std::string> PlayerStatuses() const;
+  std::vector<std::string> TargetStatuses(std::size_t target) const;
   /// The aim target's centre and radius.
   Point TargetCenter() const;
   double Radius() const;
 
  private:
   struct Clock {
-    double interval_ms = 0;
+    std::size_t subattack = 0;
     double next_ms = 0;
-    bool burst = false;
-    int burst_count = 0;
-    double burst_delay_ms = 0;
     int burst_fired = 0;
     double burst_start_ms = 0;
   };
+  // Shots that share a projectile and a pattern.
+  struct Group {
+    const Projectile* projectile = nullptr;
+    std::vector<ProjectilePath> paths;
+    /// The weapon subattack, or -1 for the ability's shots.
+    int subattack = -1;
+    /// The ability's flat StatMod damage on each hit.
+    double bonus = 0;
+  };
   struct Live {
-    int subattack = 0;
+    std::size_t group = 0;
     int index = 0;
     long volley = 0;
     int step = 0;
@@ -136,6 +190,8 @@ class Simulation {
     // right, which place its path in the world.
     Point origin;
     double aim = 0;
+    // ATT, Damaging and the like when it was fired.
+    Multiplier multiplier;
     // Targets it has hit, by index; each only once.
     std::vector<bool> hit;
     bool stopped = false;
@@ -146,37 +202,99 @@ class Simulation {
     int remaining = 0;
     int hits = 0;
   };
+  // A status or stat boost that runs out.
+  struct Timed {
+    std::string effect;
+    int amount = 0;
+    double until_ms = 0;
+    // When it starts to count.
+    double from_ms = 0;
+  };
+  // Something an ability set going that happens later.
+  struct Pending {
+    enum class Kind { kNovaBlast, kPoisonLands };
+    Kind kind = Kind::kNovaBlast;
+    double at_ms = 0;
+    Point centre;
+    double radius = 0;
+    const Activate* activate = nullptr;
+  };
+  struct Poison {
+    std::vector<std::size_t> targets;
+    double per_step = 0;
+    // Damage still to come, before Curse.
+    double left = 0;
+  };
+  struct Trap {
+    Point at;
+    double lands_ms = 0;
+    double armed_ms = 0;
+    double expires_ms = 0;
+    double radius = 0;
+    double trigger = 0;
+    const Activate* activate = nullptr;
+  };
 
   void Step();
   void Move();
-  void Fire(int subattack);
+  void Fire(std::size_t subattack);
+  void Cast();
+  void Spawn(std::size_t group, int index, Point origin, double aim, long volley);
   void Land(Live& shot);
   void Retire(const Live& shot);
   void ResolveFinished();
+  void RunPending();
+  void TickPoisons();
+  void CheckTraps();
+  void Explode(const Trap& trap);
+  void Debuff(std::size_t target, const std::string& effect, double duration_s, double delay_ms = 0);
+  void Damage(std::size_t target, double amount, bool from_ability);
   Point WorldAt(const Live& shot, int step) const;
+  double AimAngle() const;
+  // The character with the boosts and statuses up now.
+  Character Current() const;
+  // A target with its own statuses and the debuffs on it now.
+  Target TargetNow(std::size_t target) const;
+  double HitDamage(const Group& group, Multiplier multiplier, std::size_t target);
+  double AbilityHit(int low, int high, double bonus, std::size_t target, bool armor_piercing) const;
 
   const Weapon weapon_;
+  const std::optional<Ability> ability_;
   // Where things started, and where they are now.
   const Scenario start_;
   Scenario world_;
+  // The character with gear but no buffs.
+  Character base_;
   double player_speed_ = 0;
-  // Wandering targets: where each is heading, and the random state.
   std::vector<Point> wander_to_;
   unsigned long long random_ = 0;
   long steps_ = 0;
   double carry_ms_ = 0;
   long next_volley_ = 0;
   std::vector<Clock> clocks_;
-  // Expected damage per hit, by subattack, then target.
-  std::vector<std::vector<double>> damage_per_hit_;
-  std::vector<bool> pierces_;
-  std::vector<std::vector<ProjectilePath>> paths_;
+  std::vector<Group> groups_;
+  // Group of each ability activate that makes shots, by activate index, or -1.
+  std::vector<int> activate_group_;
+  std::vector<std::size_t> shoot_groups_;
   std::vector<Live> live_;
   std::deque<OpenVolley> open_;
   std::vector<Shot> shots_;
   Counters totals_;
   std::vector<Counters> per_subattack_;
   std::vector<TargetCounters> per_target_;
+  AbilityCounters ability_totals_;
+  double mp_ = 0;
+  double max_mp_ = 0;
+  double mp_cost_ = 0;
+  double cooldown_ms_ = 0;
+  double next_cast_ms_ = 0;
+  std::vector<Timed> player_buffs_;
+  std::vector<std::vector<Timed>> target_debuffs_;
+  std::vector<Pending> pending_;
+  std::vector<Poison> poisons_;
+  std::vector<Trap> traps_;
+  std::vector<Effect> effects_;
+  std::map<std::tuple<const Projectile*, int, int, int, int, double>, double> damage_cache_;
 };
 
 }  // namespace rotmg

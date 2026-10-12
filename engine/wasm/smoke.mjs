@@ -2,6 +2,7 @@
 // site deploys it:
 //
 // - every weapon evaluates to a finite, non-negative DPS
+// - every ability evaluates and simulates
 // - the hit estimate agrees with what the wiki documents about real weapons
 //
 // Usage: node smoke.mjs <engine.js> <dataset.json>
@@ -140,6 +141,16 @@ for (const a of abilities) {
     failures.push(`${a.name}: DPS ${dps}, weapon ${weaponDps}, ability ${res.ability.dps}`);
   } else if (Math.abs(dps - weaponDps - res.ability.dps) > 1e-6 * Math.max(1, dps)) {
     failures.push(`${a.name}: build ${dps} isn't weapon ${weaponDps} plus ability ${res.ability.dps}`);
+  }
+  // And casts in the simulation without breaking anything.
+  const error = api.startSimulation(
+    JSON.stringify({ weapon: weapon.name, ability: a.name, wisdom: cls.wisdom?.max ?? 0, hitModel: { distance: 4 } }),
+  );
+  const state = error ? null : JSON.parse(api.advanceSimulation(30_000));
+  if (!state?.ok) {
+    failures.push(`${a.name}: simulation failed: ${error || state?.error}`);
+  } else if (!(state.ability.casts > 0) || !Number.isFinite(state.ability.damage) || !Number.isFinite(state.mp)) {
+    failures.push(`${a.name}: simulated ${state.ability.casts} casts, ${state.ability.damage} damage`);
   }
   abilityBuilds++;
 }

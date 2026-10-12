@@ -346,6 +346,7 @@ Scenario ReadScenario(const json& req, const Request& r) {
     return {{0, 0}, {{{0, r.assumptions.distance.value_or(4.0)}, radius, r.target}}, 0};
   }
   Scenario s;
+  s.full_mp = it->value("fullMp", true);
   if (auto p = it->find("player"); p != it->end()) {
     s.player = {p->value("x", 0.0), p->value("y", 0.0)};
     if (auto m = p->find("movement"); m != p->end()) {
@@ -476,9 +477,8 @@ std::string Api::StartSimulation(std::string_view request_json) {
     if (r.weapon == nullptr) {
       return "no weapon named \"" + req.at("weapon").get<std::string>() + "\"";
     }
-    // The ability isn't simulated, but its stat bonuses are part of the build.
     const Character character = r.ability ? r.character.With(r.ability->stat_bonuses) : r.character;
-    simulation_ = std::make_unique<Simulation>(*r.weapon, character, ReadScenario(req, r));
+    simulation_ = std::make_unique<Simulation>(*r.weapon, character, ReadScenario(req, r), r.ability);
     return "";
   } catch (const std::exception& e) {
     return std::string("bad request: ") + e.what();
@@ -487,19 +487,27 @@ std::string Api::StartSimulation(std::string_view request_json) {
 
 // A simulation request is an evaluate request plus, optionally,
 //   "scenario": {"player": {"x", "y", "movement"}, "aim": 0, "seed": 1,
+//                "fullMp": true,
 //                "targets": [{"x", "y", "radius", "defense", "armored", ...,
 //                             "movement"}]}
 // in tiles, with +y the way the player faces at the start. A movement is
 // {"kind", "speed", "range", "far", "clockwise"}, kind one of still, strafe,
 // circle, chargeRetreat, wander (targets), keepDistance, orbit, kite and
-// strafe (the player); see Movement in sim.hpp.
+// strafe (the player); see Movement in sim.hpp. The ability, if any, is
+// cast at the aim target whenever MP and its cooldown allow.
 //
 // State:
 //   {"ok": true, "timeMs", "player": {"x", "y"}, "playerSpeed", "aim",
 //    "target": {"x", "y", "radius"} (the aim target),
-//    "targets": [{"x", "y", "radius", "defense", "hits", "damage"}],
-//    "shots": [{"subattack", "projectileId", "x", "y", "heading", "ageMs", "hit"}],
-//    "totals": {...}, "perSubattack": [{...}]}
+//    "targets": [{"x", "y", "radius", "defense", "hits", "damage",
+//                 "abilityDamage", "statuses"}],
+//    "shots": [{"subattack", "projectileId", "objectId", "x", "y", "heading",
+//               "ageMs", "hit"}],
+//    "totals": {...}, "perSubattack": [{...}],
+//    "mp", "mpMax", "statuses", "ability": {"casts", "hits", "damage"},
+//    "effects": [{"kind", "x", "y", "radius", "armed", "chain": [{"x", "y"}]}]}
+// with shots from the ability having subattack -1 and effect kinds poison,
+// trap, blast and bolt.
 // with counters {"volleys", "projectiles", "hits", "damage",
 // "resolvedVolleys", "resolvedHits"}.
 std::string Api::AdvanceSimulation(double ms) {
@@ -511,6 +519,7 @@ std::string Api::AdvanceSimulation(double ms) {
   for (const Simulation::Shot& s : simulation_->Shots()) {
     shots.push_back({{"subattack", s.subattack},
                      {"projectileId", s.projectile_id},
+                     {"objectId", s.object_id},
                      {"x", s.position.x},
                      {"y", s.position.y},
                      {"heading", s.heading_degrees},
@@ -528,8 +537,24 @@ std::string Api::AdvanceSimulation(double ms) {
     const SimTarget& t = world.targets[i];
     const Simulation::TargetCounters& c = simulation_->PerTarget()[i];
     targets.push_back({{"x", t.position.x}, {"y", t.position.y}, {"radius", t.radius},
-                       {"defense", t.target.defense}, {"hits", c.hits}, {"damage", c.damage}});
+                       {"defense", t.target.defense}, {"hits", c.hits}, {"damage", c.damage},
+                       {"abilityDamage", c.ability_damage}, {"statuses", simulation_->TargetStatuses(i)}});
   }
+  json effects = json::array();
+  for (const Simulation::Effect& e : simulation_->Effects()) {
+    static constexpr const char* kKinds[] = {"poison", "trap", "blast", "bolt"};
+    json chain = json::array();
+    for (const Point& p : e.chain) {
+      chain.push_back(ToJson(p));
+    }
+    effects.push_back({{"kind", kKinds[static_cast<int>(e.kind)]},
+                       {"x", e.position.x},
+                       {"y", e.position.y},
+                       {"radius", e.radius},
+                       {"armed", e.armed},
+                       {"chain", chain}});
+  }
+  const Simulation::AbilityCounters& ability = simulation_->AbilityTotals();
   return json{{"ok", true},
               {"timeMs", simulation_->TimeMs()},
               {"player", ToJson(world.player)},
@@ -539,7 +564,12 @@ std::string Api::AdvanceSimulation(double ms) {
               {"targets", targets},
               {"shots", shots},
               {"totals", ToJson(simulation_->Totals())},
-              {"perSubattack", per}}
+              {"perSubattack", per},
+              {"mp", simulation_->Mp()},
+              {"mpMax", simulation_->MaxMp()},
+              {"statuses", simulation_->PlayerStatuses()},
+              {"ability", {{"casts", ability.casts}, {"hits", ability.hits}, {"damage", ability.damage}}},
+              {"effects", effects}}
       .dump();
 }
 

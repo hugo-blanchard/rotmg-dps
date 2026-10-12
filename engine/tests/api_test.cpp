@@ -383,3 +383,25 @@ TEST_CASE("simulation targets and the player can move") {
       "scenario": {"targets": [{"x": 0, "y": 4, "movement": {"kind": "teleport"}}]}})")
                   .empty());
 }
+
+TEST_CASE("a simulation casts the ability and reports what it leaves behind") {
+  rotmg::Api api = LoadedApi();
+  REQUIRE(api.StartSimulation(R"({"weapon": "Plain Sword", "ability": "Toxic Vial", "wisdom": 60,
+      "scenario": {"targets": [{"x": 0, "y": 4}]}})")
+              .empty());
+  json state = json::parse(api.AdvanceSimulation(1000));
+  REQUIRE(state["ok"] == true);
+  CHECK(state["ability"]["casts"] == 1);
+  CHECK(state["mpMax"] == 100);
+  CHECK(state["mp"].get<double>() == Catch::Approx(7.7).margin(0.1));
+  REQUIRE(state["effects"].size() == 1);
+  CHECK(state["effects"][0]["kind"] == "poison");
+  CHECK(state["targets"][0]["abilityDamage"].get<double>() > 380);
+
+  REQUIRE(api.StartSimulation(R"({"weapon": "Plain Sword", "ability": "Toxic Vial", "wisdom": 60,
+      "scenario": {"fullMp": false, "targets": [{"x": 0, "y": 4}]}})")
+              .empty());
+  state = json::parse(api.AdvanceSimulation(1000));
+  CHECK(state["ability"]["casts"] == 0);
+  CHECK(state["effects"].empty());
+}
