@@ -2,7 +2,7 @@
 
 A DPS calculator for Realm of the Mad God (Exalt). It works out how much damage a build does to a given target, using item data from the game client and formulas sourced from the RealmEye wiki. A small simulation shows the character firing at a dummy so the numbers are easy to check.
 
-Live at https://hugo-blanchard.github.io/rotmg-dps/. It covers weapons, including an estimate of how many shots land at a given distance and a simulation of the weapon firing at a target, and abilities: their own damage and the buffs and debuffs they keep up. Ability effects it can't model yet, like summons and hexes, are named on the page.
+Live at https://hugo-blanchard.github.io/rotmg-dps/. It covers weapons, including an estimate of how many shots land at a given distance, the effects they trigger on shoot and a simulation of the weapon firing at a target; abilities, with their own damage and the buffs and debuffs they keep up; set bonuses; and enchantments on the weapon. Targets can be any DEF or one of the game's bosses. Effects it can't model yet, like summons and hexes, are named on the page.
 
 ## Notice
 
@@ -10,7 +10,7 @@ Unofficial fan tool, not affiliated with DECA. Game assets © DECA Live Operatio
 
 ## How it works
 
-- `engine/` (C++20) does all the math: damage per hit, fire rate, how many shots of a volley land on a round target, ability damage, MP and buff uptime, and DPS, with the source of every rule it applies. It also runs the step-by-step simulation the site animates, moving projectiles with the same code as the hit estimate. It builds natively for the tests and to WebAssembly for the site.
+- `engine/` (C++20) does all the math: damage per hit, fire rate, how many shots of a volley land on a round target, on-shoot effects, ability damage, MP and buff uptime, set bonuses, enchantments and DPS, with the source of every rule it applies. It also runs the step-by-step simulation the site animates, moving projectiles with the same code as the hit estimate. It builds natively for the tests and to WebAssembly for the site.
 - `web/` (Svelte and TypeScript) is the site. It runs the WebAssembly engine in a Web Worker.
 - Item data and sprites come from the game client. An extractor that isn't part of this repo turns them into the files described below and publishes them as a `data-*` release, and the site deploys the newest one.
 
@@ -44,7 +44,7 @@ cp engine/build-wasm/engine.js engine/build-wasm/engine.wasm web/public/engine/
 Then get the newest dataset and sprites and start the dev server:
 
 ```
-gh release download --repo hugo-blanchard/rotmg-dps --pattern dataset.json --pattern 'sprites.*' --dir web/public/data
+gh release download --repo hugo-blanchard/rotmg-dps --pattern dataset.json --pattern 'sprites.*' --pattern status.json --dir web/public/data
 cd web
 npm install
 npm run dev
