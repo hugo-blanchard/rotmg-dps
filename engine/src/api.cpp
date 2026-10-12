@@ -501,13 +501,15 @@ std::string Api::StartSimulation(std::string_view request_json) {
 //    "target": {"x", "y", "radius"} (the aim target),
 //    "targets": [{"x", "y", "radius", "defense", "hits", "damage",
 //                 "abilityDamage", "statuses"}],
-//    "shots": [{"subattack", "projectileId", "objectId", "x", "y", "heading",
-//               "ageMs", "hit"}],
+//    "shots": [{"subattack", "from", "projectileId", "objectId", "x", "y",
+//               "heading", "ageMs", "hit"}],
 //    "totals": {...}, "perSubattack": [{...}],
 //    "mp", "mpMax", "statuses", "ability": {"casts", "hits", "damage"},
+//    "procs": {"activations", "hits", "damage"},
 //    "effects": [{"kind", "x", "y", "radius", "armed", "chain": [{"x", "y"}]}]}
-// with shots from the ability having subattack -1 and effect kinds poison,
-// trap, blast and bolt.
+// with "from" one of weapon, ability and proc (the weapon's on-shoot
+// effects), shots from the ability and procs having subattack -1, and effect
+// kinds poison, trap, blast and bolt.
 // with counters {"volleys", "projectiles", "hits", "damage",
 // "resolvedVolleys", "resolvedHits"}.
 std::string Api::AdvanceSimulation(double ms) {
@@ -517,7 +519,9 @@ std::string Api::AdvanceSimulation(double ms) {
   simulation_->Advance(std::max(0.0, ms));
   json shots = json::array();
   for (const Simulation::Shot& s : simulation_->Shots()) {
+    static constexpr const char* kFrom[] = {"weapon", "ability", "proc"};
     shots.push_back({{"subattack", s.subattack},
+                     {"from", kFrom[static_cast<int>(s.from)]},
                      {"projectileId", s.projectile_id},
                      {"objectId", s.object_id},
                      {"x", s.position.x},
@@ -555,6 +559,7 @@ std::string Api::AdvanceSimulation(double ms) {
                        {"chain", chain}});
   }
   const Simulation::AbilityCounters& ability = simulation_->AbilityTotals();
+  const Simulation::AbilityCounters& procs = simulation_->ProcTotals();
   return json{{"ok", true},
               {"timeMs", simulation_->TimeMs()},
               {"player", ToJson(world.player)},
@@ -569,6 +574,7 @@ std::string Api::AdvanceSimulation(double ms) {
               {"mpMax", simulation_->MaxMp()},
               {"statuses", simulation_->PlayerStatuses()},
               {"ability", {{"casts", ability.casts}, {"hits", ability.hits}, {"damage", ability.damage}}},
+              {"procs", {{"activations", procs.casts}, {"hits", procs.hits}, {"damage", procs.damage}}},
               {"effects", effects}}
       .dump();
 }

@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <initializer_list>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -8,6 +9,7 @@
 
 #include "fixture.hpp"
 #include "rotmg/ability.hpp"
+#include "rotmg/evaluate.hpp"
 #include "rotmg/sim.hpp"
 
 using Catch::Approx;
@@ -215,4 +217,50 @@ TEST_CASE("Curse from an orb adds a quarter to the weapon's damage") {
   REQUIRE(plain.Totals().damage > 0);
   CHECK(orb.Totals().damage == Approx(1.25 * plain.Totals().damage));
   CHECK(orb.TargetStatuses(0) == std::vector<std::string>{"Curse"});
+}
+
+TEST_CASE("the weapon's procs go off in the simulation as often as evaluated") {
+  // Poison bursts around the player and extra shots at the cursor, on a
+  // target 2 tiles away: both reach it every time.
+  const rotmg::Weapon* katana = rotmg::FindWeapon(Data(), "Venom Katana");
+  REQUIRE(katana != nullptr);
+  const rotmg::Character c{.attack = 50, .dexterity = 50};
+  Simulation sim(*katana, c, At({{0, 2}}));
+  sim.Advance(300'000);
+  const auto b = rotmg::EvaluateWeapon(*katana, c, {});
+  double procs = 0;
+  for (const rotmg::ProcResult& p : b.procs) {
+    procs += p.dps;
+  }
+  REQUIRE(procs > 0);
+  CHECK(sim.ProcTotals().damage / 300 == Approx(procs).epsilon(0.01));
+  CHECK(sim.AbilityTotals().damage == 0);
+
+  // The ring's two shots on every shot only with the ring on.
+  const rotmg::Character ringed{.attack = 50, .dexterity = 50, .worn = {0x7002}};
+  Simulation with_ring(*katana, ringed, At({{0, 2}}));
+  with_ring.Advance(10'000);
+  CHECK(with_ring.ProcTotals().hits > 2 * with_ring.Totals().volleys);
+}
+
+TEST_CASE("a chance boost is up for its share of the time") {
+  // 5% a shot for +5 ATT over 4 s, then a 10 s cooldown. At 5.83 shots a
+  // second the chance adds up after 20 shots, 3.43 s, so it's up 4 s in
+  // every 13.43.
+  rotmg::Weapon sword = Sword();
+  rotmg::Activate boost;
+  boost.type = "StatBoostSelf";
+  for (const auto& [key, value] : std::initializer_list<std::pair<const char*, rotmg::Activate::Value>>{
+           {"proc", 0.05}, {"cooldown", 10.0}, {"stat", std::string("ATT")}, {"amount", 5.0}, {"duration", 4.0}}) {
+    boost.params.emplace(key, value);
+  }
+  sword.on_shoot.push_back(boost);
+  Simulation sim(sword, {.attack = 50, .dexterity = 50}, At({{0, 3}}));
+  int up = 0;
+  const int samples = 6000;
+  for (int i = 0; i < samples; ++i) {
+    sim.Advance(100);
+    up += sim.PlayerStatuses() == std::vector<std::string>{"+5 ATT"} ? 1 : 0;
+  }
+  CHECK(static_cast<double>(up) / samples == Approx(4 / (10 + 20 / (1.5 + 6.5 * 50 / 75.0))).margin(0.01));
 }

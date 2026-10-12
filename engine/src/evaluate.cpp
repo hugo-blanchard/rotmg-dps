@@ -88,6 +88,22 @@ bool IsProcShot(const Weapon& w, const Activate& a) {
 
 }  // namespace
 
+OnShootModel ModelOf(const Weapon& weapon, const Activate& a, const std::vector<int>& worn) {
+  if (IsWhileShooting(a)) {
+    return OnShootModel::kWhileShooting;
+  }
+  if (IsPoisonBurst(a)) {
+    return OnShootModel::kPoisonBurst;
+  }
+  if (!GearWorn(a, worn)) {
+    return OnShootModel::kNone;
+  }
+  if (IsProcShot(weapon, a)) {
+    return OnShootModel::kExtraShots;
+  }
+  return IsChanceBoost(a) ? OnShootModel::kChanceBoost : OnShootModel::kNone;
+}
+
 std::vector<ChanceBoost> ChanceBoosts(const Weapon& weapon, const std::vector<int>& worn, double shots_per_second) {
   std::vector<ChanceBoost> out;
   std::vector<int> wearing = worn;

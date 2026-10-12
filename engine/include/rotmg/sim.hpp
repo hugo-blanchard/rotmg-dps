@@ -76,12 +76,20 @@ double MovementSpeed(int speed);
 ///
 /// The ability is cast at the aim target whenever MP and its cooldown allow.
 /// Its buffs change the weapon from the next shot; its debuffs and
-/// projectiles' status effects land on the targets they reach.
+/// projectiles' status effects land on the targets they reach. The weapon's
+/// on-shoot procs go off on its fastest subattack's shots: poison bursts,
+/// extra shots at the cursor and chance boosts, the chance spread evenly over
+/// shots so a run doesn't depend on luck.
 class Simulation {
  public:
+  /// What made a shot or did some damage: the weapon's projectiles, the
+  /// ability, or the weapon's on-shoot procs.
+  enum class From { kWeapon, kAbility, kProc };
+
   struct Shot {
-    /// The weapon subattack it came from, or -1 for the ability's.
+    /// The weapon subattack it came from, or -1 for the ability's and procs'.
     int subattack = 0;
+    From from = From::kWeapon;
     int projectile_id = 0;
     std::string object_id;
     Point position;
@@ -151,6 +159,8 @@ class Simulation {
   const std::vector<Counters>& PerSubattack() const { return per_subattack_; }
   const std::vector<TargetCounters>& PerTarget() const { return per_target_; }
   const AbilityCounters& AbilityTotals() const { return ability_totals_; }
+  /// The weapon's on-shoot procs, with how often they went off in `casts`.
+  const AbilityCounters& ProcTotals() const { return proc_totals_; }
   const std::vector<Effect>& Effects() const { return effects_; }
   /// Where everything is now.
   const Scenario& World() const { return world_; }
@@ -176,10 +186,11 @@ class Simulation {
   struct Group {
     const Projectile* projectile = nullptr;
     std::vector<ProjectilePath> paths;
-    /// The weapon subattack, or -1 for the ability's shots.
+    /// The weapon subattack, or -1 for the ability's and procs' shots.
     int subattack = -1;
-    /// The ability's flat StatMod damage on each hit.
+    /// The flat StatMod damage on each hit of the ability's and procs' shots.
     double bonus = 0;
+    From from = From::kWeapon;
   };
   struct Live {
     std::size_t group = 0;
@@ -209,6 +220,9 @@ class Simulation {
     double until_ms = 0;
     // When it starts to count.
     double from_ms = 0;
+    // Boosts of one effect on the same channel don't stack: the larger
+    // amount holds until the later end.
+    std::string channel{};
   };
   // Something an ability set going that happens later.
   struct Pending {
@@ -218,12 +232,24 @@ class Simulation {
     Point centre;
     double radius = 0;
     const Activate* activate = nullptr;
+    From from = From::kAbility;
   };
   struct Poison {
     std::vector<std::size_t> targets;
     double per_step = 0;
     // Damage still to come, before Curse.
     double left = 0;
+    From from = From::kAbility;
+  };
+  // One of the weapon's on-shoot effects.
+  struct Proc {
+    const Activate* effect = nullptr;
+    OnShootModel model = OnShootModel::kNone;
+    // Extra shots: their group.
+    std::size_t group = 0;
+    double ready_ms = 0;
+    // Chance boosts: the chance gathered over shots since the cooldown.
+    double chance = 0;
   };
   struct Trap {
     Point at;
@@ -239,6 +265,13 @@ class Simulation {
   void Move();
   void Fire(std::size_t subattack);
   void Cast();
+  void OnShoot();
+  // Adds the shots a BulletNova or BulletCreate makes, with this projectile,
+  // and returns the group.
+  std::size_t AddGroup(const Projectile& projectile, const Activate& effect, From from);
+  // Places a BulletCreate's shots around the cursor.
+  void CreateShots(std::size_t group, const Activate& effect);
+  void Boost(const std::string& effect, int amount, double duration_s, const std::string& channel);
   void Spawn(std::size_t group, int index, Point origin, double aim, long volley);
   void Land(Live& shot);
   void Retire(const Live& shot);
@@ -248,7 +281,7 @@ class Simulation {
   void CheckTraps();
   void Explode(const Trap& trap);
   void Debuff(std::size_t target, const std::string& effect, double duration_s, double delay_ms = 0);
-  void Damage(std::size_t target, double amount, bool from_ability);
+  void Damage(std::size_t target, double amount, From from);
   Point WorldAt(const Live& shot, int step) const;
   double AimAngle() const;
   // The character with the boosts and statuses up now.
@@ -283,6 +316,10 @@ class Simulation {
   std::vector<Counters> per_subattack_;
   std::vector<TargetCounters> per_target_;
   AbilityCounters ability_totals_;
+  AbilityCounters proc_totals_;
+  std::vector<Proc> procs_;
+  // The subattack whose shots set off procs.
+  std::size_t proc_subattack_ = 0;
   double mp_ = 0;
   double max_mp_ = 0;
   double mp_cost_ = 0;

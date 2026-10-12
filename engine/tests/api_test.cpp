@@ -397,6 +397,7 @@ TEST_CASE("a simulation casts the ability and reports what it leaves behind") {
   REQUIRE(state["effects"].size() == 1);
   CHECK(state["effects"][0]["kind"] == "poison");
   CHECK(state["targets"][0]["abilityDamage"].get<double>() > 380);
+  CHECK(state["procs"]["activations"] == 0);
 
   REQUIRE(api.StartSimulation(R"({"weapon": "Plain Sword", "ability": "Toxic Vial", "wisdom": 60,
       "scenario": {"fullMp": false, "targets": [{"x": 0, "y": 4}]}})")

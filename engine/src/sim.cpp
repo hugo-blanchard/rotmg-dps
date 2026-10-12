@@ -199,13 +199,37 @@ Simulation::Simulation(const Weapon& weapon, const Character& character, const S
   for (std::size_t i = 0; i < weapon_.subattacks.size(); ++i) {
     const Subattack& s = weapon_.subattacks[i];
     clocks_.push_back({i, 0, 0, 0});
-    Group g{weapon_.FindProjectile(s.projectile_id), {}, static_cast<int>(i), 0};
+    Group g{weapon_.FindProjectile(s.projectile_id), {}, static_cast<int>(i), 0, From::kWeapon};
     if (g.projectile) {
       for (int k = 0; k < s.num_projectiles; ++k) {
         g.paths.emplace_back(*g.projectile, s, k);
       }
     }
     groups_.push_back(std::move(g));
+  }
+
+  // Procs go off on the shots of the fastest subattack, as the evaluation
+  // counts them.
+  for (std::size_t i = 0; i < weapon_.subattacks.size(); ++i) {
+    if (weapon_.subattacks[i].rate_of_fire > weapon_.subattacks[proc_subattack_].rate_of_fire) {
+      proc_subattack_ = i;
+    }
+  }
+  std::vector<int> worn = base_.worn;
+  worn.push_back(weapon_.type);
+  for (const Activate& act : weapon_.on_shoot) {
+    Proc proc{&act, ModelOf(weapon_, act, worn), 0, 0, 0};
+    if (proc.model == OnShootModel::kExtraShots) {
+      const std::string type = act.Text("type");
+      const Projectile& p =
+          type.empty() ? weapon_.projectiles[0]
+                       : weapon_.created_projectiles.at(static_cast<int>(std::strtol(type.c_str(), nullptr, 0)));
+      proc.group = AddGroup(p, act, From::kProc);
+    }
+    if (proc.model == OnShootModel::kPoisonBurst || proc.model == OnShootModel::kExtraShots ||
+        proc.model == OnShootModel::kChanceBoost) {
+      procs_.push_back(proc);
+    }
   }
 
   if (!ability_) {
@@ -221,7 +245,7 @@ Simulation::Simulation(const Weapon& weapon, const Character& character, const S
     const double bonus = StatModBonus(act, "statModDamage", base_);
     if (act.type == "Shoot" && shoot_groups_.empty()) {
       for (const Subattack& s : a.subattacks) {
-        Group g{nullptr, {}, -1, bonus};
+        Group g{nullptr, {}, -1, bonus, From::kAbility};
         for (const Projectile& p : a.projectiles) {
           if (p.id == s.projectile_id) {
             g.projectile = &p;
@@ -241,28 +265,31 @@ Simulation::Simulation(const Weapon& weapon, const Character& character, const S
         const auto it = a.created_projectiles.find(static_cast<int>(std::strtol(type.c_str(), nullptr, 0)));
         p = it == a.created_projectiles.end() ? nullptr : &it->second;
       }
-      if (p == nullptr) {
-        continue;
+      if (p != nullptr) {
+        activate_group_[i] = static_cast<int>(AddGroup(*p, act, From::kAbility));
       }
-      const int count =
-          static_cast<int>(act.Number("numShots").value_or(0)) + StatModCount(act, "statModNumShots", base_);
-      // A path per shot even when they all go the same way: wavy shots
-      // alternate which side they swing to.
-      Subattack s;
-      s.num_projectiles = std::max(1, count);
-      s.arc_gap = act.type == "BulletNova" ? 360.0 / s.num_projectiles : 0;
-      Group g{p, {}, -1, bonus};
-      for (int k = 0; k < s.num_projectiles; ++k) {
-        g.paths.emplace_back(*p, s, k);
-      }
-      activate_group_[i] = static_cast<int>(groups_.size());
-      groups_.push_back(std::move(g));
     }
   }
   mp_cost_ = a.mp_cost.value_or(0);
   cooldown_ms_ = a.cooldown.value_or(kDefaultCooldownS) * 1000;
   max_mp_ = std::max<double>(base_.max_magic_points, mp_cost_);
   mp_ = start_.full_mp ? max_mp_ : 0;
+}
+
+std::size_t Simulation::AddGroup(const Projectile& projectile, const Activate& act, From from) {
+  const int count = static_cast<int>(act.Number("numShots").value_or(from == From::kProc ? 1 : 0)) +
+                    StatModCount(act, "statModNumShots", base_);
+  // A path per shot even when they all go the same way: wavy shots
+  // alternate which side they swing to.
+  Subattack s;
+  s.num_projectiles = std::max(1, count);
+  s.arc_gap = act.type == "BulletNova" ? 360.0 / s.num_projectiles : 0;
+  Group g{&projectile, {}, -1, StatModBonus(act, "statModDamage", base_), from};
+  for (int k = 0; k < s.num_projectiles; ++k) {
+    g.paths.emplace_back(projectile, s, k);
+  }
+  groups_.push_back(std::move(g));
+  return groups_.size() - 1;
 }
 
 Point Simulation::TargetCenter() const {
@@ -327,14 +354,15 @@ std::vector<std::string> Simulation::TargetStatuses(std::size_t i) const {
 
 double Simulation::HitDamage(const Group& group, Multiplier multiplier, std::size_t target) {
   const Target t = TargetNow(target);
-  const int flags = (t.armored ? 1 : 0) | (t.armor_broken ? 2 : 0) | (t.exposed ? 4 : 0) | (t.cursed ? 8 : 0);
+  const int flags = (t.armored ? 1 : 0) | (t.armor_broken ? 2 : 0) | (t.exposed ? 4 : 0) | (t.cursed ? 8 : 0) |
+                    (group.subattack >= 0 ? 16 : 0);
   const auto key = std::tuple{group.projectile, multiplier.num, multiplier.den, t.defense, flags, group.bonus};
   if (const auto it = damage_cache_.find(key); it != damage_cache_.end()) {
     return it->second;
   }
   const Projectile& p = *group.projectile;
-  // The weapon's damage goes through ATT; an ability's doesn't, but takes
-  // its StatMod bonus (RealmEye: Character Stats).
+  // The weapon's damage goes through ATT; an ability's or a proc's doesn't,
+  // but takes its StatMod bonus (RealmEye: Character Stats).
   const double damage = group.subattack >= 0
                             ? ExpectedHitDamage(p, multiplier, t)
                             : ExpectedAbilityDamage(p.min_damage, p.max_damage - 1, group.bonus, t, p.armor_piercing);
@@ -357,7 +385,7 @@ void Simulation::Advance(double ms) {
     const Group& g = groups_[l.group];
     const ProjectilePath& path = g.paths[static_cast<std::size_t>(l.index)];
     const bool hit = std::ranges::find(l.hit, true) != l.hit.end();
-    shots_.push_back({g.subattack, g.projectile->id, g.projectile->object_id, WorldAt(l, l.step),
+    shots_.push_back({g.subattack, g.from, g.projectile->id, g.projectile->object_id, WorldAt(l, l.step),
                       path.HeadingDegrees(l.step) + l.aim * 180 / std::numbers::pi, l.step * kStepMs, hit});
   }
 }
@@ -460,6 +488,9 @@ void Simulation::Fire(std::size_t subattack) {
     ++counters.projectiles;
     Spawn(subattack, i, world_.player, aim, id);
   }
+  if (subattack == proc_subattack_) {
+    OnShoot();
+  }
   // A volley with no projectiles is finished as soon as it's fired.
   ResolveFinished();
 }
@@ -475,9 +506,7 @@ void Simulation::Cast() {
     const Activate& act = a.activates[i];
     if (const auto buff = BuffOf(act, base_)) {
       if (buff->on == Buff::On::kPlayer) {
-        // The same boost again resets its timer rather than stacking.
-        std::erase_if(player_buffs_, [&](const Timed& t) { return t.effect == buff->effect; });
-        player_buffs_.push_back({buff->effect, buff->amount, now + buff->duration_s * 1000, now});
+        Boost(buff->effect, buff->amount, buff->duration_s, "ability");
       } else {
         // EffectBlast reaches every target within its radius of the cursor.
         const double radius = act.Number("radius").value_or(0);
@@ -502,31 +531,7 @@ void Simulation::Cast() {
         Spawn(g, k, cursor, aim, -1);
       }
     } else if (act.type == "BulletCreate" && activate_group_[i] >= 0) {
-      // RealmEye, Wakizashi: a slash across the line of aim "centered on the
-      // crosshair", cast at most 4.4 tiles away unless the item says. Each
-      // shot is placed so it crosses its spot halfway through its flight;
-      // that's an assumption.
-      const auto g = static_cast<std::size_t>(activate_group_[i]);
-      const double reach = act.Number("maxDistance").value_or(4.4);
-      const double closest = act.Number("minDistance").value_or(0);
-      const double to_cursor = std::clamp(Distance(world_.player, cursor), closest, std::max(closest, reach));
-      const Point centre = Add(world_.player, {std::sin(aim), std::cos(aim)}, to_cursor);
-      const int count =
-          static_cast<int>(act.Number("numShots").value_or(0)) + StatModCount(act, "statModNumShots", base_);
-      const double heading = aim + act.Number("offsetAngle").value_or(0) * degrees;
-      const double spread = heading + act.Number("gapAngle").value_or(0) * degrees;
-      for (int k = 0; k < count; ++k) {
-        const double from_middle = k - (count - 1) / 2.0;
-        const double shot = heading + act.Number("arcGap").value_or(0) * degrees * from_middle;
-        const Point spot =
-            Add(centre, {std::sin(spread), std::cos(spread)}, act.Number("gapTiles").value_or(0) * from_middle);
-        const int index = k % static_cast<int>(groups_[g].paths.size());
-        const ProjectilePath& path = groups_[g].paths[static_cast<std::size_t>(index)];
-        const Point half = path.At(path.Steps() / 2);
-        const double sn = std::sin(shot);
-        const double cs = std::cos(shot);
-        Spawn(g, index, {spot.x - half.x * cs - half.y * sn, spot.y + half.x * sn - half.y * cs}, shot, -1);
-      }
+      CreateShots(static_cast<std::size_t>(activate_group_[i]), act);
     } else if (act.type == "DamageNova") {
       // RealmEye, Tomes: an "on-cursor nova" that "explodes 2 times for 0.8
       // seconds". Blasts are spread evenly over `time`, the first at once.
@@ -536,7 +541,7 @@ void Simulation::Cast() {
       const double radius = act.Number("radius").value_or(0) + StatModBonus(act, "statModRadius", base_);
       for (int k = 0; k < count; ++k) {
         pending_.push_back({Pending::Kind::kNovaBlast, now + (count > 1 ? span * k / (count - 1) : 0), cursor, radius,
-                            &act});
+                            &act, From::kAbility});
       }
     } else if (act.type == "Lightning") {
       // RealmEye, Scepters: the closest enemy in a 30 degree cone towards the
@@ -564,7 +569,8 @@ void Simulation::Cast() {
       for (int k = 0; k < count && at; ++k) {
         struck[*at] = true;
         ++ability_totals_.hits;
-        Damage(*at, AbilityHit(damage, damage, std::max(-damage * 1.0, bonus - drop * k), *at, false), true);
+        Damage(*at, AbilityHit(damage, damage, std::max(-damage * 1.0, bonus - drop * k), *at, false),
+               From::kAbility);
         bolt.chain.push_back(world_.targets[*at].position);
         std::optional<std::size_t> next;
         double nearest = 8;
@@ -583,7 +589,7 @@ void Simulation::Cast() {
       // unless the item says.
       const double radius = act.Number("radius").value_or(0) + StatModBonus(act, "statModRadius", base_);
       pending_.push_back({Pending::Kind::kPoisonLands, now + act.Number("throwTime").value_or(0.8) * 1000, cursor,
-                          radius, &act});
+                          radius, &act, From::kAbility});
     } else if (act.type == "Trap") {
       // RealmEye, Traps: thrown at the cursor in 1 second, it lasts 10
       // seconds, goes off when an enemy comes within half its explosion
@@ -594,6 +600,85 @@ void Simulation::Cast() {
                         lands + act.Number("duration").value_or(10) * 1000, radius,
                         radius * act.Number("sensitivity").value_or(0.5), &act});
     }
+  }
+}
+
+void Simulation::CreateShots(std::size_t group, const Activate& act) {
+  // RealmEye, Wakizashi: a slash across the line of aim "centered on the
+  // crosshair", cast at most 4.4 tiles away unless the item says. Each shot
+  // is placed so it crosses its spot halfway through its flight; that's an
+  // assumption, which items with minDistance and maxDistance both half their
+  // shots' range bear out: their shots then start at the player.
+  const Point cursor = TargetCenter();
+  const double aim = AimAngle();
+  constexpr double degrees = std::numbers::pi / 180;
+  const double reach = act.Number("maxDistance").value_or(4.4);
+  const double closest = act.Number("minDistance").value_or(0);
+  const double to_cursor = std::clamp(Distance(world_.player, cursor), closest, std::max(closest, reach));
+  const Point centre = Add(world_.player, {std::sin(aim), std::cos(aim)}, to_cursor);
+  // The evaluation counts a proc with no numShots as one shot, and an
+  // ability's as none.
+  const int count = static_cast<int>(act.Number("numShots").value_or(groups_[group].from == From::kProc ? 1 : 0)) +
+                    StatModCount(act, "statModNumShots", base_);
+  const double heading = aim + act.Number("offsetAngle").value_or(0) * degrees;
+  const double spread = heading + act.Number("gapAngle").value_or(0) * degrees;
+  for (int k = 0; k < count; ++k) {
+    const double from_middle = k - (count - 1) / 2.0;
+    const double shot = heading + act.Number("arcGap").value_or(0) * degrees * from_middle;
+    const Point spot =
+        Add(centre, {std::sin(spread), std::cos(spread)}, act.Number("gapTiles").value_or(0) * from_middle);
+    const int index = k % static_cast<int>(groups_[group].paths.size());
+    const ProjectilePath& path = groups_[group].paths[static_cast<std::size_t>(index)];
+    const Point half = path.At(path.Steps() / 2);
+    const double sn = std::sin(shot);
+    const double cs = std::cos(shot);
+    Spawn(group, index, {spot.x - half.x * cs - half.y * sn, spot.y + half.x * sn - half.y * cs}, shot, -1);
+  }
+}
+
+void Simulation::Boost(const std::string& effect, int amount, double duration_s, const std::string& channel) {
+  const double now = TimeMs();
+  const double until = now + duration_s * 1000;
+  const auto same = std::ranges::find_if(
+      player_buffs_, [&](const Timed& t) { return t.effect == effect && t.channel == channel; });
+  if (same == player_buffs_.end()) {
+    player_buffs_.push_back({effect, amount, until, now, channel});
+  } else {
+    same->amount = std::max(same->amount, amount);
+    same->until_ms = std::max(same->until_ms, until);
+  }
+}
+
+void Simulation::OnShoot() {
+  const double now = TimeMs();
+  for (std::size_t i = 0; i < procs_.size(); ++i) {
+    Proc& proc = procs_[i];
+    const Activate& act = *proc.effect;
+    if (now < proc.ready_ms) {
+      continue;
+    }
+    if (proc.model == OnShootModel::kChanceBoost) {
+      // Each shot adds its chance; the boost goes off when they add up to
+      // one, so it comes as often as the chance says on average.
+      proc.chance += act.Number("proc").value_or(1);
+      if (proc.chance < 1) {
+        continue;
+      }
+      proc.chance = 0;
+      // Boosts of one stat on a noStack channel don't stack (RealmEye:
+      // Enchantments); any others stack.
+      const std::string channel = act.Text("channel");
+      Boost(act.Text("stat"), static_cast<int>(act.Number("amount").value_or(0)), act.Number("duration").value_or(0),
+            channel.starts_with("noStack") ? channel : "proc " + std::to_string(i));
+    } else if (proc.model == OnShootModel::kPoisonBurst) {
+      // Nothing aims it, so it bursts around the player.
+      pending_.push_back({Pending::Kind::kPoisonLands, now + act.Number("throwTime").value_or(0) * 1000,
+                          world_.player, act.Number("radius").value_or(0), &act, From::kProc});
+    } else {
+      CreateShots(proc.group, act);
+    }
+    ++proc_totals_.casts;
+    proc.ready_ms = now + act.Number("cooldown").value_or(0) * 1000;
   }
 }
 
@@ -619,7 +704,7 @@ void Simulation::RunPending() {
           Damage(t,
                  AbilityHit(static_cast<int>(act.Number("minDamage").value_or(0)),
                             static_cast<int>(act.Number("maxDamage").value_or(0)), bonus, t, false),
-                 true);
+                 p.from);
         }
       }
       effects_.push_back({Effect::Kind::kBlast, p.centre, p.radius, now + 200, {}, false});
@@ -630,13 +715,13 @@ void Simulation::RunPending() {
       const double total = act.Number("totalDamage").value_or(0) + StatModBonus(act, "statModDamage", base_);
       // With no duration it all comes on the next step.
       const double duration_ms = std::max(kStepMs, act.Number("duration").value_or(0) * 1000);
-      Poison poison{{}, total * kStepMs / duration_ms, total};
+      Poison poison{{}, total * kStepMs / duration_ms, total, p.from};
       for (std::size_t t = 0; t < world_.targets.size(); ++t) {
         if (!inside(t)) {
           continue;
         }
         poison.targets.push_back(t);
-        Damage(t, impact * (TargetNow(t).cursed ? 1.25 : 1), true);
+        Damage(t, impact * (TargetNow(t).cursed ? 1.25 : 1), p.from);
         if (const std::string effect = act.Text("condEffect"); !effect.empty()) {
           Debuff(t, effect, act.Number("condDuration").value_or(0));
         }
@@ -652,7 +737,7 @@ void Simulation::TickPoisons() {
     const double tick = std::min(p.per_step, p.left);
     p.left -= tick;
     for (std::size_t t : p.targets) {
-      Damage(t, tick * (TargetNow(t).cursed ? 1.25 : 1), true);
+      Damage(t, tick * (TargetNow(t).cursed ? 1.25 : 1), p.from);
     }
   }
   std::erase_if(poisons_, [](const Poison& p) { return p.left <= 1e-9; });
@@ -696,7 +781,7 @@ void Simulation::Explode(const Trap& trap) {
   const std::string effect = act.Text("condEffect");
   for (std::size_t t = 0; t < world_.targets.size(); ++t) {
     if (Distance(world_.targets[t].position, trap.at) <= trap.radius + world_.targets[t].radius) {
-      Damage(t, AbilityHit(damage, damage, bonus, t, act.Flag("armorPierce")), true);
+      Damage(t, AbilityHit(damage, damage, bonus, t, act.Flag("armorPierce")), From::kAbility);
       if (!effect.empty()) {
         Debuff(t, effect, act.Number("condDuration").value_or(0) + StatModBonus(act, "statModTrapCondDuration", base_));
       }
@@ -716,17 +801,19 @@ void Simulation::Debuff(std::size_t target, const std::string& raw, double durat
   auto& list = target_debuffs_[target];
   const auto same = std::ranges::find(list, effect, &Timed::effect);
   if (same == list.end()) {
-    list.push_back({effect, 0, until, from});
+    list.push_back({effect, 0, until, from, ""});
   } else {
     same->until_ms = std::max(same->until_ms, until);
   }
 }
 
-void Simulation::Damage(std::size_t target, double amount, bool from_ability) {
+void Simulation::Damage(std::size_t target, double amount, From from) {
   per_target_[target].damage += amount;
-  if (from_ability) {
+  if (from == From::kAbility) {
     per_target_[target].ability_damage += amount;
     ability_totals_.damage += amount;
+  } else if (from == From::kProc) {
+    proc_totals_.damage += amount;
   }
 }
 
@@ -768,15 +855,15 @@ void Simulation::Land(Live& shot) {
     const double damage = HitDamage(g, shot.multiplier, i);
     ++per_target_[i].hits;
     if (g.subattack < 0) {
-      ++ability_totals_.hits;
-      Damage(i, damage, true);
+      ++(g.from == From::kProc ? proc_totals_ : ability_totals_).hits;
+      Damage(i, damage, g.from);
     } else {
       Counters& counters = per_subattack_[static_cast<std::size_t>(g.subattack)];
       ++totals_.hits;
       ++counters.hits;
       totals_.damage += damage;
       counters.damage += damage;
-      Damage(i, damage, false);
+      Damage(i, damage, From::kWeapon);
       for (OpenVolley& v : open_) {
         if (v.id == shot.volley) {
           ++v.hits;

@@ -100,6 +100,12 @@ struct Breakdown {
 /// Valor's -10 ATT. Only the ones the engine can model.
 std::vector<StatBonus> WhileShooting(const Weapon& weapon);
 
+/// How the engine models one of a weapon's on-shoot effects: kNone for an
+/// effect it doesn't model, or whose gear isn't in `worn` (which includes the
+/// weapon).
+enum class OnShootModel { kNone, kWhileShooting, kPoisonBurst, kExtraShots, kChanceBoost };
+OnShootModel ModelOf(const Weapon& weapon, const Activate& effect, const std::vector<int>& worn);
+
 /// An on-shoot stat boost that goes off by chance, like the OnShoot Attack
 /// Boost enchantment's 3% for +5 ATT, and the share of the time it's up.
 struct ChanceBoost {
