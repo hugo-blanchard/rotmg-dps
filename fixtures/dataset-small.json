@@ -216,6 +216,7 @@
       "id": "Venom Katana",
       "name": "Venom Katana",
       "slotType": 24,
+      "labels": ["EQUIPMENT", "WEAPON", "KATANA"],
       "texture": {
         "file": "exampleSheet",
         "index": 49
@@ -393,7 +394,17 @@
       "mutators": [ { "tag": "ActivateOnEquip", "value": "BonusStatRelative",
                       "params": { "amount": 50, "stat": "DEX", "statRelativeTo": "DEX" } } ] },
     { "type": 269, "id": "Odd_Enchant", "name": "Odd Enchant", "compatible": ["WEAPON"], "labels": ["ODD"],
-      "mutators": [ { "tag": "AddOnPlayerHitActivate", "value": "Heal", "params": { "amount": 20 } } ] }
+      "mutators": [ { "tag": "AddOnPlayerHitActivate", "value": "Heal", "params": { "amount": 20 } } ] },
+    { "type": 277, "id": "Alien_OnShoot_Attack_Boost", "name": "Alien OnShoot Attack Boost", "compatible": ["EQUIPMENT"],
+      "incompatible": ["ABILITY"],
+      "labels": ["ONSHOOT", "PROCATTACK", "ALIEN"], "incompatibleLabels": ["PROCATTACK"],
+      "mutators": [ { "tag": "AddOnPlayerShootActivate", "value": "StatBoostSelf",
+                      "params": { "amount": 10, "channel": "noStack", "cooldown": 5, "duration": 5, "proc": 0.05,
+                                  "stat": "ATT", "mustWearOR": "0x7011" } } ] },
+    { "type": 278, "id": "Buzzing_Legacy", "name": "Buzzing Bullets (Legacy)", "compatible": ["WEAPON"],
+      "labels": ["UNIQUE", "LEGACY"],
+      "mutators": [ { "tag": "MultiplyMinDamage", "value": 1.5, "params": { "projectileId": -1 } },
+                    { "tag": "MultiplyMaxDamage", "value": 1.5, "params": { "projectileId": -1 } } ] }
   ],
   "abilities": [
     {
@@ -830,7 +841,7 @@
       "id": "Plain Mail",
       "name": "Plain Mail",
       "slotType": 7,
-      "enchantmentSlots": 4, "enchantmentPool": "Default Enchantment Pool",
+      "enchantmentSlots": 2, "enchantmentPool": "Default Enchantment Pool",
       "tier": 10,
       "texture": { "file": "exampleSheet", "index": 80 },
       "statBonuses": [

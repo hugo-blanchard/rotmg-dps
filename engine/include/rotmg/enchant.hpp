@@ -21,6 +21,34 @@ bool Fits(const Enchantment& enchantment, const Gear& gear);
 /// Whether two enchantments can share an item.
 bool Conflict(const Enchantment& a, const Enchantment& b);
 
+/// Legacy enchantments stay on the items that have them, but can't be
+/// obtained any more.
+bool Legacy(const Enchantment& enchantment);
+
+/// How an enchantment can come to be on an item.
+enum class Obtained {
+  /// It doesn't fit, the item takes no enchantments, or it's a legacy one.
+  kNever,
+  /// It's in the pool the item rolls from.
+  kRolls,
+  /// It fits but isn't in the pool, so only an artifact or an engraving
+  /// puts it there, like an Alien enchantment on regular gear (RealmEye:
+  /// Artifacts).
+  kArtifact,
+};
+
+/// In datasets from before pools, everything that fits rolls.
+Obtained HowObtained(const Enchantment& enchantment, const Weapon& item, const Dataset& dataset);
+Obtained HowObtained(const Enchantment& enchantment, const Ability& item, const Dataset& dataset);
+Obtained HowObtained(const Enchantment& enchantment, const Gear& item, const Dataset& dataset);
+
+/// For any item of a slot, by the slot's label, as FitsSlot.
+Obtained HowObtainedOnSlot(const Enchantment& enchantment, const std::string& slot_label);
+
+/// How many enchantments an item holds: its slots, or 4 in datasets from
+/// before slots.
+int EnchantmentSlots(const Enchanting& enchanting, const Dataset& dataset);
+
 /// A weapon with enchantments applied, the stats they add, and the ones
 /// whose effects aren't modelled.
 struct Enchanted {

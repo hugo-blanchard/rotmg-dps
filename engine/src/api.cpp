@@ -9,6 +9,7 @@
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 
@@ -27,6 +28,7 @@
 //    "target": {"defense", "armored", "armorBroken", "exposed", "cursed"},
 //    "armor": "Robe of the Grand Sorcerer", "ring": "Ring of Unbound Attack",
 //    "wearing": [14381, 14382], "enchantments": ["Damage_Bonus_4"], "class": "Archer",
+//    "artifacts": true,
 //    "hitsPerVolley": [null, 1.5], "curatedHitsPerVolley": [2, null],
 //    "hitModel": {"distance": 4, "radius": 0.5},
 //    "curve": {"from": 0, "to": 150, "step": 5},
@@ -37,7 +39,9 @@
 // when they aren't named that way.
 // "enchantments" are ids of up to 4 enchantments on the weapon, and
 // "gearEnchantments" up to 4 each on {"ring", "armor", "ability"}; relative
-// ones ("% of Bonus ATT") need "class", the class id. "curve" adds
+// ones ("% of Bonus ATT") need "class", the class id. Each item takes as
+// many as it has slots, of the ones it can roll; with "artifacts" (the
+// default) also the ones an artifact or engraving puts on it. "curve" adds
 // the build's DPS at each DEF in the range, with everything else in the
 // request unchanged. "hitCurve" adds the geometric estimate's total hits
 // per volley at each distance.
@@ -247,16 +251,31 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
     r.character = r.character.With(s.stats);
   }
   r.character.worn = worn;
-  // Reads one item's enchantment ids, checking each fits and that none clash.
-  const auto pick = [&](const json& ids, const std::string& item, const auto& fits) {
+  // Reads one item's enchantment ids, checking the item can have each, that
+  // none clash and that they fit in its slots.
+  const bool artifacts = req.value("artifacts", true);
+  const auto pick = [&](const json& ids, const std::string& item, const auto& obtained, int slots) {
     std::vector<const Enchantment*> picked;
     for (const json& id : ids) {
       const auto e = std::ranges::find(dataset.enchantments, id.get<std::string>(), &Enchantment::id);
       if (e == dataset.enchantments.end()) {
         throw std::runtime_error("no enchantment named \"" + id.get<std::string>() + "\"");
       }
-      if (!fits(*e)) {
+      const Obtained how = obtained(*e);
+      if (how == Obtained::kNever && Legacy(*e)) {
+        throw std::runtime_error(e->name + " is a legacy enchantment, which can't be obtained");
+      }
+      if (how == Obtained::kNever && slots == 0) {
+        throw std::runtime_error(item + " can't be enchanted");
+      }
+      if (how == Obtained::kNever) {
         throw std::runtime_error(e->name + " doesn't go on " + item);
+      }
+      if (how == Obtained::kArtifact && !artifacts) {
+        throw std::runtime_error(e->name + " only goes on " + item + " with an artifact");
+      }
+      if (how == Obtained::kArtifact) {
+        r.notes.push_back(e->name + " only goes on " + item + " with an artifact or an engraving");
       }
       for (const Enchantment* other : picked) {
         if (Conflict(*e, *other)) {
@@ -265,9 +284,8 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
       }
       picked.push_back(&*e);
     }
-    // Divine items have 4 slots, the most (RealmEye: Enchanting).
-    if (picked.size() > 4) {
-      throw std::runtime_error("an item holds at most 4 enchantments");
+    if (std::cmp_greater(picked.size(), slots)) {
+      throw std::runtime_error(item + " holds at most " + std::to_string(slots) + " enchantments");
     }
     return picked;
   };
@@ -275,20 +293,32 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
   const auto on_gear = req.find("gearEnchantments");
   if ((on_weapon != req.end() || on_gear != req.end()) && r.weapon != nullptr) {
     const std::vector<const Enchantment*> picked =
-        on_weapon == req.end() ? std::vector<const Enchantment*>{}
-                               : pick(*on_weapon, r.weapon->name, [&](const Enchantment& e) { return Fits(e, *r.weapon); });
+        on_weapon == req.end()
+            ? std::vector<const Enchantment*>{}
+            : pick(*on_weapon, r.weapon->name,
+                   [&](const Enchantment& e) { return HowObtained(e, *r.weapon, dataset); },
+                   EnchantmentSlots(r.weapon->enchanting, dataset));
     GearEnchantments gear;
-    if (on_gear != req.end()) {
-      for (const auto& [key, label, item] :
-           {std::tuple{"ring", "RING", r.ring}, {"armor", "ARMOR", r.armor}, {"ability", "ABILITY", nullptr}}) {
-        if (auto ids = on_gear->find(key); ids != on_gear->end()) {
-          // A named armor or ring takes what its own labels allow; otherwise
-          // any item of the slot.
-          gear.emplace_back(label, pick(*ids, item ? item->name : std::string("your ") + key, [&](const Enchantment& e) {
-                              return item ? Fits(e, *item) : FitsSlot(e, label);
-                            }));
-        }
+    // A named item takes what its own labels and pool allow; otherwise any
+    // item of the slot.
+    const auto on_slot = [&](const char* key, const char* label, const auto* item) {
+      const auto ids = on_gear->find(key);
+      if (ids == on_gear->end()) {
+        return;
       }
+      if (item == nullptr) {
+        gear.emplace_back(label, pick(*ids, std::string("your ") + key,
+                                      [&](const Enchantment& e) { return HowObtainedOnSlot(e, label); }, 4));
+      } else {
+        gear.emplace_back(label, pick(*ids, item->name,
+                                      [&](const Enchantment& e) { return HowObtained(e, *item, dataset); },
+                                      EnchantmentSlots(item->enchanting, dataset)));
+      }
+    };
+    if (on_gear != req.end()) {
+      on_slot("ring", "RING", r.ring);
+      on_slot("armor", "ARMOR", r.armor);
+      on_slot("ability", "ABILITY", r.ability);
     }
     Enchanted en = Enchant(*r.weapon, picked, gear);
     if (en.mp_cost != 1 && r.ability != nullptr && r.ability->mp_cost) {
@@ -752,11 +782,14 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 // An optimize request is an evaluate request, which must name the class,
 // plus
 //   "optimize": {"lock": ["weapon", ...], "pools": ["tiered", "untiered", "set"],
-//                "enchantments": "keep" | "none" | "best", "slots": 4, "results": 5}
+//                "enchantments": "keep" | "none" | "best", "slots": 4, "artifacts": true,
+//                "results": 5}
 // "lock" keeps the request's items in those slots. "pools" says which other
 // items may be tried: tiered ones, set pieces, and the rest (untiered).
 // "enchantments" keeps the request's where they still fit, removes them, or
-// fills up to "slots" per item with the best ones. Returns
+// fills up to "slots" per item, and no more than the item has, with the best
+// ones. "artifacts" lets it use enchantments only an artifact or engraving
+// puts on an item. Returns
 //   {"ok": true, "baseline", "evaluated",
 //    "builds": [{"dps", "weapon", "ability", "armor", "ring",
 //                "enchantments": {"weapon": [...], "ability", "armor", "ring"}}]}
@@ -781,6 +814,8 @@ std::string Api::Optimize(std::string_view request_json) const {
     const std::set<std::string> pools = opt.value("pools", std::set<std::string>{"tiered", "untiered", "set"});
     const std::string mode = opt.value("enchantments", std::string("keep"));
     const int max_slots = std::clamp(opt.value("slots", 4), 0, 4);
+    const bool artifacts = opt.value("artifacts", true);
+    base["artifacts"] = artifacts;
     const auto results = static_cast<std::size_t>(std::clamp(opt.value("results", 5), 1, 20));
 
     // The four slots, in the game's order, and what each can hold.
@@ -834,34 +869,51 @@ std::string Api::Optimize(std::string_view request_json) const {
       }
     }
 
-    // What can go on the item in a slot, by the engine's rules, once per
-    // item.
-    std::map<std::pair<std::size_t, std::string>, std::vector<const Enchantment*>> fitting_cache;
-    const auto fitting = [&](std::size_t slot, const std::string& item) -> const std::vector<const Enchantment*>& {
+    // What can go on the item in a slot, by the game's rules, and how many,
+    // once per item.
+    struct Fitting {
+      std::vector<const Enchantment*> options;
+      int slots = 0;
+    };
+    std::map<std::pair<std::size_t, std::string>, Fitting> fitting_cache;
+    const auto fitting = [&](std::size_t slot, const std::string& item) -> const Fitting& {
       const auto key = std::pair{slot, item};
       if (auto it = fitting_cache.find(key); it != fitting_cache.end()) {
         return it->second;
       }
-      std::vector<const Enchantment*> out;
       const Weapon* w = slot == 0 ? FindWeapon(d, item) : nullptr;
+      const Ability* a = slot == 1 ? FindAbility(d, item) : nullptr;
       const Gear* g = slot == 2 ? FindGear(d.armors, item) : slot == 3 ? FindGear(d.rings, item) : nullptr;
+      Fitting out;
+      out.slots = w   ? EnchantmentSlots(w->enchanting, d)
+                  : a ? EnchantmentSlots(a->enchanting, d)
+                  : g ? EnchantmentSlots(g->enchanting, d)
+                      : slot == 1 ? 4 : 0;
       for (const Enchantment& e : d.enchantments) {
-        if (slot == 0 ? w && Fits(e, *w) : slot == 1 ? FitsSlot(e, "ABILITY") : g && Fits(e, *g)) {
-          out.push_back(&e);
+        const Obtained how = w   ? HowObtained(e, *w, d)
+                             : a ? HowObtained(e, *a, d)
+                             : g ? HowObtained(e, *g, d)
+                                 : slot == 1 ? HowObtainedOnSlot(e, "ABILITY") : Obtained::kNever;
+        if (how == Obtained::kRolls || (artifacts && how == Obtained::kArtifact)) {
+          out.options.push_back(&e);
         }
       }
       return fitting_cache.emplace(key, std::move(out)).first->second;
     };
-    // Keeps the enchantments that still fit the slot's item, in order.
+    // Keeps the enchantments that still fit the slot's item, in order, as
+    // many as it holds.
     const auto adapt = [&](Build& b, std::size_t slot) {
       if (mode == "none") {
         b.enchants[slot].clear();
         return;
       }
-      const auto& options = fitting(slot, b.items[slot]);
+      const Fitting& fits = fitting(slot, b.items[slot]);
       std::erase_if(b.enchants[slot], [&](const std::string& id) {
-        return std::ranges::none_of(options, [&](const Enchantment* e) { return e->id == id; });
+        return std::ranges::none_of(fits.options, [&](const Enchantment* e) { return e->id == id; });
       });
+      if (std::cmp_greater(b.enchants[slot].size(), fits.slots)) {
+        b.enchants[slot].resize(static_cast<std::size_t>(fits.slots));
+      }
     };
 
     long evaluated = 0;
@@ -932,7 +984,7 @@ std::string Api::Optimize(std::string_view request_json) const {
         return s && std::abs(*s - without) > without * 1e-9;
       };
       std::vector<const Enchantment*> out;
-      for (const Enchantment* e : fitting(slot, b.items[slot])) {
+      for (const Enchantment* e : fitting(slot, b.items[slot]).options) {
         if (!FitsSlot(*e, kSlotLabels[slot])) {
           if (changes(e)) out.push_back(e);
           continue;
@@ -956,7 +1008,7 @@ std::string Api::Optimize(std::string_view request_json) const {
         return current;
       }
       const auto& options = relevant(b, slot);
-      for (int k = 0; k < max_slots; ++k) {
+      for (int k = 0; k < std::min(max_slots, fitting(slot, b.items[slot]).slots); ++k) {
         const Enchantment* best = nullptr;
         double best_dps = current;
         for (const Enchantment* e : options) {

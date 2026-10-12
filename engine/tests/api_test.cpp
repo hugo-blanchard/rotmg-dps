@@ -488,6 +488,30 @@ TEST_CASE("enchantments on a named ring follow the ring's own labels") {
         "bad request: no armor named \"Nope\"");
 }
 
+TEST_CASE("an item takes enchantments from its pool, or by artifact, up to its slots") {
+  rotmg::Api api = LoadedApi();
+  const auto evaluate = [&](const std::string& extra) {
+    return json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "armor": "Plain Mail")" + extra + "}"));
+  };
+  // Alien enchantments aren't in the pool; an artifact puts them on.
+  const json alien = evaluate(R"(, "enchantments": ["Alien_OnShoot_Attack_Boost"])");
+  REQUIRE(alien["ok"] == true);
+  const json& notes = alien["build"]["assumptions"];
+  CHECK(std::ranges::find(notes, json("Alien OnShoot Attack Boost only goes on Plain Sword with an artifact or an "
+                                      "engraving")) != notes.end());
+  CHECK(evaluate(R"(, "artifacts": false, "enchantments": ["Alien_OnShoot_Attack_Boost"])")["error"] ==
+        "bad request: Alien OnShoot Attack Boost only goes on Plain Sword with an artifact");
+  CHECK(evaluate(R"(, "enchantments": ["Buzzing_Legacy"])")["error"] ==
+        "bad request: Buzzing Bullets (Legacy) is a legacy enchantment, which can't be obtained");
+  CHECK(evaluate(R"(, "gearEnchantments": {"armor": ["Attack_Bonus_1", "Vitality_Bonus_1", "Lucky_Ring"]})")["error"] ==
+        "bad request: Lucky Ring doesn't go on Plain Mail");
+  CHECK(evaluate(R"(, "gearEnchantments": {"armor": ["Attack_Bonus_1", "Vitality_Bonus_1",
+                                                     "Relative_Attack_Bonus_4"]})")["error"] ==
+        "bad request: Plain Mail holds at most 2 enchantments");
+  CHECK(json::parse(api.Evaluate(R"({"weapon": "Venom Katana", "enchantments": ["Attack_Bonus_1"]})"))["error"] ==
+        "bad request: Venom Katana can't be enchanted");
+}
+
 TEST_CASE("the optimizer finds the build with the most DPS") {
   rotmg::Api api = LoadedApi();
   const std::string start = R"({"class": "Swordsman", "weapon": "Plain Sword", "ability": "Plain Spell",
@@ -547,4 +571,29 @@ TEST_CASE("the optimizer keeps locked slots and fills enchantments legally") {
   CHECK(json::parse(api.Evaluate(check.dump()))["build"]["dps"].get<double>() ==
         Catch::Approx(best["dps"].get<double>()));
   CHECK(json::parse(api.Optimize(R"({"weapon": "Plain Sword"})"))["ok"] == false);
+}
+
+TEST_CASE("the optimizer only uses enchantments the items can get") {
+  rotmg::Api api = LoadedApi();
+  const auto optimize = [&](const char* artifacts) {
+    const json res = json::parse(api.Optimize(std::string(R"({"class": "Swordsman", "weapon": "Plain Sword",
+        "armor": "Plain Mail", "attack": 75, "dexterity": 50,
+        "optimize": {"lock": ["weapon", "ability", "armor", "ring"], "enchantments": "best", "artifacts": )") +
+                                              artifacts + "}}"));
+    REQUIRE(res["ok"] == true);
+    return res["builds"][0]["enchantments"];
+  };
+  const auto uses = [](const json& enchantments, const char* id) {
+    return std::ranges::any_of(enchantments.items(), [&](const auto& slot) {
+      return std::ranges::find(slot.value(), json(id)) != slot.value().end();
+    });
+  };
+  for (const char* artifacts : {"true", "false"}) {
+    const json found = optimize(artifacts);
+    CHECK_FALSE(uses(found, "Buzzing_Legacy"));
+    CHECK(found["armor"].size() <= 2);
+  }
+  // Its 10 ATT boost beats the 8 of the one that rolls.
+  CHECK(uses(optimize("true"), "Alien_OnShoot_Attack_Boost"));
+  CHECK_FALSE(uses(optimize("false"), "Alien_OnShoot_Attack_Boost"));
 }

@@ -102,6 +102,52 @@ bool FitsSlot(const Enchantment& e, const std::string& slot_label) {
          std::ranges::none_of(e.incompatible, generic);
 }
 
+bool Legacy(const Enchantment& e) { return Has(e.labels, "LEGACY"); }
+
+namespace {
+
+Obtained Obtain(const Enchantment& e, const std::vector<std::string>& labels, const std::string& id,
+                const Enchanting& enchanting, const Dataset& d) {
+  if (!FitsLabels(e, labels, id) || Legacy(e)) {
+    return Obtained::kNever;
+  }
+  if (d.enchantment_pools.empty()) {
+    return Obtained::kRolls;
+  }
+  if (enchanting.slots == 0) {
+    return Obtained::kNever;
+  }
+  // A pool the dataset doesn't list can't be checked, so the labels decide.
+  const auto pool = d.enchantment_pools.find(enchanting.pool);
+  return pool == d.enchantment_pools.end() || pool->second.contains(e.id) ? Obtained::kRolls : Obtained::kArtifact;
+}
+
+}  // namespace
+
+Obtained HowObtained(const Enchantment& e, const Weapon& w, const Dataset& d) {
+  return Obtain(e, w.labels, w.id, w.enchanting, d);
+}
+
+Obtained HowObtained(const Enchantment& e, const Ability& a, const Dataset& d) {
+  // Abilities have no labels in datasets from before ability labels, which
+  // also have no pools. In newer ones an ability without labels takes none.
+  return a.labels.empty() && d.enchantment_pools.empty() ? HowObtainedOnSlot(e, "ABILITY")
+                                                          : Obtain(e, a.labels, a.id, a.enchanting, d);
+}
+
+Obtained HowObtained(const Enchantment& e, const Gear& g, const Dataset& d) {
+  return Obtain(e, g.labels, g.id, g.enchanting, d);
+}
+
+Obtained HowObtainedOnSlot(const Enchantment& e, const std::string& slot_label) {
+  return FitsSlot(e, slot_label) && !Legacy(e) ? Obtained::kRolls : Obtained::kNever;
+}
+
+// Divine items have 4 slots, the most (RealmEye: Enchanting).
+int EnchantmentSlots(const Enchanting& enchanting, const Dataset& d) {
+  return d.enchantment_pools.empty() ? 4 : std::clamp(enchanting.slots, 0, 4);
+}
+
 bool Conflict(const Enchantment& a, const Enchantment& b) {
   const auto meets = [](const Enchantment& x, const Enchantment& y) {
     return std::ranges::any_of(x.incompatible_labels, [&](const std::string& l) { return Has(y.labels, l); });

@@ -201,15 +201,17 @@ for (const cls of classes) {
 }
 
 // Every enchantment that changes a weapon, rather than only adding stats,
-// evaluates on the first weapon it fits. Ones for other gear are skipped.
-const { enchantments = [] } = JSON.parse(text);
+// evaluates on the first weapon that can have it. Ones for other gear, and
+// legacy ones no item can get any more, are skipped.
+const { enchantments = [], enchantmentPools = [] } = JSON.parse(text);
 const fits = (e, w) =>
+  (enchantmentPools.length === 0 || (w.enchantmentSlots ?? 0) > 0) &&
   e.compatible.every((l) => (w.labels ?? []).includes(l)) &&
   !(e.incompatible ?? []).some((l) => (w.labels ?? []).includes(l)) &&
   !(e.incompatibleItems ?? []).includes(w.id);
 let enchanted = 0;
 for (const e of enchantments) {
-  if ((e.mutators ?? []).every((m) => m.tag === "ActivateOnEquip")) continue;
+  if ((e.mutators ?? []).every((m) => m.tag === "ActivateOnEquip") || (e.labels ?? []).includes("LEGACY")) continue;
   const weapon = weapons.find((w) => fits(e, w));
   if (!weapon) continue;
   const res = evaluate({ weapon: weapon.name, enchantments: [e.id], attack: 50, dexterity: 50, hitModel: { distance: 4 } });
