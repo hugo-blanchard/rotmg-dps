@@ -165,7 +165,8 @@ TEST_CASE("Traps: one that lands clear waits for a target to come close") {
   sim.Advance(2900);
   CHECK(AbilityDamage(sim, 0) == 0);
   sim.Advance(1000);
-  CHECK(AbilityDamage(sim, 0) == Approx(590));
+  // The trap's 590, and its sticky bomb's 845 0.8 seconds later.
+  CHECK(AbilityDamage(sim, 0) == Approx(590 + 845));
   CHECK_FALSE(HasTrap(sim));
 }
 
@@ -179,6 +180,19 @@ TEST_CASE("Traps: one nothing comes near goes off when it runs out") {
   sim.Advance(200);
   CHECK_FALSE(HasTrap(sim));
   CHECK(AbilityDamage(sim, 0) == 0);
+}
+
+TEST_CASE("Traps: a sticky bomb goes off on the closest target caught") {
+  // Both targets are caught by the trap, 550 each through 40 DEF. The bomb
+  // sticks to the one the trap landed on and, 0.8 seconds later, hits both
+  // within its 3.375 tiles for 715 + 5 * 26 - 40.
+  Simulation sim(Sword(), kWis60, At({{0, 4}, {2, 4}}, {.defense = 40}), &Ability("Snare Trap"));
+  sim.Advance(1010);
+  CHECK(AbilityDamage(sim, 0) == Approx(550));
+  CHECK(AbilityDamage(sim, 1) == Approx(550));
+  sim.Advance(800);
+  CHECK(AbilityDamage(sim, 0) == Approx(550 + 805));
+  CHECK(AbilityDamage(sim, 1) == Approx(550 + 805));
 }
 
 TEST_CASE("Tomes: two blasts 0.8 seconds apart") {

@@ -812,6 +812,23 @@ void Simulation::RunPending() {
         Damage(t, AbilityHit(0, 0, damage, t, act.Flag("aoeArmorPierce")), p.from);
       }
       effects_.push_back({Effect::Kind::kBlast, at, p.radius, now + 150, {}, false});
+    } else if (p.kind == Pending::Kind::kStickyBomb) {
+      if (!Alive(p.source)) {
+        continue;
+      }
+      const Point at = world_.targets[p.source].position;
+      const double bonus = StatModBonus(act, "statModBombDamage", base_);
+      const std::string effect = act.Text("bombCondEffect");
+      for (std::size_t t = 0; t < world_.targets.size(); ++t) {
+        if (Alive(t) && Distance(at, world_.targets[t].position) <= p.radius + world_.targets[t].radius) {
+          Damage(t, AbilityHit(0, 0, act.Number("bombDamage").value_or(0) + bonus, t, false), p.from);
+          if (!effect.empty()) {
+            const double extra = StatModBonus(act, "statModBombCondDuration", base_);
+            Debuff(t, effect, act.Number("bombCondEffectDuration").value_or(0) + extra);
+          }
+        }
+      }
+      effects_.push_back({Effect::Kind::kBlast, at, p.radius, now + 200, {}, false});
     } else if (p.kind == Pending::Kind::kNovaBlast) {
       const double bonus = StatModBonus(act, "statModDamage", base_);
       for (std::size_t t = 0; t < world_.targets.size(); ++t) {
@@ -895,8 +912,11 @@ void Simulation::Explode(const Trap& trap) {
   const int damage = static_cast<int>(act.Number("totalDamage").value_or(0));
   const double bonus = StatModBonus(act, "statModTrapDamage", base_);
   const std::string effect = act.Text("condEffect");
+  std::vector<std::pair<double, std::size_t>> caught;
   for (std::size_t t = 0; t < world_.targets.size(); ++t) {
-    if (Alive(t) && Distance(world_.targets[t].position, trap.at) <= trap.radius + world_.targets[t].radius) {
+    const double d = Distance(world_.targets[t].position, trap.at);
+    if (Alive(t) && d <= trap.radius + world_.targets[t].radius) {
+      caught.push_back({d, t});
       Damage(t, AbilityHit(damage, damage, bonus, t, act.Flag("armorPierce")), From::kAbility);
       if (!effect.empty()) {
         Debuff(t, effect, act.Number("condDuration").value_or(0) + StatModBonus(act, "statModTrapCondDuration", base_));
@@ -904,6 +924,27 @@ void Simulation::Explode(const Trap& trap) {
     }
   }
   effects_.push_back({Effect::Kind::kBlast, trap.at, trap.radius, TimeMs() + 200, {}, false});
+
+  // RealmEye, Giantcatcher Trap: sticky bombs on up to bombCount of the
+  // enemies caught go off bombDelay later, bombTriggerCount times. Sticking
+  // to the ones closest to the trap is an assumption.
+  const int bombs =
+      static_cast<int>(act.Number("bombCount").value_or(0)) + StatModCount(act, "statModBombCount", base_);
+  if (bombs <= 0 || !act.Number("bombDamage")) {
+    return;
+  }
+  std::ranges::sort(caught);
+  caught.resize(std::min(caught.size(), static_cast<std::size_t>(bombs)));
+  const double radius = act.Number("bombRadius").value_or(0) + StatModBonus(act, "statModBombRadius", base_);
+  const int times = std::max(1, static_cast<int>(act.Number("bombTriggerCount").value_or(1)));
+  const double delay_ms = act.Number("bombDelay").value_or(0) * 1000;
+  const double period_ms = act.Number("bombTriggerPeriod").value_or(0) * 1000;
+  for (const auto& [d, t] : caught) {
+    for (int k = 0; k < times; ++k) {
+      const double at = TimeMs() + delay_ms + k * period_ms;
+      pending_.push_back({Pending::Kind::kStickyBomb, at, {}, radius, &act, From::kAbility, t});
+    }
+  }
 }
 
 void Simulation::Debuff(std::size_t target, const std::string& raw, double duration_s, double delay_ms) {

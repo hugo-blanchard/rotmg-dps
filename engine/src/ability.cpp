@@ -236,10 +236,16 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
       const int damage = static_cast<int>(Param(a, "totalDamage"));
       const double hit = ExpectedAbilityDamage(damage, damage, StatModBonus(a, "statModTrapDamage", c), target,
                                                a.Flag("armorPierce"));
-      if (a.Number("bombCount")) {
-        unsupported("trap bombs");
-      }
       out.parts.push_back({"Trap", hit, "RealmEye: Traps"});
+      // RealmEye, Giantcatcher Trap: a sticky bomb of bombDamage (+5 per WIS
+      // over 34) goes off bombDelay after the trap, bombTriggerCount times.
+      if (a.Number("bombCount").value_or(0) > 0 && a.Number("bombDamage")) {
+        const double bomb_damage = Param(a, "bombDamage") + StatModBonus(a, "statModBombDamage", c);
+        const double bomb = ExpectedAbilityDamage(0, 0, bomb_damage, target, false);
+        const double times = std::max(1.0, Param(a, "bombTriggerCount"));
+        assume("a trap's sticky bomb sticks to the target the trap hits and goes off on it");
+        out.parts.push_back({"Sticky bomb", times * bomb, "RealmEye: Giantcatcher Trap"});
+      }
     } else if (a.type == "ConditionEffectSelf" || a.type == "ConditionEffectAura" || a.type == "StatBoostSelf" ||
                a.type == "StatBoostAura" || a.type == "EffectBlast") {
       if (const auto buff = BuffOf(a, c)) {

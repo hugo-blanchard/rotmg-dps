@@ -176,8 +176,11 @@ TEST_CASE("lightning, traps and damage novas") {
   CHECK(lightning.damage_per_cast == Approx(300 + 8 * 10));
   CHECK(lightning.unsupported.empty());
 
+  // 26 WIS over 34: the trap 460 + 5 * 26 and its sticky bomb 715 + 5 * 26,
+  // each less 40 DEF.
   const auto trap = EvaluateAbility(Ability("Snare Trap"), kWis60, {.defense = 40}, {});
-  CHECK(trap.damage_per_cast == Approx(460 + 5 * 26 - 40));
+  CHECK(trap.damage_per_cast == Approx(460 + 130 - 40 + 715 + 130 - 40));
+  CHECK(trap.unsupported.empty());
   CHECK(trap.cooldown_s == 1);
   CHECK(trap.casts_per_second == Approx(7.7 / 105));
 

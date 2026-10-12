@@ -647,9 +647,17 @@
             "radius": 4.5,
             "condEffect": "Slowed",
             "condDuration": 5,
+            "bombCount": 1,
+            "bombDamage": 715,
+            "bombDelay": 0.8,
+            "bombRadius": 3.375,
+            "bombTriggerCount": 1,
+            "bombTriggerPeriod": 2,
             "scalingStat": "WIS",
             "statModScalingMin": 34,
-            "statModTrapDamage": 5
+            "statModTrapDamage": 5,
+            "statModBombDamage": 5,
+            "statModBombCount": 0.00067
           }
         }
       ]
