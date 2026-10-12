@@ -276,15 +276,18 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
       add_part({"Lightning, first target", first, "RealmEye: Scepters"});
     } else if (a.type == "PoisonGrenade") {
       // Poison ignores DEF (RealmEye: Poisons).
-      const double impact = Param(a, "impactDamage") + StatModBonus(a, "statModImpactDamage", c);
-      const double total = Param(a, "totalDamage") + StatModBonus(a, "statModDamage", c);
-      const double damage = (impact + total) * (target.cursed ? 1.25 : 1);
+      const double curse = target.cursed ? 1.25 : 1;
+      const double impact = (Param(a, "impactDamage") + StatModBonus(a, "statModImpactDamage", c)) * curse;
+      const double total = (Param(a, "totalDamage") + StatModBonus(a, "statModDamage", c)) * curse;
       assume("Curse adds 25% to poison damage too");
       if (const auto boost = BuffOf(a, c)) {
         add_buff(*boost);
         assume("a poison's damage boost lasts as long as the poison and covers your other damage, not the poison's own");
       }
-      add_part({"Poison, impact and over time", damage, "RealmEye: Poisons"});
+      if (impact > 0) {
+        add_part({"Poison impact", impact, "RealmEye: Poisons"});
+      }
+      add_part({"Poison over time", total, "RealmEye: Poisons", Param(a, "duration")});
     } else if (a.type == "Trap") {
       // A trap thrown onto an enemy goes off as it lands (RealmEye: Traps).
       // One trap has an armorPierce flag, so the rest go through DEF.

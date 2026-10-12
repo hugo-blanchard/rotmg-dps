@@ -74,6 +74,9 @@ struct AbilityPart {
   std::string name;
   double damage = 0;
   std::string reference;
+  /// Seconds after the cast the damage is spread over evenly, like a
+  /// poison's; 0 when it's dealt at once.
+  double over_s = 0;
 };
 
 struct AbilityBreakdown {

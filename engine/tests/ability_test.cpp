@@ -167,6 +167,12 @@ TEST_CASE("poison ignores DEF and boosts damage to what it poisons") {
   const auto armored = EvaluateAbility(Ability("Toxic Vial"), kWis60, {.defense = 100}, {});
   CHECK(open.damage_per_cast == Approx(1610));
   CHECK(armored.damage_per_cast == Approx(1610));
+  // The impact lands at once and the rest over the poison's duration.
+  REQUIRE(open.parts.size() == 2);
+  CHECK(open.parts[0].damage == Approx(380));
+  CHECK(open.parts[0].over_s == 0);
+  CHECK(open.parts[1].damage == Approx(1230));
+  CHECK(open.parts[1].over_s == Approx(4.5));
   REQUIRE(open.buffs.size() == 1);
   CHECK(open.buffs[0].effect == rotmg::kPoisonBoost);
   CHECK(open.buffs[0].on == Buff::On::kTarget);
