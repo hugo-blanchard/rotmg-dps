@@ -267,13 +267,15 @@ class Simulation {
   };
   // Something an ability set going that happens later.
   struct Pending {
-    enum class Kind { kNovaBlast, kPoisonLands };
+    enum class Kind { kNovaBlast, kPoisonLands, kShockblast };
     Kind kind = Kind::kNovaBlast;
     double at_ms = 0;
     Point centre;
     double radius = 0;
     const Activate* activate = nullptr;
     From from = From::kAbility;
+    // A shockblast: the target it comes from, which it follows.
+    std::size_t source = 0;
   };
   struct Poison {
     std::vector<std::size_t> targets;

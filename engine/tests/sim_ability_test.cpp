@@ -91,8 +91,8 @@ TEST_CASE("a full MP bar is spent on the first step") {
 
 TEST_CASE("Scepters: lightning chains through targets within 8 tiles") {
   // 60 WIS is 10 over 50: 300 + 8 * 10, then 40 less on each next target.
-  // The fourth target is more than 8 tiles from all the others, so the chain
-  // stops.
+  // They stand more than a shockblast apart. The fourth target is more than
+  // 8 tiles from all the others, so the chain stops.
   Simulation sim(Sword(), kWis60, At({{0, 4}, {0, 8}, {1, 13}, {12, 0}}), &Ability("Shock Scepter"));
   sim.Advance(10);
   CHECK(sim.AbilityTotals().hits == 3);
@@ -112,6 +112,19 @@ TEST_CASE("Scepters: the chain starts at the closest target in the cone") {
   const auto& chain = Bolt(sim).chain;
   REQUIRE(chain.size() == 4);
   CHECK(chain[1].y == Approx(3));
+}
+
+TEST_CASE("Scepters: a struck enemy's shockblast hits the others near it") {
+  // Two targets 2 tiles apart, inside each other's 2.5 tile shockblast: each
+  // takes three pulses of 75 + 2.2 * 10 from the other over a second, armor
+  // piercing. Alone, a target takes only the lightning.
+  Simulation pair(Sword(), kWis60, At({{0, 4}, {0, 6}}, {.defense = 50}), &Ability("Shock Scepter"));
+  pair.Advance(1100);
+  CHECK(AbilityDamage(pair, 0) == Approx(380 - 50 + 3 * 97));
+  CHECK(AbilityDamage(pair, 1) == Approx(340 - 50 + 3 * 97));
+  Simulation alone(Sword(), kWis60, At({{0, 4}}, {.defense = 50}), &Ability("Shock Scepter"));
+  alone.Advance(1100);
+  CHECK(AbilityDamage(alone, 0) == Approx(380 - 50));
 }
 
 TEST_CASE("Poisons: land after 0.8 seconds, ignore DEF and spread their damage") {

@@ -174,7 +174,7 @@ TEST_CASE("lightning, traps and damage novas") {
   // 80 / 10), as RealmEye's Scepters table lists.
   const auto lightning = EvaluateAbility(Ability("Shock Scepter"), kWis60, {}, {});
   CHECK(lightning.damage_per_cast == Approx(300 + 8 * 10));
-  CHECK(Has(lightning.unsupported, "lightning's shockblast area damage"));
+  CHECK(lightning.unsupported.empty());
 
   const auto trap = EvaluateAbility(Ability("Snare Trap"), kWis60, {.defense = 40}, {});
   CHECK(trap.damage_per_cast == Approx(460 + 5 * 26 - 40));
@@ -196,12 +196,15 @@ TEST_CASE("effects that aren't modelled are listed, harmless ones aren't") {
   CHECK(b.casts_per_second == Approx(7.7 / 100));
 }
 
-TEST_CASE("Scepters: lightning scales as the wiki's tables say") {
-  // Scepter of Storms at 75 WIS: 300 + 8 * 25 damage, 5 + 2 targets.
+TEST_CASE("Scepters: lightning and shockblast scale as the wiki's tables say") {
+  // Scepter of Storms at 75 WIS: 300 + 8 * 25 damage, 5 + 2 targets; its
+  // shockblast 75 + 2.2 * 25 on 2 + 2 targets.
   const rotmg::Activate& storms = Ability("Shock Scepter").activates[0];
   const rotmg::Character c{.wisdom = 75};
   CHECK(rotmg::LightningDamage(storms, c) == Approx(500));
   CHECK(rotmg::LightningTargets(storms, c) == 7);
+  CHECK(rotmg::ShockblastDamage(storms, c) == Approx(130));
+  CHECK(rotmg::ShockblastTargets(storms, c) == 4);
   // Nothing extra at or under 50 WIS.
   CHECK(rotmg::LightningDamage(storms, {.wisdom = 40}) == Approx(300));
   CHECK(rotmg::LightningTargets(storms, {.wisdom = 50}) == 5);

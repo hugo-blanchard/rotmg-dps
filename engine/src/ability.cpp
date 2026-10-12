@@ -60,6 +60,18 @@ int LightningTargets(const Activate& a, const Character& c) {
          (per > 0 ? static_cast<int>(std::floor(over / per + 1e-9)) : 0);
 }
 
+double ShockblastDamage(const Activate& a, const Character& c) {
+  const double over = Over(c, a.Text("scalingStat"), a.Number("statModScalingMin").value_or(0));
+  return a.Number("aoeDamage").value_or(0) + over * a.Number("statModDamage").value_or(0) / 10;
+}
+
+int ShockblastTargets(const Activate& a, const Character& c) {
+  const double per = a.Number("statModPerTarget").value_or(0);
+  const double over = Over(c, a.Text("scalingStat"), a.Number("statModScalingMin").value_or(0));
+  return static_cast<int>(a.Number("aoeMaxTargets").value_or(1)) +
+         (per > 0 ? static_cast<int>(std::floor(over / per + 1e-9)) : 0);
+}
+
 std::optional<Buff> BuffOf(const Activate& a, const Character& c) {
   if (a.type == "ConditionEffectSelf" || a.type == "ConditionEffectAura") {
     const std::string effect = a.Text("effect");
@@ -202,7 +214,10 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
       const double first = ExpectedAbilityDamage(0, 0, damage, target, false);
       assume("lightning's first target takes the full damage, and DEF applies to it");
       if (a.Number("aoeDamage")) {
-        unsupported("lightning's shockblast area damage");
+        // RealmEye, Scepters: a struck enemy's shockblast "can deal damage to
+        // other enemies".
+        assume("a scepter's shockblast hits enemies around the one struck, not that one, so it adds nothing "
+               "against a single target");
       }
       out.parts.push_back({"Lightning, first target", first, "RealmEye: Scepters"});
     } else if (a.type == "PoisonGrenade") {

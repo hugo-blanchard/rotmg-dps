@@ -46,6 +46,14 @@ struct Buff {
 double LightningDamage(const Activate& lightning, const Character& character);
 int LightningTargets(const Activate& lightning, const Character& character);
 
+/// The shockblast an enemy struck by lightning becomes (RealmEye: Scepters):
+/// aoeActivationCount pulses, each hitting up to this many other enemies
+/// within aoeRange for this damage. Damage grows by statModDamage / 10 a
+/// point of the scaling stat over statModScalingMin, and targets by one every
+/// statModPerTarget points, which matches the wiki's shockblast tables.
+double ShockblastDamage(const Activate& lightning, const Character& character);
+int ShockblastTargets(const Activate& lightning, const Character& character);
+
 /// The buff or debuff one effect gives at these stats, if it changes weapon
 /// DPS: Damaging, Berserk, Weak or Dazed, ATT or DEX boosts on the player,
 /// Curse, Exposed or Armor Broken on targets.

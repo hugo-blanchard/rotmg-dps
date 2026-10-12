@@ -614,7 +614,7 @@ void Simulation::Cast() {
       const double radius = act.Number("radius").value_or(0) + StatModBonus(act, "statModRadius", base_);
       for (int k = 0; k < count; ++k) {
         pending_.push_back({Pending::Kind::kNovaBlast, now + (count > 1 ? span * k / (count - 1) : 0), cursor, radius,
-                            &act, From::kAbility});
+                            &act, From::kAbility, 0});
       }
     } else if (act.type == "Lightning") {
       // RealmEye, Scepters: the closest enemy in a 30 degree cone towards the
@@ -648,6 +648,16 @@ void Simulation::Cast() {
         ++ability_totals_.hits;
         Damage(*at, AbilityHit(0, 0, std::max(0.0, damage - drop * k), *at, false), From::kAbility);
         bolt.chain.push_back(world_.targets[*at].position);
+        // The struck enemy becomes a shockblast, pulsing aoeActivationCount
+        // times over aoeTime; spacing them evenly from now is an assumption.
+        if (act.Number("aoeDamage").value_or(0) > 0) {
+          const int pulses = std::max(1, static_cast<int>(act.Number("aoeActivationCount").value_or(1)));
+          const double span = act.Number("aoeTime").value_or(0) * 1000;
+          for (int n = 0; n < pulses; ++n) {
+            pending_.push_back({Pending::Kind::kShockblast, now + (pulses > 1 ? span * n / (pulses - 1) : 0), {},
+                                act.Number("aoeRange").value_or(0), &act, From::kAbility, *at});
+          }
+        }
         std::optional<std::size_t> next;
         double nearest = 8;
         for (std::size_t t = 0; t < world_.targets.size(); ++t) {
@@ -665,7 +675,7 @@ void Simulation::Cast() {
       // unless the item says.
       const double radius = act.Number("radius").value_or(0) + StatModBonus(act, "statModRadius", base_);
       pending_.push_back({Pending::Kind::kPoisonLands, now + act.Number("throwTime").value_or(0.8) * 1000, cursor,
-                          radius, &act, From::kAbility});
+                          radius, &act, From::kAbility, 0});
     } else if (act.type == "Trap") {
       // RealmEye, Traps: thrown at the cursor in 1 second, it lasts 10
       // seconds, goes off when an enemy comes within half its explosion
@@ -757,7 +767,7 @@ void Simulation::OnShoot() {
     } else if (proc.model == OnShootModel::kPoisonBurst) {
       // Nothing aims it, so it bursts around the player.
       pending_.push_back({Pending::Kind::kPoisonLands, now + act.Number("throwTime").value_or(0) * 1000,
-                          world_.player, act.Number("radius").value_or(0), &act, From::kProc});
+                          world_.player, act.Number("radius").value_or(0), &act, From::kProc, 0});
     } else {
       CreateShots(proc.group, act);
     }
@@ -781,7 +791,28 @@ void Simulation::RunPending() {
     const auto inside = [&](std::size_t t) {
       return Alive(t) && Distance(world_.targets[t].position, p.centre) <= p.radius + world_.targets[t].radius;
     };
-    if (p.kind == Pending::Kind::kNovaBlast) {
+    if (p.kind == Pending::Kind::kShockblast) {
+      // RealmEye, Scepters: it "can deal damage to other enemies", so not the
+      // one it comes from; the closest ones go first.
+      if (!Alive(p.source)) {
+        continue;
+      }
+      const Point at = world_.targets[p.source].position;
+      std::vector<std::pair<double, std::size_t>> near;
+      for (std::size_t t = 0; t < world_.targets.size(); ++t) {
+        const double d = Distance(at, world_.targets[t].position);
+        if (t != p.source && Alive(t) && d <= p.radius + world_.targets[t].radius) {
+          near.push_back({d, t});
+        }
+      }
+      std::ranges::sort(near);
+      near.resize(std::min(near.size(), static_cast<std::size_t>(std::max(0, ShockblastTargets(act, base_)))));
+      const double damage = ShockblastDamage(act, base_);
+      for (const auto& [d, t] : near) {
+        Damage(t, AbilityHit(0, 0, damage, t, act.Flag("aoeArmorPierce")), p.from);
+      }
+      effects_.push_back({Effect::Kind::kBlast, at, p.radius, now + 150, {}, false});
+    } else if (p.kind == Pending::Kind::kNovaBlast) {
       const double bonus = StatModBonus(act, "statModDamage", base_);
       for (std::size_t t = 0; t < world_.targets.size(); ++t) {
         if (inside(t)) {
