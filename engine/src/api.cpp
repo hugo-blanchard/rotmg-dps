@@ -888,7 +888,8 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 // plus
 //   "optimize": {"lock": ["weapon", ...], "pools": ["tiered", "untiered", "set"],
 //                "enchantments": "keep" | "none" | "best", "slots": 2, "artifacts": true,
-//                "thorough": false, "results": 5}
+//                "around": "every stat" | "nothing" | "ATT" | ..., "thorough": false,
+//                "results": 5}
 // "lock" keeps the request's items in those slots. "pools" says which other
 // items may be tried: tiered ones, set pieces, and the rest (untiered).
 // Reskins and unobtainable items are never tried, but the request's own
@@ -896,8 +897,11 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 // "enchantments" keeps the request's where they still fit, removes them, or
 // fills up to "slots" per item (2 unless set, at most 4), and no more than
 // the item has, with the best ones. "artifacts" lets it use enchantments
-// only an artifact or engraving puts on an item. "thorough" searches much
-// longer, for checking the normal search. Returns
+// only an artifact or engraving puts on an item. "around" says which
+// stats, as in kOptimizerStats, the search starts again from the ability
+// that scales best with: every one (the default), none, which is quicker,
+// or just one. "thorough" searches much longer, for checking the normal
+// search. Returns
 //   {"ok": true, "baseline", "evaluated",
 //    "builds": [{"dps", "weapon", "ability", "armor", "ring",
 //                "enchantments": {"weapon": [...], "ability", "armor", "ring"}}]}
@@ -987,6 +991,14 @@ std::string Api::Optimize(std::string_view request_json,
     problem.artifacts = artifacts;
     problem.results = results;
     problem.thorough = opt.value("thorough", false);
+    const std::string around = opt.value("around", std::string("every stat"));
+    for (std::size_t i = 0; i < kOptimizerStats.size(); ++i) {
+      problem.restart_stats[i] = around == "every stat" || around == kOptimizerStats[i];
+    }
+    if (around != "every stat" && around != "nothing" &&
+        std::ranges::find(kOptimizerStats, around) == kOptimizerStats.end()) {
+      return Error("can't build around \"" + around + "\"").dump();
+    }
     // The request's stats in kOptimizerStats order, for adding to.
     constexpr std::array<const char*, 8> kStatKeys = {"attack",   "dexterity", "speed",        "wisdom",
                                                       "vitality", "defense",   "maxHitPoints", "maxMagicPoints"};

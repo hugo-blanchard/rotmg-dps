@@ -228,3 +228,23 @@ TEST_CASE("the search reports its progress and best builds so far") {
   CHECK(done.back() <= 1);
   CHECK(best.back() <= found->builds[0].first);
 }
+
+TEST_CASE("the search starts again only from the stats asked for") {
+  const Dataset d = World();
+  OptimizerBuild truth;
+  const double best = BestByBruteForce(d, 2, &truth);
+  OptimizerProblem every = Problem(d, 2);
+  OptimizerProblem quick = Problem(d, 2);
+  quick.restart_stats = {};
+  OptimizerProblem def = Problem(d, 2);
+  def.restart_stats = {};
+  def.restart_stats[5] = true;  // DEF
+  const auto a = rotmg::SearchBuilds(d, every);
+  const auto b = rotmg::SearchBuilds(d, quick);
+  const auto c = rotmg::SearchBuilds(d, def);
+  REQUIRE((a && b && c));
+  CHECK(b->evaluated < a->evaluated);
+  // Rampart scales with DEF, so starting again from it finds the build.
+  CHECK(c->builds[0].first == Catch::Approx(best));
+  CHECK(c->evaluated <= a->evaluated);
+}

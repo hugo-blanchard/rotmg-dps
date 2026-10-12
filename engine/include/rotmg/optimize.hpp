@@ -45,6 +45,10 @@ struct OptimizerProblem {
   int per_item = 2;
   /// Whether enchantments only an artifact or engraving puts on an item count.
   bool artifacts = true;
+  /// The stats (in kOptimizerStats order) for which the search starts again
+  /// from the ability that scales best with that stat. Fewer is quicker but
+  /// can miss a build that only works around one ability.
+  std::array<bool, 8> restart_stats = {true, true, true, true, true, true, true, true};
   /// Search wider and longer: every candidate gets the full look, and the
   /// search starts again from every ability. For checking the normal search.
   bool thorough = false;

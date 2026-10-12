@@ -815,8 +815,8 @@ std::pair<double, Build> BuildSearch::Descend(Build current) {
   return {current_dps, current};
 }
 
-// Abilities to start the search from besides the start's: for each stat,
-// the one whose DPS grows the most with a lot more of it.
+// Abilities to start the search from besides the start's: for each stat
+// asked for, the one whose DPS grows the most with a lot more of it.
 std::vector<std::string> BuildSearch::Seeds() {
   const std::vector<std::string>& abilities = p_.candidates[1];
   if (p_.thorough) {
@@ -825,6 +825,9 @@ std::vector<std::string> BuildSearch::Seeds() {
   constexpr int kLots = 60;
   std::vector<std::string> out;
   for (std::size_t stat = 0; stat < kOptimizerStats.size(); ++stat) {
+    if (!p_.restart_stats[stat]) {
+      continue;
+    }
     std::vector<std::pair<double, std::string>> gains;
     for (const std::string& ability : abilities) {
       Build b = p_.start;
