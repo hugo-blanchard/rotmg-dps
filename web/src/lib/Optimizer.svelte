@@ -4,7 +4,14 @@
   // builds it finds, with an undo.
   import Sprite from "./Sprite.svelte";
   import { itemsFor, slots, type Dataset, type DatasetClass, type Slot } from "./dataset";
-  import type { Engine, EvaluateRequest, OptimizeOptions, OptimizeResponse, OptimizedBuild } from "./engine";
+  import type {
+    Engine,
+    EvaluateRequest,
+    OptimizeOptions,
+    OptimizeProgress,
+    OptimizeResponse,
+    OptimizedBuild,
+  } from "./engine";
   import { itemIcon, type Sprites } from "./sprites";
 
   let {
@@ -35,29 +42,55 @@
   let perItem = $state(2);
   let searching = $state(false);
   let found = $state<OptimizeResponse | null>(null);
+  // The running search's last report, and whether the builds shown are
+  // from a search that was stopped.
+  let progress = $state<OptimizeProgress | null>(null);
+  let stopped = $state(false);
+  let startedAt = 0;
+  let now = $state(0);
   // The build before the last one taken, for undo.
   let previous = $state<{ items: Record<Slot, string>; enchants: Record<Slot, string[]> } | null>(null);
 
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
   const usableSlots = $derived(slots.filter((s) => itemsFor(dataset, cls, s).length > 0));
 
+  const asResponse = (p: OptimizeProgress | null): OptimizeResponse | null =>
+    p && { ok: true, baseline: p.baseline, evaluated: p.evaluated, builds: p.builds };
+
   async function search() {
     if (!engine) return;
     searching = true;
     found = null;
-    found = await engine.optimize({
-      ...$state.snapshot(request),
-      optimize: {
-        lock: usableSlots.filter((s) => lock[s]),
-        pools: (["tiered", "untiered", "set"] as const).filter((p) => pools[p]),
-        enchantments: enchantMode,
-        artifacts,
-        slots: perItem,
-        results: 5,
-      },
-    });
+    progress = null;
+    stopped = false;
+    startedAt = now = performance.now();
+    const ticking = setInterval(() => (now = performance.now()), 500);
+    const options: OptimizeOptions = {
+      lock: usableSlots.filter((s) => lock[s]),
+      pools: (["tiered", "untiered", "set"] as const).filter((p) => pools[p]),
+      enchantments: enchantMode,
+      artifacts,
+      slots: perItem,
+      results: 5,
+    };
+    const res = await engine.optimize({ ...$state.snapshot(request), optimize: options }, (p) => (progress = p));
+    clearInterval(ticking);
+    found = res ?? asResponse(progress);
     searching = false;
   }
+
+  function stop() {
+    stopped = true;
+    engine?.stopOptimizing();
+  }
+
+  // Time left at the pace so far, once there's enough of it to go on.
+  const secondsLeft = $derived.by(() => {
+    const elapsed = (now - startedAt) / 1000;
+    const done = progress?.done ?? 0;
+    return done >= 0.05 && elapsed >= 1 ? (elapsed * (1 - done)) / done : null;
+  });
+  const shown = $derived(found ?? asResponse(progress));
 
   function take(b: OptimizedBuild) {
     previous = { items: { ...items }, enchants: structuredClone($state.snapshot(enchants)) };
@@ -124,19 +157,34 @@
       {#if enchantMode !== "none"}
         <label><input type="checkbox" bind:checked={artifacts} /> Also ones that need an artifact or engraving</label>
       {/if}
-      <button type="button" class="primary" onclick={search} disabled={searching || !engine}>
-        {searching ? "Searching…" : "Find the most DPS"}
-      </button>
+      {#if searching}
+        <div class="progress">
+          <progress max="1" value={progress?.done ?? 0}></progress>
+          <span>
+            {secondsLeft === null
+              ? "Working out how long this takes…"
+              : `About ${whole.format(Math.max(1, secondsLeft))} s left`}
+          </span>
+          <button type="button" onclick={stop}>Stop</button>
+        </div>
+      {:else}
+        <button type="button" class="primary" onclick={search} disabled={!engine}>Find the most DPS</button>
+      {/if}
       <p class="hint">
         Against the target and distance below, using the calculated DPS. It tries items one or two slots at a time
         and whole sets, refits every item's enchantments around each change, and builds around each ability that
         scales with a stat. It can still miss a better build, but never returns one worse than yours.
       </p>
-      {#if found && !found.ok}
-        <p role="alert">{found.error}</p>
-      {:else if found}
+      {#if shown && !shown.ok}
+        <p role="alert">{shown.error}</p>
+      {:else if shown}
+        {#if searching}
+          <p class="hint">Best so far:</p>
+        {:else if stopped}
+          <p class="hint">Stopped early. These are the best builds it had found.</p>
+        {/if}
         <ol class="builds">
-          {#each found.builds as b, i (i)}
+          {#each shown.builds as b, i (i)}
             <li>
               <div class="icons">
                 {#each slots as slot (slot)}
@@ -146,7 +194,7 @@
               <div class="figures">
                 <strong>{whole.format(b.dps)} DPS</strong>
                 <span>
-                  {signed(b.dps - found.baseline)} on yours{#if enchantCount(b)}, {enchantCount(b)} enchantments{/if}
+                  {signed(b.dps - shown.baseline)} on yours{#if enchantCount(b)}, {enchantCount(b)} enchantments{/if}
                 </span>
               </div>
               <button type="button" onclick={() => take(b)}>Use</button>
@@ -220,6 +268,25 @@
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 0.35rem 0.5rem;
+  }
+  .progress {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.3rem 0.6rem;
+    align-items: center;
+  }
+  .progress progress {
+    width: 100%;
+    accent-color: var(--accent);
+  }
+  .progress span {
+    grid-row: 2;
+    font-size: 0.85rem;
+    color: var(--text-2);
+  }
+  .progress button {
+    grid-row: 1 / span 2;
+    grid-column: 2;
   }
   .hint {
     margin: 0;

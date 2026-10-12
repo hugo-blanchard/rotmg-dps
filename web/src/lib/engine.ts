@@ -277,6 +277,14 @@ export interface OptimizedBuild {
   enchantments: Record<"weapon" | "ability" | "armor" | "ring", string[]>;
 }
 
+/** Where a search stands: how far along it is, from 0 to 1, a rough guess, and the best builds so far. */
+export interface OptimizeProgress {
+  done: number;
+  baseline: number;
+  evaluated: number;
+  builds: OptimizedBuild[];
+}
+
 export type OptimizeResponse =
   | { ok: true; baseline: number; evaluated: number; builds: OptimizedBuild[] }
   | { ok: false; error: string };
@@ -303,29 +311,69 @@ export interface WorkerResponse {
   id: number;
   error?: string;
   result?: string;
+  /** A report while the request runs; the result comes later. */
+  progress?: string;
 }
 
-export class Engine {
+// One worker with the dataset loaded, and the requests waiting on it.
+class Channel {
   private worker = new Worker(new URL("./engine.worker.ts", import.meta.url), { type: "module" });
-  private pending = new Map<number, (r: WorkerResponse) => void>();
+  private pending = new Map<number, { resolve: (r: WorkerResponse) => void; progress?: (p: string) => void }>();
   private nextId = 1;
 
   private constructor() {
     this.worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
-      this.pending.get(e.data.id)?.(e.data);
+      const waiting = this.pending.get(e.data.id);
+      if (e.data.progress !== undefined) {
+        waiting?.progress?.(e.data.progress);
+        return;
+      }
+      waiting?.resolve(e.data);
       this.pending.delete(e.data.id);
     };
   }
 
-  /** Starts the worker and loads the dataset into the engine. */
-  static async start(datasetText: string): Promise<Engine> {
-    const engine = new Engine();
-    const res = await engine.send({ kind: "load", dataset: datasetText });
+  static async start(datasetText: string): Promise<Channel> {
+    const channel = new Channel();
+    const res = await channel.send({ kind: "load", dataset: datasetText });
     if (res.error) {
-      engine.worker.terminate();
+      channel.worker.terminate();
       throw new Error(res.error);
     }
-    return engine;
+    return channel;
+  }
+
+  send(message: Message, progress?: (p: string) => void) {
+    const id = this.nextId++;
+    return new Promise<WorkerResponse>((resolve) => {
+      this.pending.set(id, { resolve, progress });
+      this.worker.postMessage({ id, ...message } satisfies WorkerRequest);
+    });
+  }
+
+  /** Ends the worker mid-request; whatever was waiting gets the error "stopped". */
+  stop() {
+    this.worker.terminate();
+    for (const [id, waiting] of this.pending) {
+      waiting.resolve({ id, error: "stopped" });
+    }
+    this.pending.clear();
+  }
+}
+
+export class Engine {
+  // Searches run on a worker of their own, so the rest of the page keeps
+  // working meanwhile and a search can be stopped by ending its worker.
+  private optimizer: Promise<Channel> | null = null;
+
+  private constructor(
+    private main: Channel,
+    private datasetText: string,
+  ) {}
+
+  /** Starts the worker and loads the dataset into the engine. */
+  static async start(datasetText: string): Promise<Engine> {
+    return new Engine(await Channel.start(datasetText), datasetText);
   }
 
   async evaluate(request: EvaluateRequest): Promise<EvaluateResponse> {
@@ -350,13 +398,38 @@ export class Engine {
     return JSON.parse(res.result!) as SimState;
   }
 
-  /** Looks for the build with the most DPS; see Api::Optimize. */
-  async optimize(request: EvaluateRequest & { optimize: OptimizeOptions }): Promise<OptimizeResponse> {
-    const res = await this.send({ kind: "optimize", request: JSON.stringify(request) });
+  /**
+   * Looks for the build with the most DPS; see Api::Optimize. Resolves to
+   * null when stopped, and the last progress report then has the best
+   * builds found.
+   */
+  async optimize(
+    request: EvaluateRequest & { optimize: OptimizeOptions },
+    onProgress?: (p: OptimizeProgress) => void,
+  ): Promise<OptimizeResponse | null> {
+    let channel: Channel;
+    try {
+      this.optimizer ??= Channel.start(this.datasetText);
+      channel = await this.optimizer;
+    } catch (err) {
+      this.optimizer = null;
+      return { ok: false, error: String(err) };
+    }
+    const report = (p: string) => onProgress?.(JSON.parse(p) as OptimizeProgress);
+    const res = await channel.send({ kind: "optimize", request: JSON.stringify(request) }, report);
+    if (res.error === "stopped") {
+      return null;
+    }
     if (res.error) {
       return { ok: false, error: res.error };
     }
     return JSON.parse(res.result!) as OptimizeResponse;
+  }
+
+  /** Stops a running search; its worker starts again for the next one. */
+  stopOptimizing() {
+    void this.optimizer?.then((c) => c.stop());
+    this.optimizer = null;
   }
 
   /** Runs the request many times with random rolls; see Api::SimulateMany. */
@@ -369,10 +442,6 @@ export class Engine {
   }
 
   private send(message: Message) {
-    const id = this.nextId++;
-    return new Promise<WorkerResponse>((resolve) => {
-      this.pending.set(id, resolve);
-      this.worker.postMessage({ id, ...message } satisfies WorkerRequest);
-    });
+    return this.main.send(message);
   }
 }
