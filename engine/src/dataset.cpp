@@ -200,6 +200,10 @@ std::map<int, Projectile> ReadCreatedProjectiles(const json& j) {
   return out;
 }
 
+Enchanting ReadEnchanting(const json& j) {
+  return {j.value("enchantmentSlots", 0), j.value("enchantmentPool", "")};
+}
+
 Gear ReadGear(const json& j) {
   Gear g;
   j.at("type").get_to(g.type);
@@ -209,6 +213,8 @@ Gear ReadGear(const json& j) {
   ReadOptional(j, "tier", g.tier);
   g.stat_bonuses = ReadStatBonuses(j);
   ReadDefault(j, "labels", g.labels);
+  g.enchanting = ReadEnchanting(j);
+  ReadDefault(j, "reskinOf", g.reskin_of);
   ReadDefault(j, "unsupported", g.unsupported);
   return g;
 }
@@ -235,6 +241,9 @@ Ability ReadAbility(const json& j) {
   }
   a.activates = ReadActivates(j, "activates");
   a.created_projectiles = ReadCreatedProjectiles(j);
+  ReadDefault(j, "labels", a.labels);
+  a.enchanting = ReadEnchanting(j);
+  ReadDefault(j, "reskinOf", a.reskin_of);
   ReadDefault(j, "unsupported", a.unsupported);
   return a;
 }
@@ -275,6 +284,8 @@ Weapon ReadWeapon(const json& j) {
   w.on_shoot = ReadActivates(j, "onShoot");
   w.created_projectiles = ReadCreatedProjectiles(j);
   ReadDefault(j, "labels", w.labels);
+  w.enchanting = ReadEnchanting(j);
+  ReadDefault(j, "reskinOf", w.reskin_of);
   ReadDefault(j, "unsupported", w.unsupported);
   return w;
 }
@@ -332,6 +343,11 @@ Dataset ParseDataset(std::string_view text) {
     if (auto it = j.find("enchantments"); it != j.end()) {
       for (const json& e : *it) {
         d.enchantments.push_back(ReadEnchantment(e));
+      }
+    }
+    if (auto it = j.find("enchantmentPools"); it != j.end()) {
+      for (const json& p : *it) {
+        d.enchantment_pools.emplace(p.at("name").get<std::string>(), p.at("enchantments").get<std::set<std::string>>());
       }
     }
     return d;

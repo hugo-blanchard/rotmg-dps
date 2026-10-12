@@ -3,6 +3,7 @@
 #include <array>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -98,6 +99,13 @@ struct Activate {
   bool Flag(std::string_view key) const;
 };
 
+/// How an item takes enchantments: how many slots can roll and the pool
+/// they roll from. An item that can't be enchanted has no slots.
+struct Enchanting {
+  int slots = 0;
+  std::string pool;
+};
+
 struct Weapon {
   int type = 0;
   std::string id;
@@ -115,6 +123,9 @@ struct Weapon {
   std::map<int, Projectile> created_projectiles;
   /// The item's labels, which enchantments match against.
   std::vector<std::string> labels;
+  Enchanting enchanting;
+  /// The item this one plays exactly like, when it's a reskin of it.
+  std::string reskin_of;
   /// Multiplies every roll, on top of ATT. Enchantments set it.
   double damage_bonus = 1;
   std::vector<std::string> unsupported;
@@ -140,6 +151,9 @@ struct Ability {
   /// Projectiles of other items, by type, that activates name in their
   /// `type` parameter.
   std::map<int, Projectile> created_projectiles;
+  std::vector<std::string> labels;
+  Enchanting enchanting;
+  std::string reskin_of;
   std::vector<std::string> unsupported;
 
   /// The ability's projectiles and subattacks as a weapon, for the hit
@@ -209,6 +223,8 @@ struct Gear {
   std::vector<StatBonus> stat_bonuses;
   /// What enchantments match against.
   std::vector<std::string> labels;
+  Enchanting enchanting;
+  std::string reskin_of;
   std::vector<std::string> unsupported;
 };
 
@@ -222,6 +238,9 @@ struct Dataset {
   std::vector<Gear> rings;
   std::vector<EquipmentSet> sets;
   std::vector<Enchantment> enchantments;
+  /// Enchantment ids by pool name. Empty in datasets from before pools,
+  /// where every item takes up to 4 of any enchantment that fits it.
+  std::map<std::string, std::set<std::string>, std::less<>> enchantment_pools;
 };
 
 }  // namespace rotmg

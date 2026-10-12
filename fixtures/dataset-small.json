@@ -87,6 +87,7 @@
       "id": "Plain Sword",
       "name": "Plain Sword",
       "slotType": 1,
+      "enchantmentSlots": 4, "enchantmentPool": "Default Enchantment Pool",
       "tier": 5,
       "texture": {
         "file": "exampleSheet",
@@ -400,6 +401,8 @@
       "id": "Plain Spell",
       "name": "Plain Spell",
       "slotType": 10,
+      "enchantmentSlots": 4, "enchantmentPool": "Default Enchantment Pool",
+      "labels": ["EQUIPMENT", "ABILITY"],
       "texture": {
         "file": "exampleSheet",
         "index": 64
@@ -440,6 +443,8 @@
       "id": "War Helm",
       "name": "War Helm",
       "slotType": 10,
+      "enchantmentSlots": 4, "enchantmentPool": "Default Enchantment Pool",
+      "labels": ["EQUIPMENT", "ABILITY"],
       "texture": {
         "file": "exampleSheet",
         "index": 65
@@ -471,6 +476,8 @@
       "id": "Battle Seal",
       "name": "Battle Seal",
       "slotType": 10,
+      "enchantmentSlots": 4, "enchantmentPool": "Default Enchantment Pool",
+      "labels": ["EQUIPMENT", "ABILITY"],
       "texture": {
         "file": "exampleSheet",
         "index": 66
@@ -508,6 +515,8 @@
       "id": "Curse Orb",
       "name": "Curse Orb",
       "slotType": 10,
+      "enchantmentSlots": 4, "enchantmentPool": "Default Enchantment Pool",
+      "labels": ["EQUIPMENT", "ABILITY"],
       "texture": {
         "file": "exampleSheet",
         "index": 67
@@ -821,6 +830,7 @@
       "id": "Plain Mail",
       "name": "Plain Mail",
       "slotType": 7,
+      "enchantmentSlots": 4, "enchantmentPool": "Default Enchantment Pool",
       "tier": 10,
       "texture": { "file": "exampleSheet", "index": 80 },
       "statBonuses": [
@@ -836,6 +846,7 @@
       "id": "Plain Ring",
       "name": "Plain Ring",
       "slotType": 9,
+      "enchantmentSlots": 4, "enchantmentPool": "Default Enchantment Pool",
       "texture": { "file": "exampleSheet", "index": 81 },
       "statBonuses": [{ "stat": "ATT", "amount": 6 }],
       "labels": ["EQUIPMENT", "RING", "UT"],
@@ -849,6 +860,22 @@
       "texture": { "file": "exampleSheet", "index": 82 },
       "statBonuses": [{ "stat": "DEX", "amount": 3 }],
       "labels": ["XPBONUS"]
+    },
+    {
+      "type": 28692,
+      "id": "Festive Ring",
+      "name": "Festive Ring",
+      "slotType": 9,
+      "reskinOf": "Plain Ring",
+      "enchantmentSlots": 4, "enchantmentPool": "Default Enchantment Pool",
+      "texture": { "file": "exampleSheet", "index": 83 },
+      "statBonuses": [{ "stat": "ATT", "amount": 6 }],
+      "labels": ["EQUIPMENT", "RING", "UT", "RESKIN"],
+      "unsupported": ["OnPlayerHitActivate"]
     }
+  ],
+  "enchantmentPools": [
+    { "name": "Default Enchantment Pool",
+      "enchantments": ["Attack_Bonus_1", "Dexterity_Bonus_2", "Vitality_Bonus_1", "Damage_Bonus_4", "FireRate_Bonus_4", "Staff_Only", "OnShoot_Attack_Bonus_4", "Relative_Attack_Bonus_4", "Dexterity_To_Attack_Bonus_3", "Awakened_Test", "MP_Cost_Reduction_4", "Lucky_Ring", "Relative_Dexterity_Bonus_4", "Odd_Enchant"] }
   ]
 }

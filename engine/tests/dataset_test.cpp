@@ -75,7 +75,7 @@ TEST_CASE("loads armor, rings and the slots classes wear them in") {
   CHECK(d.classes[0].armor_slot_type == 7);
   CHECK(d.classes[0].ring_slot_type == 9);
   REQUIRE(d.armors.size() == 1);
-  REQUIRE(d.rings.size() == 2);
+  REQUIRE(d.rings.size() == 3);
   const rotmg::Gear* ring = rotmg::FindGear(d.rings, "Plain Ring");
   REQUIRE(ring != nullptr);
   CHECK(ring->type == 28690);
@@ -83,6 +83,20 @@ TEST_CASE("loads armor, rings and the slots classes wear them in") {
   CHECK(ring->labels == std::vector<std::string>{"EQUIPMENT", "RING", "UT"});
   CHECK(ring->unsupported == std::vector<std::string>{"OnPlayerHitActivate"});
   CHECK(rotmg::FindGear(d.armors, "Plain Ring") == nullptr);
+}
+
+TEST_CASE("loads how items take enchantments and which are reskins") {
+  const rotmg::Dataset d = LoadSmallDataset();
+  const rotmg::Weapon* sword = rotmg::FindWeapon(d, "Plain Sword");
+  CHECK(sword->enchanting.slots == 4);
+  CHECK(sword->enchanting.pool == "Default Enchantment Pool");
+  CHECK(rotmg::FindWeapon(d, "Burst Bow")->enchanting.slots == 0);
+  CHECK(rotmg::FindAbility(d, "War Helm")->labels == std::vector<std::string>{"EQUIPMENT", "ABILITY"});
+  CHECK(rotmg::FindGear(d.rings, "Plain Amulet")->enchanting.pool.empty());
+  CHECK(rotmg::FindGear(d.rings, "Festive Ring")->reskin_of == "Plain Ring");
+  CHECK(rotmg::FindGear(d.rings, "Plain Ring")->reskin_of.empty());
+  REQUIRE(d.enchantment_pools.size() == 1);
+  CHECK(d.enchantment_pools.at("Default Enchantment Pool").contains("Damage_Bonus_4"));
 }
 
 TEST_CASE("a dataset without abilities still loads") {
