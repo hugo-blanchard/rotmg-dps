@@ -202,6 +202,10 @@ class Simulation {
   /// Statuses and stat boosts up now, like "Berserk" or "+10 ATT".
   std::vector<std::string> PlayerStatuses() const;
   std::vector<std::string> TargetStatuses(std::size_t target) const;
+  /// How long each status or stat boost has been up so far, in ms: on the
+  /// player by effect ("Berserk", "ATT"), and on one target.
+  const std::map<std::string, double>& PlayerUptime() const { return player_uptime_; }
+  const std::map<std::string, double>& TargetUptime(std::size_t target) const { return target_uptime_[target]; }
   /// The aim target's centre and radius.
   Point TargetCenter() const;
   double Radius() const;
@@ -359,6 +363,8 @@ class Simulation {
   // turning rolls on doesn't change where things go.
   unsigned long long rolls_ = 0;
   std::vector<HitEvent> recent_hits_;
+  std::map<std::string, double> player_uptime_;
+  std::vector<std::map<std::string, double>> target_uptime_;
   std::vector<double> damage_history_;
   std::vector<double> mp_history_;
   double bucket_damage_ = 0;

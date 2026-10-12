@@ -413,7 +413,7 @@ json StateOf(const Simulation& sim, std::size_t& history_sent) {
     targets.push_back({{"x", t.position.x}, {"y", t.position.y}, {"radius", t.radius},
                        {"defense", t.target.defense}, {"hits", c.hits}, {"damage", c.damage},
                        {"abilityDamage", c.ability_damage}, {"statuses", sim.TargetStatuses(i)},
-                       {"hp", c.hp}, {"kills", c.kills},
+                       {"hp", c.hp}, {"kills", c.kills}, {"uptimeMs", sim.TargetUptime(i)},
                        {"killedMs", c.killed_ms < 0 ? json(nullptr) : json(c.killed_ms)}});
   }
   json hits = json::array();
@@ -457,6 +457,7 @@ json StateOf(const Simulation& sim, std::size_t& history_sent) {
               {"mp", sim.Mp()},
               {"mpMax", sim.MaxMp()},
               {"statuses", sim.PlayerStatuses()},
+              {"uptimeMs", sim.PlayerUptime()},
               {"ability", {{"casts", ability.casts}, {"hits", ability.hits}, {"damage", ability.damage}}},
               {"procs", {{"activations", procs.casts}, {"hits", procs.hits}, {"damage", procs.damage}}},
               {"effects", effects},
@@ -600,14 +601,16 @@ std::string Api::StartSimulation(std::string_view request_json) {
 //   {"ok": true, "timeMs", "player": {"x", "y"}, "playerSpeed", "aim",
 //    "target": {"x", "y", "radius"} (the aim target),
 //    "targets": [{"x", "y", "radius", "defense", "hits", "damage",
-//                 "abilityDamage", "statuses", "hp", "kills", "killedMs"}],
+//                 "abilityDamage", "statuses", "hp", "kills", "killedMs",
+//                 "uptimeMs"}],
 //    "hits": [{"target", "damage", "from"}] since the last state,
 //    "history": {"bucketMs", "from", "damage": [...], "mp": [...]} with the
 //               buckets since the last state, "from" the first one's index,
 //    "shots": [{"subattack", "from", "projectileId", "objectId", "x", "y",
 //               "heading", "ageMs", "hit"}],
 //    "totals": {...}, "perSubattack": [{...}],
-//    "mp", "mpMax", "statuses", "ability": {"casts", "hits", "damage"},
+//    "mp", "mpMax", "statuses", "uptimeMs": {"Berserk": ms, ...},
+//    "ability": {"casts", "hits", "damage"},
 //    "procs": {"activations", "hits", "damage"},
 //    "effects": [{"kind", "x", "y", "radius", "armed", "chain": [{"x", "y"}]}]}
 // with "from" one of weapon, ability and proc (the weapon's on-shoot

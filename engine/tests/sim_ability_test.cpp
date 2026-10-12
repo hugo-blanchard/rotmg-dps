@@ -264,3 +264,16 @@ TEST_CASE("a chance boost is up for its share of the time") {
   }
   CHECK(static_cast<double>(up) / samples == Approx(4 / (10 + 20 / (1.5 + 6.5 * 50 / 75.0))).margin(0.01));
 }
+
+TEST_CASE("the time each buff and debuff is up is measured") {
+  // Berserk for 7 s from a full bar; the next cast needs 90 MP at 7.7 a
+  // second, 11.7 s later.
+  Simulation helm(Sword(), kWis60, At({{0, 3}}), &Ability("War Helm"));
+  helm.Advance(10'000);
+  CHECK(helm.PlayerUptime().at("Berserk") == Approx(7000).margin(10));
+
+  // Curse for 4.5 s on the target in the orb's radius.
+  Simulation orb(Sword(), kWis60, At({{0, 3}}), &Ability("Curse Orb"));
+  orb.Advance(10'000);
+  CHECK(orb.TargetUptime(0).at("Curse") == Approx(4500).margin(10));
+}

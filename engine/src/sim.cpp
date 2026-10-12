@@ -6,6 +6,7 @@
 #include <numbers>
 #include <cstdlib>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -190,6 +191,7 @@ Simulation::Simulation(const Weapon& weapon, const Character& character, const S
       per_subattack_(weapon.subattacks.size()),
       per_target_(scenario.targets.size()),
       target_debuffs_(scenario.targets.size()) {
+  target_uptime_.resize(scenario.targets.size());
   base_ = character.With(weapon_.stat_bonuses).With(WhileShooting(weapon_));
   rolls_ = scenario.seed ^ 0x9E3779B97F4A7C15ULL;
   for (std::size_t i = 0; i < start_.targets.size(); ++i) {
@@ -450,6 +452,22 @@ void Simulation::Step() {
     std::erase_if(list, expired);
   }
   std::erase_if(effects_, [now](const Effect& e) { return e.until_ms <= now; });
+  // What's up now counts for this whole step; each effect once, however many
+  // boosts of it there are.
+  std::set<std::string> up;
+  for (const Timed& b : player_buffs_) {
+    if (b.from_ms <= now && up.insert(b.effect).second) {
+      player_uptime_[b.effect] += kStepMs;
+    }
+  }
+  for (std::size_t t = 0; t < target_debuffs_.size(); ++t) {
+    up.clear();
+    for (const Timed& d : target_debuffs_[t]) {
+      if (d.from_ms <= now && up.insert(d.effect).second) {
+        target_uptime_[t][d.effect] += kStepMs;
+      }
+    }
+  }
 
   // Shots already in flight move first, then new volleys spawn, so a shot
   // fired this step is checked at its spawn point and nothing else.
