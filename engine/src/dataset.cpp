@@ -215,6 +215,7 @@ Gear ReadGear(const json& j) {
   ReadDefault(j, "labels", g.labels);
   g.on_shoot = ReadActivates(j, "onShoot");
   g.on_ability = ReadActivates(j, "onAbility");
+  g.on_equip = ReadActivates(j, "onEquip");
   g.created_projectiles = ReadCreatedProjectiles(j);
   g.enchanting = ReadEnchanting(j);
   ReadDefault(j, "reskinOf", g.reskin_of);
@@ -245,6 +246,7 @@ Ability ReadAbility(const json& j) {
   a.activates = ReadActivates(j, "activates");
   a.on_shoot = ReadActivates(j, "onShoot");
   a.on_ability = ReadActivates(j, "onAbility");
+  a.on_equip = ReadActivates(j, "onEquip");
   a.created_projectiles = ReadCreatedProjectiles(j);
   ReadDefault(j, "labels", a.labels);
   a.enchanting = ReadEnchanting(j);
@@ -288,6 +290,7 @@ Weapon ReadWeapon(const json& j) {
   }
   w.on_shoot = ReadActivates(j, "onShoot");
   w.on_ability = ReadActivates(j, "onAbility");
+  w.on_equip = ReadActivates(j, "onEquip");
   w.created_projectiles = ReadCreatedProjectiles(j);
   ReadDefault(j, "labels", w.labels);
   w.enchanting = ReadEnchanting(j);

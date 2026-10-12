@@ -526,9 +526,10 @@ TEST_CASE("an Alien boost only goes off with Alien gear on") {
 
 TEST_CASE("the armor's on-shoot effects go off as the weapon fires") {
   rotmg::Api api = LoadedApi();
-  const std::string sword = R"({"weapon": "Plain Sword", "attack": 50, "dexterity": 50, "hitModel": {"distance": 3})";
-  const json plain = json::parse(api.Evaluate(sword + "}"));
-  const json coat = json::parse(api.Evaluate(sword + R"(, "armor": "Spark Coat"})"));
+  const std::string sword = R"({"weapon": "Plain Sword", "dexterity": 50, "hitModel": {"distance": 3})";
+  // The coat also adds 10 ATT, a share of DEX.
+  const json plain = json::parse(api.Evaluate(sword + R"(, "attack": 60})"));
+  const json coat = json::parse(api.Evaluate(sword + R"(, "attack": 50, "armor": "Spark Coat"})"));
   REQUIRE(coat["ok"] == true);
   // Two 40-49 sparks every 2 seconds, rounded up to whole shots.
   REQUIRE(coat["breakdown"]["procs"].size() == 1);
@@ -539,7 +540,7 @@ TEST_CASE("the armor's on-shoot effects go off as the weapon fires") {
         Catch::Approx(plain["build"]["dps"].get<double>() + sparks["dps"].get<double>()));
 
   // The simulation fires them too.
-  REQUIRE(api.StartSimulation(sword + R"(, "armor": "Spark Coat"})").empty());
+  REQUIRE(api.StartSimulation(sword + R"(, "attack": 50, "armor": "Spark Coat"})").empty());
   const json state = json::parse(api.AdvanceSimulation(5000));
   CHECK(state["procs"]["activations"].get<int>() >= 2);
 }
@@ -550,19 +551,20 @@ TEST_CASE("the armor's effects go off when the ability is used") {
       "wisdom": 60, "armor": "Spark Coat"})";
   const json res = json::parse(api.Evaluate(build));
   REQUIRE(res["ok"] == true);
-  // 7.7 MP a second for an 80 MP spell: a cast every 10.39 seconds.
-  const double casts = 7.7 / 80;
+  // 7.7 MP a second for the spell's 80 MP, cut to 64 by the coat: a cast
+  // every 8.31 seconds.
+  const double casts = 7.7 / 64;
   // +15 ATT for 5 seconds on every cast.
   const json& uptimes = res["build"]["uptimes"];
   const auto att = std::ranges::find_if(uptimes, [](const json& u) { return u["effect"] == "ATT"; });
   REQUIRE(att != uptimes.end());
   CHECK((*att)["amount"] == 15);
   CHECK((*att)["share"].get<double>() == Catch::Approx(5 * casts));
-  // Three sparks with a 20 second cooldown: every other cast.
+  // Three sparks with a 20 second cooldown: every third cast.
   const json& parts = res["ability"]["parts"];
   REQUIRE(parts.size() == 2);
   CHECK(parts[1]["name"] == "On use, Shots at the cursor, 3");
-  CHECK(parts[1]["damage"].get<double>() == Catch::Approx(3 * 44.5 / 2));
+  CHECK(parts[1]["damage"].get<double>() == Catch::Approx(3 * 44.5 / 3));
   // Berserk below half HP doesn't go off at full HP.
   CHECK(std::ranges::none_of(uptimes, [](const json& u) { return u["effect"] == "Berserk"; }));
 
@@ -571,6 +573,20 @@ TEST_CASE("the armor's effects go off when the ability is used") {
   const json state = json::parse(api.AdvanceSimulation(30000));
   CHECK(state["uptimeMs"].value("ATT", 0.0) > 0);
   CHECK_FALSE(state["uptimeMs"].contains("Berserk"));
+}
+
+TEST_CASE("an armor adds a share of one stat to another and cuts MP costs") {
+  rotmg::Api api = LoadedApi();
+  const std::string build = R"({"weapon": "Plain Sword", "ability": "Plain Spell", "attack": 50, "dexterity": 50,
+      "wisdom": 60)";
+  const json plain = json::parse(api.Evaluate(build + "}"));
+  const json coat = json::parse(api.Evaluate(build + R"(, "armor": "Spark Coat"})"));
+  REQUIRE(coat["ok"] == true);
+  // 20% of the 54 DEX with the sword's +4 is 10.8 ATT, rounded down.
+  CHECK(coat["itemStats"] == json::parse(R"([{"stat": "ATT", "amount": 10}])"));
+  CHECK(coat["breakdown"]["terms"][0]["value"] == 60);
+  CHECK(coat["ability"]["mpCost"].get<double>() == Catch::Approx(plain["ability"]["mpCost"].get<double>() * 0.8));
+  CHECK(coat["breakdown"]["unsupported"].back() == "ActivateOnEquip LootBonus");
 }
 
 TEST_CASE("the optimizer finds the build with the most DPS") {

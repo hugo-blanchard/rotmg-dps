@@ -858,6 +858,11 @@
       "texture": { "file": "exampleSheet", "index": 84 },
       "statBonuses": [{ "stat": "DEF", "amount": 8 }],
       "labels": ["EQUIPMENT", "ARMOR", "UT"],
+      "onEquip": [
+        { "type": "IncrementStatRelative", "params": { "stat": "ATT", "amount": 20, "statRelativeTo": "DEX" } },
+        { "type": "AbilityUseDiscount", "params": { "multiplier": 0.8 } },
+        { "type": "LootBonus", "params": { "amount": 5 } }
+      ],
       "onShoot": [
         { "type": "BulletCreate",
           "params": { "proc": 1, "cooldown": 2, "numShots": 2, "targetMouse": true, "type": "0x3012" } }

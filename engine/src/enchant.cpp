@@ -69,12 +69,15 @@ int ClassMax(const Class& c, const std::string& stat) {
 
 }  // namespace
 
-std::vector<StatBonus> RelativeBonuses(const std::vector<Enchanted::Relative>& relative, const Class& cls,
+std::vector<StatBonus> RelativeBonuses(const std::vector<Enchanted::Relative>& relative, const Class* cls,
                                        const Character& character) {
   std::map<std::string, double> gains;
   for (const Enchanted::Relative& r : relative) {
-    const int bonus = std::max(0, character.Stat(r.from) - ClassMax(cls, r.from));
-    gains[r.stat] += r.percent / 100 * bonus;
+    if (!r.of_total && cls == nullptr) {
+      continue;
+    }
+    const int of = r.of_total ? character.Stat(r.from) : std::max(0, character.Stat(r.from) - ClassMax(*cls, r.from));
+    gains[r.stat] += r.percent / 100 * of;
   }
   std::vector<StatBonus> out;
   for (const auto& [stat, amount] : gains) {

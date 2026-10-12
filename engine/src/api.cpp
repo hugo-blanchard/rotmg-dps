@@ -50,7 +50,7 @@
 //   {"ok": true, "breakdown": {...the weapon on its own...},
 //    "build": {"dps", "weaponDps", "uptimes": [...], "assumptions": [...]},
 //    "ability": {...}, "sets": [{"type", "name", "pieces", "stats", "unsupported"}],
-//    "enchantmentStats": [{"stat", "amount"}],
+//    "enchantmentStats": [{"stat", "amount"}], "itemStats": [{"stat", "amount"}],
 //    "curve": [{"defense", "dps"}],
 //    "hitCurve": [{"distance", "hits"}], "hitModelGaps": ["..."]}
 // "ability" is only there when the request names one.
@@ -176,6 +176,8 @@ struct Request {
   const Gear* ring = nullptr;
   // What the armor and ring do that isn't modelled.
   std::vector<std::string> gear_unsupported;
+  // Stats the items' relative on-equip effects add.
+  std::vector<StatBonus> item_stats;
 };
 
 // Reads the parts of a request Evaluate and StartSimulation share. Throws on
@@ -291,6 +293,7 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
   };
   const auto on_weapon = req.find("enchantments");
   const auto on_gear = req.find("gearEnchantments");
+  std::vector<Enchanted::Relative> relative;
   if ((on_weapon != req.end() || on_gear != req.end()) && r.weapon != nullptr) {
     const std::vector<const Enchantment*> picked =
         on_weapon == req.end()
@@ -332,33 +335,82 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
     if (!en.stats.empty()) {
       r.notes.emplace_back("fractional stat bonuses from enchantments add up and the total rounds down");
     }
+    relative = en.relative;
+    en.weapon.unsupported.insert(en.weapon.unsupported.end(), en.unsupported.begin(), en.unsupported.end());
+    r.enchanted = std::make_shared<const Weapon>(std::move(en.weapon));
+    r.weapon = r.enchanted.get();
+  }
+  // The items' own on-equip effects besides flat stats.
+  std::vector<Enchanted::Relative> item_relative;
+  double discount = 1;
+  const auto equip = [&](const std::vector<Activate>& on_equip) {
+    for (const Activate& a : on_equip) {
+      if (a.type == "IncrementStatRelative" || a.type == "BonusStatRelative") {
+        item_relative.push_back({a.Text("stat"), a.Text("statRelativeTo"), a.Number("amount").value_or(0),
+                                 a.type == "IncrementStatRelative"});
+      } else if (a.type == "AbilityUseDiscount") {
+        // RealmEye, The Twilight Gemstone: its cut stacks with other gear's.
+        discount *= a.Number("multiplier").value_or(1);
+      } else if (const std::string tag = "ActivateOnEquip " + a.type;
+                 std::ranges::find(r.gear_unsupported, tag) == r.gear_unsupported.end()) {
+        r.gear_unsupported.push_back(tag);
+      }
+    }
+  };
+  if (r.weapon != nullptr) {
+    equip(r.weapon->on_equip);
+  }
+  if (r.ability != nullptr) {
+    equip(r.ability->on_equip);
+  }
+  for (const Gear* g : {r.armor, r.ring}) {
+    if (g != nullptr) {
+      equip(g->on_equip);
+    }
+  }
+  if (discount != 1 && r.ability != nullptr && r.ability->mp_cost) {
+    Ability cheaper = *r.ability;
+    cheaper.mp_cost = *cheaper.mp_cost * discount;
+    r.enchanted_ability = std::make_shared<const Ability>(std::move(cheaper));
+    r.ability = r.enchanted_ability.get();
+  }
+  // Relative bonuses from enchantments and items all come from the stats
+  // before any of them, so they don't feed each other.
+  if ((!relative.empty() || !item_relative.empty()) && r.weapon != nullptr) {
     const auto class_id = req.find("class");
-    const auto cls = std::ranges::find(
+    const auto found = std::ranges::find(
         dataset.classes, class_id != req.end() && class_id->is_string() ? class_id->get<std::string>() : "", &Class::id);
-    if (!en.relative.empty() && cls == dataset.classes.end()) {
-      en.unsupported.emplace_back("relative stat bonuses, which need the class");
-    } else if (!en.relative.empty()) {
-      Character everything = r.character.With(r.weapon->stat_bonuses);
-      if (r.ability != nullptr) {
-        everything = everything.With(r.ability->stat_bonuses);
+    const Class* cls = found == dataset.classes.end() ? nullptr : &*found;
+    const bool of_bonus = !relative.empty() || std::ranges::any_of(item_relative, [](const auto& x) {
+      return !x.of_total;
+    });
+    if (cls == nullptr && of_bonus) {
+      r.gear_unsupported.emplace_back("relative stat bonuses, which need the class");
+    }
+    Character everything = r.character.With(r.weapon->stat_bonuses);
+    if (r.ability != nullptr) {
+      everything = everything.With(r.ability->stat_bonuses);
+    }
+    const std::vector<StatBonus> gains = RelativeBonuses(relative, cls, everything);
+    r.item_stats = RelativeBonuses(item_relative, cls, everything);
+    r.character = r.character.With(gains).With(r.item_stats);
+    for (const StatBonus& g : gains) {
+      const auto same = std::ranges::find(r.enchantment_stats, g.stat, &StatBonus::stat);
+      if (same == r.enchantment_stats.end()) {
+        r.enchantment_stats.push_back(g);
+      } else {
+        same->amount += g.amount;
       }
-      const std::vector<StatBonus> gains = RelativeBonuses(en.relative, *cls, everything);
-      r.character = r.character.With(gains);
-      for (const StatBonus& g : gains) {
-        const auto same = std::ranges::find(r.enchantment_stats, g.stat, &StatBonus::stat);
-        if (same == r.enchantment_stats.end()) {
-          r.enchantment_stats.push_back(g);
-        } else {
-          same->amount += g.amount;
-        }
-      }
+    }
+    if (!relative.empty() && cls != nullptr) {
       r.notes.emplace_back(
           "relative enchantments count stats above the class's max as bonus stats, as on a maxed character, and "
           "round down");
     }
-    en.weapon.unsupported.insert(en.weapon.unsupported.end(), en.unsupported.begin(), en.unsupported.end());
-    r.enchanted = std::make_shared<const Weapon>(std::move(en.weapon));
-    r.weapon = r.enchanted.get();
+    if (!r.item_stats.empty()) {
+      r.notes.emplace_back("an item's share of one stat added to another rounds down, and counts with relative "
+                           "enchantments in one step");
+    }
   }
   // The other gear's on-shoot effects go off as the weapon fires, like its
   // own, and some create their projectiles.
@@ -605,7 +657,7 @@ std::string Api::Evaluate(std::string_view request_json) const {
     const json req = json::parse(request_json);
     const Request r = ParseRequest(req, *dataset_);
     const auto& [weapon, ability, unknown_ability, character, target, assumptions, sets, enchanted, enchanted_ability,
-                 enchantment_stats, notes, armor, ring, gear_unsupported] = r;
+                 enchantment_stats, notes, armor, ring, gear_unsupported, item_stats] = r;
     if (weapon == nullptr) {
       return Error("no weapon named \"" + req.at("weapon").get<std::string>() + "\"").dump();
     }
@@ -628,9 +680,11 @@ std::string Api::Evaluate(std::string_view request_json) const {
     for (const WornSet& s : sets) {
       res["sets"].push_back(ToJson(s));
     }
-    res["enchantmentStats"] = json::array();
-    for (const StatBonus& b : enchantment_stats) {
-      res["enchantmentStats"].push_back({{"stat", b.stat}, {"amount", b.amount}});
+    for (const auto& [key, list] : {std::pair{"enchantmentStats", &enchantment_stats}, {"itemStats", &item_stats}}) {
+      res[key] = json::array();
+      for (const StatBonus& b : *list) {
+        res[key].push_back({{"stat", b.stat}, {"amount", b.amount}});
+      }
     }
     for (const std::string& note : notes) {
       res["build"]["assumptions"].push_back(note);

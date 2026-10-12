@@ -52,11 +52,14 @@ int EnchantmentSlots(const Enchanting& enchanting, const Dataset& dataset);
 /// A weapon with enchantments applied, the stats they add, and the ones
 /// whose effects aren't modelled.
 struct Enchanted {
-  /// "+16% ATT of Bonus ATT": `percent` of the bonus in `from` goes to `stat`.
+  /// "+16% ATT of Bonus ATT": `percent` of the bonus in `from` goes to
+  /// `stat`. With `of_total`, a share of the whole stat instead, like
+  /// Brewer's Bangle's "+15% VIT Equal to ATT".
   struct Relative {
     std::string stat;
     std::string from;
     double percent = 0;
+    bool of_total = false;
   };
   Weapon weapon;
   std::vector<StatBonus> stats;
@@ -78,11 +81,12 @@ using GearEnchantments = std::vector<std::pair<std::string, std::vector<const En
 Enchanted Enchant(const Weapon& weapon, const std::vector<const Enchantment*>& enchantments,
                   const GearEnchantments& gear = {});
 
-/// What relative enchantments add, all in one final step so they don't
-/// feed each other (RealmEye: Item Stat-Scaling). Bonus stats are "gear,
-/// flat enchantments and exalts"; here that's everything in `character`
-/// above the class's max. Each stat's total rounds down.
-std::vector<StatBonus> RelativeBonuses(const std::vector<Enchanted::Relative>& relative, const Class& cls,
+/// What relative bonuses add, all in one final step so they don't feed each
+/// other (RealmEye: Item Stat-Scaling). Bonus stats are "gear, flat
+/// enchantments and exalts"; here that's everything in `character` above
+/// the class's max, so without the class only `of_total` ones count. Each
+/// stat's total rounds down.
+std::vector<StatBonus> RelativeBonuses(const std::vector<Enchanted::Relative>& relative, const Class* cls,
                                        const Character& character);
 
 }  // namespace rotmg
