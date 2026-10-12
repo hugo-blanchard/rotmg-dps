@@ -6,6 +6,7 @@
   import { itemsFor, slots, type Dataset, type DatasetClass, type Slot } from "./dataset";
   import type {
     Engine,
+    EstimateResponse,
     EvaluateRequest,
     OptimizeOptions,
     OptimizeProgress,
@@ -56,6 +57,7 @@
   let stopped = $state(false);
   let startedAt = 0;
   let now = $state(0);
+  let estimate = $state<EstimateResponse | null>(null);
   // The build before the last one taken, for undo.
   let previous = $state<{ items: Record<Slot, string>; enchants: Record<Slot, string[]> } | null>(null);
 
@@ -99,16 +101,8 @@
   const asResponse = (p: OptimizeProgress | null): OptimizeResponse | null =>
     p && { ok: true, baseline: p.baseline, evaluated: p.evaluated, builds: p.builds };
 
-  async function search() {
-    if (!engine) return;
-    searching = true;
-    found = null;
-    progress = null;
-    stopped = false;
-    rankedBy = { balance, burst: goal === "burst" };
-    startedAt = now = performance.now();
-    const ticking = setInterval(() => (now = performance.now()), 500);
-    const options: OptimizeOptions = {
+  function options(): OptimizeOptions {
+    return {
       lock: usableSlots.filter((s) => lock[s]),
       pools: (["tiered", "untiered", "set"] as const).filter((p) => pools[p]),
       enchantments: enchantMode,
@@ -119,7 +113,18 @@
       burst: goal === "burst" ? { window: burstWindow, every: burstEvery } : undefined,
       results: 5,
     };
-    const res = await engine.optimize({ ...$state.snapshot(request), optimize: options }, (p) => (progress = p));
+  }
+
+  async function search() {
+    if (!engine) return;
+    searching = true;
+    found = null;
+    progress = null;
+    stopped = false;
+    rankedBy = { balance, burst: goal === "burst" };
+    startedAt = now = performance.now();
+    const ticking = setInterval(() => (now = performance.now()), 500);
+    const res = await engine.optimize({ ...$state.snapshot(request), optimize: options() }, (p) => (progress = p));
     clearInterval(ticking);
     found = res ?? asResponse(progress);
     searching = false;
@@ -129,6 +134,33 @@
     stopped = true;
     engine?.stopOptimizing();
   }
+
+  // A fresh estimate whenever the options or the build change, once they
+  // settle for a moment. Only the latest one counts.
+  let asked = 0;
+  $effect(() => {
+    const ask = { ...$state.snapshot(request), optimize: options() };
+    if (!open || !engine || searching || (goal === "burst" && !burstValid)) return;
+    const id = ++asked;
+    const timer = setTimeout(async () => {
+      const res = await engine.estimateOptimize(ask);
+      if (id === asked && res) estimate = res;
+    }, 400);
+    return () => clearTimeout(timer);
+  });
+
+  // Seconds as a person would say them.
+  const duration = (s: number) =>
+    s < 1 ? "under a second" : s < 90 ? `${whole.format(s)} s` : `${whole.format(s / 60)} min`;
+  const estimateText = $derived.by(() => {
+    if (!estimate?.ok) return "";
+    const [low, high] = estimate.seconds;
+    if (high < 1) return "Takes under a second here.";
+    if (duration(low) === duration(high)) return `Takes about ${duration(low)} here.`;
+    if (high < 90) return `Usually takes ${whole.format(Math.max(1, low))} to ${whole.format(high)} s here.`;
+    if (low >= 90) return `Usually takes ${whole.format(low / 60)} to ${whole.format(high / 60)} min here.`;
+    return `Usually takes ${duration(low)} to ${duration(high)} here.`;
+  });
 
   // Time left at the pace so far, once there's enough of it to go on.
   const secondsLeft = $derived.by(() => {
@@ -256,6 +288,7 @@
         <button type="button" class="primary" onclick={search} disabled={!engine || (goal === "burst" && !burstValid)}>
           {goal === "burst" ? "Find the most burst damage" : "Find the most DPS"}
         </button>
+        {#if estimateText}<p class="hint">{estimateText}</p>{/if}
       {/if}
       <p class="hint">
         Against the target and distance below, using the calculated numbers. It tries items one or two slots at a time

@@ -315,6 +315,11 @@ export interface OptimizeProgress {
   builds: OptimizedBuild[];
 }
 
+/** Roughly how long a search would take here; see Api::EstimateOptimize. */
+export type EstimateResponse =
+  | { ok: true; evaluationS: number; evaluations: [number, number]; seconds: [number, number] }
+  | { ok: false; error: string };
+
 export type OptimizeResponse =
   | { ok: true; baseline: number; evaluated: number; builds: OptimizedBuild[] }
   | { ok: false; error: string };
@@ -333,7 +338,8 @@ type Message =
   | { kind: "simStart"; request: string }
   | { kind: "simAdvance"; ms: number }
   | { kind: "simMany"; request: string }
-  | { kind: "optimize"; request: string };
+  | { kind: "optimize"; request: string }
+  | { kind: "estimate"; request: string };
 
 export type WorkerRequest = Message & { id: number };
 
@@ -454,6 +460,30 @@ export class Engine {
       return { ok: false, error: res.error };
     }
     return JSON.parse(res.result!) as OptimizeResponse;
+  }
+
+  /**
+   * Roughly how long a search would take, from timing it for a fifth of a
+   * second on the search's worker. Resolves to null if a search is stopped
+   * meanwhile.
+   */
+  async estimateOptimize(request: EvaluateRequest & { optimize: OptimizeOptions }): Promise<EstimateResponse | null> {
+    let channel: Channel;
+    try {
+      this.optimizer ??= Channel.start(this.datasetText);
+      channel = await this.optimizer;
+    } catch (err) {
+      this.optimizer = null;
+      return { ok: false, error: String(err) };
+    }
+    const res = await channel.send({ kind: "estimate", request: JSON.stringify(request) });
+    if (res.error === "stopped") {
+      return null;
+    }
+    if (res.error) {
+      return { ok: false, error: res.error };
+    }
+    return JSON.parse(res.result!) as EstimateResponse;
   }
 
   /** Stops a running search; its worker starts again for the next one. */

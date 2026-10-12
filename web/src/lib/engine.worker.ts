@@ -10,6 +10,7 @@ interface Api {
   advanceSimulation(ms: number): string;
   simulateMany(requestJson: string): string;
   optimizeWithProgress(requestJson: string, report: (progress: string) => void): string;
+  estimateOptimize(requestJson: string): string;
 }
 
 // The worker global isn't in the DOM typings this project compiles against.
@@ -52,6 +53,9 @@ scope.onmessage = async (e) => {
         scope.postMessage({ id: message.id, result: engine.optimizeWithProgress(message.request, report) });
         break;
       }
+      case "estimate":
+        scope.postMessage({ id: message.id, result: engine.estimateOptimize(message.request) });
+        break;
     }
   } catch (err) {
     scope.postMessage({ id: message.id, error: `engine failed to start: ${String(err)}` });
