@@ -1,7 +1,12 @@
 // Deploys the built site as a Cloudflare Worker that only serves its
 // files. public/_headers sets the headers the optimizer's threads need.
+// The deploy workflow adds the domain to serve it on.
 {
   "name": "rotmg-dps",
   "compatibility_date": "2026-10-01",
-  "assets": { "directory": "./dist" }
+  "assets": { "directory": "./dist" },
+  // Only on its own domain: no workers.dev address, which is made from the
+  // Cloudflare account, and no preview addresses.
+  "workers_dev": false,
+  "preview_urls": false
 }

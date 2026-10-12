@@ -4,8 +4,9 @@ name: pages
 # deploys the site to Cloudflare as a Worker that serves its files, set up
 # in web/wrangler.jsonc. A data release from the pipeline
 # triggers it too. Run it by hand with an older data-* tag to roll the data
-# back. Needs the CLOUDFLARE_API_TOKEN secret; wrangler finds the account
-# from the token.
+# back. It deploys when the CLOUDFLARE_API_TOKEN secret is set (wrangler
+# finds the account from the token), to the domain in the SITE_DOMAIN
+# variable; without the secret it only builds and checks.
 on:
   push:
     branches: [main]
@@ -69,11 +70,17 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Check for a deploy token
+        id: token
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: echo "set=$([ -n "$TOKEN" ] && echo yes || echo no)" >> "$GITHUB_OUTPUT"
       - name: Deploy
+        if: steps.token.outputs.set == 'yes'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           wranglerVersion: "4.149.0"
           workingDirectory: web
-          command: deploy
+          command: deploy ${{ vars.SITE_DOMAIN && format('--domain {0}', vars.SITE_DOMAIN) || '' }}
 
