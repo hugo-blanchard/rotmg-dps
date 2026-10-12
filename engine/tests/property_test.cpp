@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "fixture.hpp"
+#include "rotmg/enchant.hpp"
 #include "rotmg/evaluate.hpp"
 #include "rotmg/fire_rate.hpp"
 
@@ -102,6 +103,38 @@ TEST_CASE("a burst never fires faster than the same weapon without one") {
           const rotmg::PlayerStatus status{.berserk = berserk};
           INFO(w.name << ", DEX " << dex << (berserk ? ", Berserk" : ""));
           CHECK(rotmg::VolleysPerSecond(s, dex, status) <= rotmg::VolleysPerSecond(unlimited, dex, status));
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("damage and fire rate enchantments never lower the projectiles' DPS") {
+  // Procs are left out for the same reason as with DEX.
+  std::vector<const rotmg::Enchantment*> bonuses;
+  for (const rotmg::Enchantment& e : Data().enchantments) {
+    if (e.id == "Damage_Bonus_4" || e.id == "FireRate_Bonus_4") {
+      bonuses.push_back(&e);
+    }
+  }
+  REQUIRE(bonuses.size() == 2);
+  for (const rotmg::Weapon& w : Data().weapons) {
+    for (const rotmg::Enchantment* e : bonuses) {
+      const rotmg::Weapon enchanted = rotmg::Enchant(w, {e}).weapon;
+      for (int def : kDefenses) {
+        for (int att = 0; att <= 100; att += 5) {
+          const auto projectiles = [&](const rotmg::Weapon& weapon) {
+            double dps = 0;
+            for (const rotmg::SubattackResult& r :
+                 EvaluateWeapon(weapon, {.attack = att, .dexterity = 50}, {.defense = def}).subattacks) {
+              dps += r.dps;
+            }
+            return dps;
+          };
+          const double plain = projectiles(w);
+          const double better = projectiles(enchanted);
+          INFO(w.name << " with " << e->name << ", ATT " << att << ", DEF " << def);
+          CHECK(better >= plain);
         }
       }
     }
