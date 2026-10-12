@@ -7,6 +7,8 @@
     icon?: Rect;
     /** A second line, like an item's stats or an enchantment's description. */
     detail?: string;
+    /** What it does, a line each, under the detail. */
+    effects?: string[];
     /** Options are listed under their group's heading, in order of first use. */
     group?: string;
     /** Filter keys this option matches, like "tiered". */
@@ -67,7 +69,12 @@
     const matching = options.filter(
       (o) =>
         (!filter || (o.tags ?? []).includes(filter)) &&
-        words.every((w) => o.name.toLowerCase().includes(w) || (o.detail ?? "").toLowerCase().includes(w)),
+        words.every(
+          (w) =>
+            o.name.toLowerCase().includes(w) ||
+            (o.detail ?? "").toLowerCase().includes(w) ||
+            (o.effects ?? []).some((e) => e.toLowerCase().includes(w)),
+        ),
     );
     if (!byDps || !changes) return matching;
     // Within each group, so reskins and the like stay apart and in place.
@@ -144,6 +151,9 @@
                     <span class="detail">{o.disabled}</span>
                   {:else if o.detail}
                     <span class="detail">{o.detail}</span>
+                  {/if}
+                  {#if !o.disabled}
+                    {#each o.effects ?? [] as line, i (i)}<span class="effect">{line}</span>{/each}
                   {/if}
                 </span>
                 {#if typeof change(o.key) === "number" && o.key !== selected}
@@ -295,6 +305,10 @@
   .detail {
     font-size: 0.8rem;
     color: var(--text-2);
+  }
+  .effect {
+    font-size: 0.75rem;
+    color: var(--muted);
   }
   .empty {
     color: var(--text-2);

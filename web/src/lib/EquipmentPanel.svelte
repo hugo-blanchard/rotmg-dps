@@ -9,8 +9,10 @@
     clash,
     enchantmentSlotsOf,
     enchantmentsForItem,
+    itemEffects,
     itemsFor,
     slots,
+    statSummary,
     usableSlots,
     type Dataset,
     type EnchantmentOption,
@@ -66,17 +68,13 @@
   const setTypes = $derived(new Set((dataset.sets ?? []).flatMap((s) => s.pieces.map((p) => p.itemType))));
   const enchantment = (id: string) => (dataset.enchantments ?? []).find((e) => e.id === id);
 
-  const statNames: Record<string, string> = { MAXHP: "HP", MAXMP: "MP" };
-  function stats(item: { statBonuses?: { stat: string; amount: number }[] }): string {
-    return (item.statBonuses ?? [])
-      .map((b) => `${b.amount > 0 ? "+" : ""}${b.amount} ${statNames[b.stat] ?? b.stat}`)
-      .join(", ");
-  }
   function slotTitle(slot: Slot, item: Item | undefined): string {
-    return item ? [item.name, describe(item)].filter(Boolean).join("\n") : `Choose ${slotNames[slot].toLowerCase()}`;
+    return item
+      ? [item.name, describe(item), ...itemEffects(item)].filter(Boolean).join("\n")
+      : `Choose ${slotNames[slot].toLowerCase()}`;
   }
   function describe(item: Item): string {
-    return [item.tier !== undefined ? `T${item.tier}` : "", stats(item)].filter(Boolean).join(" · ");
+    return [item.tier !== undefined ? `T${item.tier}` : "", statSummary(item)].filter(Boolean).join(" · ");
   }
 
   // What the picker is choosing, if it's open.
@@ -133,6 +131,7 @@
         name: i.name,
         icon: itemIcon(sprites, i.type),
         detail: detail(i),
+        effects: itemEffects(i),
         group: {
           variant: "Reskins with special enchantments",
           unobtainable: "Unobtainable",
@@ -284,6 +283,19 @@
       </div>
     {/each}
   </div>
+  {#if shownSlots.some((s) => equipped[s] && (statSummary(equipped[s]!) || itemEffects(equipped[s]!).length))}
+    <ul class="effects" aria-label="What your items do">
+      {#each shownSlots as slot (slot)}
+        {@const item = equipped[slot]}
+        {#if item && (statSummary(item) || itemEffects(item).length)}
+          <li>
+            <strong>{item.name}</strong>{#if statSummary(item)}: {statSummary(item)}{/if}
+            {#each itemEffects(item) as line, i (i)}<span class="effect">{line}</span>{/each}
+          </li>
+        {/if}
+      {/each}
+    </ul>
+  {/if}
 </section>
 
 <Picker
@@ -396,6 +408,22 @@
   .enchant:focus-visible {
     border-color: var(--accent);
     color: var(--accent);
+  }
+  .effects {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    color: var(--text-2);
+  }
+  .effects strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .effect {
+    display: block;
   }
   .initials {
     font-size: 0.6rem;

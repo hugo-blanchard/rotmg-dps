@@ -36,6 +36,27 @@ interface ItemRules {
   /** The item this one plays like, when it only differs in the
    * enchantments it can take (Cupid's Bow and its Valentine ones). */
   variantOf?: string;
+  /** The game's own tooltip lines for the item's effects. */
+  tooltip?: { name?: string; text: string }[];
+}
+
+const statNames: Record<string, string> = { MAXHP: "HP", MAXMP: "MP" };
+
+/** An item's stat bonuses, like "+8 DEX, +8 ATT, -8 DEF". */
+export function statSummary(item: { statBonuses?: { stat: string; amount: number }[] }): string {
+  return (item.statBonuses ?? [])
+    .map((b) => `${b.amount > 0 ? "+" : ""}${b.amount} ${statNames[b.stat] ?? b.stat}`)
+    .join(", ");
+}
+
+// Tooltip lines about where an item comes from rather than what it does.
+const notEffects = new Set(["Limited Reveal", "Reward", "Event", "Exclusive Item"]);
+
+/** What an item does besides its stats, in the game's own words. */
+export function itemEffects(item: ItemRules): string[] {
+  return (item.tooltip ?? [])
+    .filter((l) => !notEffects.has(l.name ?? ""))
+    .map((l) => (l.name ? `${l.name}: ${l.text}` : l.text));
 }
 
 export interface DatasetAbility extends ItemRules {

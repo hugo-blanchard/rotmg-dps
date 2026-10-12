@@ -3,7 +3,7 @@
   // target, changing the slots you don't keep, and lets you take one of the
   // builds it finds, with an undo.
   import Sprite from "./Sprite.svelte";
-  import { itemsFor, slots, type Dataset, type DatasetClass, type Slot } from "./dataset";
+  import { itemEffects, itemsFor, slots, statSummary, type Dataset, type DatasetClass, type Slot } from "./dataset";
   import type {
     Engine,
     EstimateResponse,
@@ -61,6 +61,9 @@
   let startedAt = 0;
   let now = $state(0);
   let estimate = $state<EstimateResponse | null>(null);
+  // The result whose details are open.
+  let opened = $state<number | null>(null);
+  const enchantmentName = (id: string) => (dataset.enchantments ?? []).find((e) => e.id === id)?.name ?? id;
   // The build before the last one taken, for undo.
   let previous = $state<{ items: Record<Slot, string>; enchants: Record<Slot, string[]> } | null>(null);
 
@@ -325,7 +328,28 @@
                     {enchantCount(b)} enchantments{/if}
                 </span>
               </div>
-              <button type="button" onclick={() => take(b)}>Use</button>
+              <div class="actions">
+                <button type="button" onclick={() => take(b)}>Use</button>
+                <button type="button" aria-expanded={opened === i} onclick={() => (opened = opened === i ? null : i)}>
+                  Details
+                </button>
+              </div>
+              {#if opened === i}
+                <ul class="details">
+                  {#each slots as slot (slot)}
+                    {@const item = b[slot] ? itemsFor(dataset, cls, slot).find((x) => x.name === b[slot]) : undefined}
+                    {#if item}
+                      <li>
+                        <strong>{item.name}</strong>{#if statSummary(item)}: {statSummary(item)}{/if}
+                        {#if b.enchantments[slot].length}
+                          <span>Enchantments: {b.enchantments[slot].map(enchantmentName).join(", ")}</span>
+                        {/if}
+                        {#each itemEffects(item) as line, k (k)}<span class="effect">{line}</span>{/each}
+                      </li>
+                    {/if}
+                  {/each}
+                </ul>
+              {/if}
             </li>
           {/each}
         </ol>
@@ -459,6 +483,30 @@
   }
   .icons {
     display: flex;
+  }
+  .actions {
+    display: grid;
+    gap: 0.25rem;
+  }
+  .details {
+    grid-column: 1 / -1;
+    list-style: none;
+    margin: 0;
+    padding: 0.2rem 0 0.3rem;
+    display: grid;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    color: var(--text-2);
+  }
+  .details strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .details span {
+    display: block;
+  }
+  .details .effect {
+    color: var(--muted);
   }
   .figures {
     display: grid;
