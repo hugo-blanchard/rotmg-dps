@@ -2,7 +2,15 @@
   import { onDestroy } from "svelte";
   import type { DatasetWeapon } from "./dataset";
   import type { Engine, EvaluateRequest, SimState } from "./engine";
-  import { layOut, placements, type Placement } from "./scenario";
+  import {
+    layOut,
+    placements,
+    playerMovements,
+    targetMovements,
+    withMovement,
+    type MovementKind,
+    type Placement,
+  } from "./scenario";
   import type { Rect, Sprites } from "./sprites";
 
   let {
@@ -39,8 +47,19 @@
   let placement = $state<Placement>("single");
   let count = $state(5);
   let spacing = $state(1.5);
+  let targetsMove = $state<MovementKind>("still");
+  let targetSpeed = $state(3);
+  let targetRange = $state(2);
+  let playerMoves = $state<MovementKind>("still");
+  let playerRange = $state(2);
+  let seed = $state(1);
+  const distance = $derived(request.hitModel?.distance ?? 4);
   const scenario = $derived(
-    layOut({ placement, count, spacing }, request.hitModel?.distance ?? 4, request.hitModel?.radius ?? 0.5),
+    withMovement(
+      layOut({ placement, count, spacing }, distance, request.hitModel?.radius ?? 0.5),
+      { targets: targetsMove, targetSpeed, targetRange, player: playerMoves, playerRange, seed },
+      distance,
+    ),
   );
 
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
@@ -54,6 +73,7 @@
       sim = null;
       flashUntil = [];
       lastHits = [];
+      bounds = null;
       trails?.getContext("2d")?.clearRect(0, 0, trails.width, trails.height);
     });
   });
@@ -61,6 +81,10 @@
   let frame = 0;
   let last = 0;
   let pending = false;
+  // Everywhere the player and targets have been since the start, so the view
+  // takes them all in without jumping around as they move.
+  let bounds: [number, number, number, number] | null = null;
+
   // Per target: when its hit flash ends, and its hits last frame.
   let flashUntil: number[] = [];
   let lastHits: number[] = [];
@@ -127,13 +151,14 @@
     const { player, targets, aim } = sim;
 
     // Fit the player, every target and a tile and a half of room around them.
-    let [minX, maxX, minY, maxY] = [player.x, player.x, player.y, player.y];
-    for (const t of targets) {
-      minX = Math.min(minX, t.x - t.radius);
-      maxX = Math.max(maxX, t.x + t.radius);
-      minY = Math.min(minY, t.y - t.radius);
-      maxY = Math.max(maxY, t.y + t.radius);
+    let [minX, maxX, minY, maxY] = bounds ?? [player.x, player.x, player.y, player.y];
+    for (const p of [{ x: player.x, y: player.y, radius: 0.5 }, ...targets]) {
+      minX = Math.min(minX, p.x - p.radius);
+      maxX = Math.max(maxX, p.x + p.radius);
+      minY = Math.min(minY, p.y - p.radius);
+      maxY = Math.max(maxY, p.y + p.radius);
     }
+    bounds = [minX, maxX, minY, maxY];
     const margin = 1.5;
     const tile = Math.max(8, Math.min(64, width / (maxX - minX + 2 * margin), height / (maxY - minY + 2 * margin)));
     const sx = (x: number) => width / 2 + (x - (minX + maxX) / 2) * tile;
@@ -273,6 +298,48 @@
         {/each}
       </select>
     </label>
+    <label>
+      They
+      <select bind:value={targetsMove}>
+        {#each targetMovements as m (m.value)}
+          <option value={m.value}>{m.label}</option>
+        {/each}
+      </select>
+    </label>
+    {#if targetsMove !== "still"}
+      <label>
+        Speed
+        <input type="number" min="0" max="20" step="0.5" bind:value={targetSpeed} />
+      </label>
+      <label>
+        {targetsMove === "circle" ? "Radius" : targetsMove === "chargeRetreat" ? "Back by" : "Reach"}
+        <input type="number" min="0.1" max="10" step="0.5" bind:value={targetRange} />
+      </label>
+    {/if}
+    {#if targetsMove === "wander"}
+      <button type="button" onclick={() => (seed += 1)}>New route</button>
+    {/if}
+  </div>
+  <div class="controls">
+    <label>
+      You
+      <select bind:value={playerMoves}>
+        {#each playerMovements as m (m.value)}
+          <option value={m.value}>{m.label}</option>
+        {/each}
+      </select>
+    </label>
+    {#if playerMoves === "kite" || playerMoves === "strafe"}
+      <label>
+        {playerMoves === "kite" ? "In and out by" : "Reach"}
+        <input type="number" min="0.5" max="10" step="0.5" bind:value={playerRange} />
+      </label>
+    {/if}
+    {#if playerMoves !== "still" && sim?.ok}
+      <span class="hint">at {fine.format(sim.playerSpeed)} tiles/s, from SPD</span>
+    {/if}
+  </div>
+  <div class="controls">
     {#if placement !== "single"}
       <label>
         {placement === "boss" ? "Adds" : "How many"}

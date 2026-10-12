@@ -186,6 +186,8 @@ export type SimState =
       ok: true;
       timeMs: number;
       player: { x: number; y: number };
+      /** Tiles per second, from SPD. */
+      playerSpeed: number;
       /** Index of the target the player aims at. */
       aim: number;
       target: { x: number; y: number; radius: number };
