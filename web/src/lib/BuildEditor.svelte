@@ -37,6 +37,17 @@
   const abilities = $derived(abilitiesFor(dataset, cls));
   const ability = $derived(abilities.find((a) => a.name === abilityName));
 
+  // The boss picked last, shown only while DEF still matches it.
+  let bossId = $state("");
+  const boss = $derived(dataset.targets?.find((t) => t.id === bossId && t.defense === target.defense));
+  function pickBoss(id: string) {
+    bossId = id;
+    const t = dataset.targets?.find((x) => x.id === id);
+    if (t) {
+      target.defense = t.defense;
+    }
+  }
+
   function bonus(item: Pick<DatasetWeapon, "statBonuses"> | undefined, stat: string): number {
     return item?.statBonuses?.filter((b) => b.stat === stat).reduce((sum, b) => sum + b.amount, 0) ?? 0;
   }
@@ -159,6 +170,17 @@
 
   <fieldset>
     <legend>Target</legend>
+    {#if dataset.targets?.length}
+      <label>
+        Boss
+        <select value={boss?.id ?? ""} onchange={(e) => pickBoss(e.currentTarget.value)}>
+          <option value="">Custom DEF</option>
+          {#each dataset.targets as t (t.id)}
+            <option value={t.id}>{t.name} ({t.defense} DEF)</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
     <label class="stat">
       DEF
       <input type="range" min="0" max="150" bind:value={target.defense} />

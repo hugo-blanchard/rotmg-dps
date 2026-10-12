@@ -42,12 +42,21 @@ export interface DatasetWeapon {
   unsupported?: string[];
 }
 
+// A boss to aim at, with its DEF from the client.
+export interface DatasetTarget {
+  id: string;
+  name: string;
+  defense: number;
+  maxHitPoints: number;
+}
+
 export interface Dataset {
   schemaVersion: number;
   build: string;
   classes: DatasetClass[];
   weapons: DatasetWeapon[];
   abilities?: DatasetAbility[];
+  targets?: DatasetTarget[];
 }
 
 // Written by the pipeline next to the dataset. Older releases don't have one.
