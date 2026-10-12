@@ -128,8 +128,9 @@
         {searching ? "Searching…" : "Find the most DPS"}
       </button>
       <p class="hint">
-        Against the target and distance below, using the calculated DPS. It checks one slot at a time and whole sets,
-        so it can miss a better build, but never returns one worse than yours.
+        Against the target and distance below, using the calculated DPS. It tries items one or two slots at a time
+        and whole sets, refits every item's enchantments around each change, and builds around each ability that
+        scales with a stat. It can still miss a better build, but never returns one worse than yours.
       </p>
       {#if found && !found.ok}
         <p role="alert">{found.error}</p>
