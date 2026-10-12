@@ -632,4 +632,72 @@ std::string Api::AdvanceSimulation(double ms) {
   return state.dump();
 }
 
+// A many-runs request is a simulation request plus "runs" (default 100, at
+// most 1000) and "seconds" (default 60, at most 600), the longest a run goes
+// on. A run stops early once every target is dead. Returns
+//   {"ok": true, "runs", "dps": [...], "timeToKill": [...], "unfinished"}
+// with both lists sorted, DPS counted up to the last kill, time to kill in
+// seconds for the runs that killed everything, and "compare" the same for
+// the build to compare with, if any.
+std::string Api::SimulateMany(std::string_view request_json) const {
+  if (!dataset_) {
+    return Error("no dataset loaded").dump();
+  }
+  try {
+    const json req = json::parse(request_json);
+    const Request r = ParseRequest(req, *dataset_);
+    if (r.weapon == nullptr) {
+      return Error("no weapon named \"" + req.at("weapon").get<std::string>() + "\"").dump();
+    }
+    const int runs = std::clamp(req.value("runs", 100), 1, 1000);
+    const double seconds = std::clamp(req.value("seconds", 60.0), 1.0, 600.0);
+    Scenario scenario = ReadScenario(req, r);
+    scenario.random_rolls = true;
+    const auto spread = [&](const Request& build) {
+      const Character c = build.ability ? build.character.With(build.ability->stat_bonuses) : build.character;
+      std::vector<double> dps;
+      std::vector<double> kill;
+      Scenario run = scenario;
+      for (int k = 0; k < runs; ++k) {
+        run.seed = scenario.seed + static_cast<unsigned long long>(k);
+        Simulation sim(*build.weapon, c, run, build.ability);
+        const auto all_dead = [&] {
+          return std::ranges::all_of(sim.PerTarget(), [](const auto& t) { return t.killed_ms >= 0; });
+        };
+        while (sim.TimeMs() < seconds * 1000 && !(!run.respawn && all_dead())) {
+          sim.Advance(100);
+        }
+        double damage = 0;
+        double last = 0;
+        for (const auto& t : sim.PerTarget()) {
+          damage += t.damage;
+          last = std::max(last, t.killed_ms);
+        }
+        const bool done = !run.respawn && all_dead();
+        const double time_s = (done ? last : sim.TimeMs()) / 1000;
+        dps.push_back(time_s > 0 ? damage / time_s : 0);
+        if (done) {
+          kill.push_back(last / 1000);
+        }
+      }
+      std::ranges::sort(dps);
+      std::ranges::sort(kill);
+      const int unfinished = runs - static_cast<int>(kill.size());
+      return json{{"runs", runs}, {"dps", dps}, {"timeToKill", kill}, {"unfinished", unfinished}};
+    };
+    json res = spread(r);
+    res["ok"] = true;
+    if (auto it = req.find("compare"); it != req.end() && it->is_object()) {
+      const Request other = ParseRequest(*it, *dataset_);
+      if (other.weapon == nullptr) {
+        return Error("no weapon named \"" + it->value("weapon", std::string()) + "\" to compare with").dump();
+      }
+      res["compare"] = spread(other);
+    }
+    return res.dump();
+  } catch (const std::exception& e) {
+    return Error(std::string("bad request: ") + e.what()).dump();
+  }
+}
+
 }  // namespace rotmg

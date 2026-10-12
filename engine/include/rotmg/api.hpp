@@ -28,6 +28,11 @@ class Api {
   /// Moves the running simulation forward and returns its state as JSON.
   std::string AdvanceSimulation(double ms);
 
+  /// Runs a simulation request many times with random rolls, each from its
+  /// own seed, and returns how DPS and time to kill spread. Leaves any
+  /// running simulation alone.
+  std::string SimulateMany(std::string_view request_json) const;
+
  private:
   std::optional<Dataset> dataset_;
   std::unique_ptr<Simulation> simulation_;

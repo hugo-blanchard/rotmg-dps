@@ -441,3 +441,20 @@ TEST_CASE("a second build can run in the same scene to compare") {
 
   CHECK_FALSE(api.StartSimulation(R"({"weapon": "Plain Sword", "compare": {"weapon": "Nope"}})").empty());
 }
+
+TEST_CASE("many runs with random rolls show how time to kill spreads") {
+  const rotmg::Api api = LoadedApi();
+  const json res = json::parse(api.SimulateMany(R"({"weapon": "Plain Sword", "attack": 50, "dexterity": 50,
+      "runs": 30, "seconds": 20, "scenario": {"targets": [{"x": 0, "y": 2, "hp": 3000}]},
+      "compare": {"weapon": "Plain Sword", "attack": 75, "dexterity": 50}})"));
+  REQUIRE(res["ok"] == true);
+  const auto kill = res["timeToKill"].get<std::vector<double>>();
+  REQUIRE(kill.size() == 30);
+  CHECK(res["unfinished"] == 0);
+  CHECK(std::ranges::is_sorted(kill));
+  // Rolls differ between seeds, so not every run takes the same time.
+  CHECK(kill.front() < kill.back());
+  // About 3000 HP at 564 DPS.
+  CHECK(kill[15] == Catch::Approx(3000 / 564.0).margin(0.5));
+  CHECK(res["compare"]["timeToKill"][15].get<double>() < kill[15]);
+}

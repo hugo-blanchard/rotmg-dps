@@ -15,5 +15,8 @@ EMSCRIPTEN_BINDINGS(rotmg) {
                 optional_override([](const rotmg::Api& api, const std::string& json) { return api.Evaluate(json); }))
       .function("startSimulation",
                 optional_override([](rotmg::Api& api, const std::string& json) { return api.StartSimulation(json); }))
-      .function("advanceSimulation", &rotmg::Api::AdvanceSimulation);
+      .function("advanceSimulation", &rotmg::Api::AdvanceSimulation)
+      .function("simulateMany", optional_override([](const rotmg::Api& api, const std::string& json) {
+                  return api.SimulateMany(json);
+                }));
 }
