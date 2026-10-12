@@ -261,8 +261,10 @@ Pushing to `main`, or publishing a new `data-*` release, runs `.github/workflows
 The site is on Cloudflare rather than GitHub Pages because the optimizer runs on several threads, which needs shared memory, which browsers only allow when the server sends the headers in `web/public/_headers`. GitHub Pages can't send headers. To deploy your own copy:
 
 1. In Cloudflare, create an API token from the "Edit Cloudflare Workers" template.
-2. Add the token to the repository's Actions secrets as `CLOUDFLARE_API_TOKEN`. The first deploy creates the Worker, named as in `web/wrangler.jsonc`.
-3. To serve it from your own domain, add the domain under the Worker's Settings, Domains & Routes.
+2. Add the token to the repository's Actions secrets as `CLOUDFLARE_API_TOKEN`. Without it the workflow builds and checks the site but doesn't deploy. The first deploy creates the Worker, named as in `web/wrangler.jsonc`.
+3. Add your domain, which has to be on the same Cloudflare account, to the repository's Actions variables as `SITE_DOMAIN`. The Worker is only served there: `web/wrangler.jsonc` turns off its workers.dev address, so without a domain set it isn't reachable. Set `workers_dev` to `true` to use that address instead.
+
+Any other host works too, as long as it serves `web/dist` with the headers in `web/public/_headers`.
 
 To roll the data back, run the workflow by hand with an older release:
 
