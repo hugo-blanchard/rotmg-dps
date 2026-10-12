@@ -39,13 +39,17 @@ struct Movement {
 
 /// A target in the simulation: where its centre starts, how big it is, its
 /// DEF and statuses, how it moves, and its hit points (0 for a dummy that
-/// can't die).
+/// can't die). It can go invulnerable for `invulnerable_s` seconds every
+/// `invulnerable_every_s`, the first time that long after the start, like a
+/// boss between phases.
 struct SimTarget {
   Point position;
   double radius = kDefaultTargetRadius;
   Target target;
   Movement movement{};
   double hp = 0;
+  double invulnerable_every_s = 0;
+  double invulnerable_s = 0;
 };
 
 /// Where everything starts, in tiles. The player aims at the centre of
@@ -206,6 +210,8 @@ class Simulation {
   /// player by effect ("Berserk", "ATT"), and on one target.
   const std::map<std::string, double>& PlayerUptime() const { return player_uptime_; }
   const std::map<std::string, double>& TargetUptime(std::size_t target) const { return target_uptime_[target]; }
+  /// Whether a target is in one of its invulnerable windows now.
+  bool Invulnerable(std::size_t target) const;
   /// The aim target's centre and radius.
   Point TargetCenter() const;
   double Radius() const;

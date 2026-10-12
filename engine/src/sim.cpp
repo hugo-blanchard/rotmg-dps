@@ -395,6 +395,15 @@ int Simulation::Roll(int low, int high) {
   return std::min(high, low + static_cast<int>(NextRandom(rolls_) * (high - low + 1)));
 }
 
+bool Simulation::Invulnerable(std::size_t target) const {
+  const SimTarget& t = world_.targets[target];
+  if (t.invulnerable_every_s <= 0 || t.invulnerable_s <= 0) {
+    return false;
+  }
+  const double s = TimeMs() / 1000;
+  return s >= t.invulnerable_every_s && std::fmod(s, t.invulnerable_every_s) < t.invulnerable_s;
+}
+
 bool Simulation::Alive(std::size_t target) const {
   return world_.targets[target].hp <= 0 || per_target_[target].hp > 0;
 }
@@ -885,6 +894,11 @@ void Simulation::Debuff(std::size_t target, const std::string& raw, double durat
 
 double Simulation::Damage(std::size_t target, double amount, From from, bool shown) {
   TargetCounters& c = per_target_[target];
+  // Shots still hit an invulnerable target and stop on it; they just do
+  // nothing. That's an assumption.
+  if (Invulnerable(target)) {
+    return 0;
+  }
   const double max_hp = world_.targets[target].hp;
   if (max_hp > 0) {
     if (c.hp <= 0) {

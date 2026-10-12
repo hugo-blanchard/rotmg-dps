@@ -364,6 +364,10 @@ Scenario ReadScenario(const json& req, const Request& r) {
     target.target.exposed = t.value("exposed", r.target.exposed);
     target.target.cursed = t.value("cursed", r.target.cursed);
     target.hp = t.value("hp", 0.0);
+    if (auto w = t.find("invulnerable"); w != t.end()) {
+      target.invulnerable_every_s = w->value("every", 0.0);
+      target.invulnerable_s = w->value("for", 0.0);
+    }
     if (auto m = t.find("movement"); m != t.end()) {
       target.movement = ReadMovement(*m);
     }
@@ -414,6 +418,7 @@ json StateOf(const Simulation& sim, std::size_t& history_sent) {
                        {"defense", t.target.defense}, {"hits", c.hits}, {"damage", c.damage},
                        {"abilityDamage", c.ability_damage}, {"statuses", sim.TargetStatuses(i)},
                        {"hp", c.hp}, {"kills", c.kills}, {"uptimeMs", sim.TargetUptime(i)},
+                       {"invulnerable", sim.Invulnerable(i)},
                        {"killedMs", c.killed_ms < 0 ? json(nullptr) : json(c.killed_ms)}});
   }
   json hits = json::array();
@@ -588,7 +593,8 @@ std::string Api::StartSimulation(std::string_view request_json) {
 //   "scenario": {"player": {"x", "y", "movement"}, "aim": 0, "seed": 1,
 //                "fullMp": true, "respawn": false, "randomRolls": false,
 //                "targets": [{"x", "y", "radius", "defense", "armored", ...,
-//                             "movement", "hp"}]}
+//                             "movement", "hp",
+//                             "invulnerable": {"every", "for"}}]}
 // in tiles, with +y the way the player faces at the start. A movement is
 // {"kind", "speed", "range", "far", "clockwise"}, kind one of still, strafe,
 // circle, chargeRetreat, wander (targets), keepDistance, orbit, kite and
@@ -602,7 +608,7 @@ std::string Api::StartSimulation(std::string_view request_json) {
 //    "target": {"x", "y", "radius"} (the aim target),
 //    "targets": [{"x", "y", "radius", "defense", "hits", "damage",
 //                 "abilityDamage", "statuses", "hp", "kills", "killedMs",
-//                 "uptimeMs"}],
+//                 "uptimeMs", "invulnerable"}],
 //    "hits": [{"target", "damage", "from"}] since the last state,
 //    "history": {"bucketMs", "from", "damage": [...], "mp": [...]} with the
 //               buckets since the last state, "from" the first one's index,

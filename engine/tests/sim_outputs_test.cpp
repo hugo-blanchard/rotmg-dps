@@ -98,3 +98,18 @@ TEST_CASE("recent hits list what landed since the last advance") {
   sim.Advance(500);
   CHECK(static_cast<long>(sim.RecentHits().size()) == sim.PerTarget()[0].hits - before);
 }
+
+TEST_CASE("a target takes nothing while it's invulnerable") {
+  // A second in every two, from 2 s on: over 10 s it's open 6 s of them.
+  Scenario open;
+  open.targets.push_back({{0, 2}, 0.5, {}});
+  Scenario phased = open;
+  phased.targets[0].invulnerable_every_s = 2;
+  phased.targets[0].invulnerable_s = 1;
+  Simulation a(Sword(), kCharacter, open);
+  Simulation b(Sword(), kCharacter, phased);
+  a.Advance(10'000);
+  b.Advance(10'000);
+  CHECK(b.PerTarget()[0].hits == a.PerTarget()[0].hits);
+  CHECK(b.PerTarget()[0].damage / a.PerTarget()[0].damage == Approx(0.6).margin(0.03));
+}
