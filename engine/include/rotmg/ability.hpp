@@ -95,12 +95,23 @@ struct AbilityPart {
   double share = 1;
 };
 
+/// MP an item gives back when the ability is used, like Eden's Embrace's
+/// 60% chance of +60 MP, at most every 8 seconds.
+struct MpRefund {
+  double amount = 0;
+  double chance = 1;
+  double cooldown_s = 0;
+};
+
 struct AbilityBreakdown {
   double mp_cost = 0;
   double cooldown_s = 0;
   double mp_per_second = 0;
   /// As often as MP and the cooldown allow, in the long run.
   double casts_per_second = 0;
+  /// MP given back on casting, and what that comes to a cast in the long run.
+  std::vector<MpRefund> refunds;
+  double mp_refund_per_cast = 0;
   double damage_per_cast = 0;
   double dps = 0;
   std::vector<AbilityPart> parts;
@@ -120,6 +131,9 @@ bool GoesOffOnCast(const Activate& effect);
 /// The share of casts an on-use effect goes off on, from its own cooldown
 /// and chance (proc).
 double CastShare(const Activate& effect, double casts_per_second);
+
+/// The same from an effect's chance and own cooldown in seconds.
+double CastShare(double chance, double cooldown_s, double casts_per_second);
 
 /// `character` includes every bonus but the ability's own, which are added.
 /// The hit estimate settings in `assumptions` apply to abilities that fire

@@ -206,14 +206,14 @@ std::vector<double> CastTimes(const AbilityBreakdown& a, double max_mp, double m
 // goes off it can't again until its cooldown is over. It's ready when the
 // window opens if its cooldown is no longer than the time between windows,
 // and otherwise on that share of windows.
-std::vector<double> TriggerOdds(const AbilityPart& p, std::span<const double> casts, double every_s) {
-  if (p.chance >= 1 && p.cooldown_s <= 0) {
+std::vector<double> TriggerOdds(double chance, double cooldown_s, std::span<const double> casts, double every_s) {
+  if (chance >= 1 && cooldown_s <= 0) {
     return std::vector<double>(casts.size(), 1.0);
   }
   // When it's next ready, and how likely that is.
   std::map<double, double> states = {{-1e9, 1}};
-  if (p.cooldown_s > every_s) {
-    states = {{-1e9, every_s / p.cooldown_s}, {1e9, 1 - every_s / p.cooldown_s}};
+  if (cooldown_s > every_s) {
+    states = {{-1e9, every_s / cooldown_s}, {1e9, 1 - every_s / cooldown_s}};
   }
   std::vector<double> out;
   for (const double t : casts) {
@@ -221,9 +221,9 @@ std::vector<double> TriggerOdds(const AbilityPart& p, std::span<const double> ca
     std::map<double, double> next;
     for (const auto& [ready, odds] : states) {
       if (ready <= t + kEpsilon) {
-        fired += odds * p.chance;
-        next[t + p.cooldown_s] += odds * p.chance;
-        next[ready] += odds * (1 - p.chance);
+        fired += odds * chance;
+        next[t + cooldown_s] += odds * chance;
+        next[ready] += odds * (1 - chance);
       } else {
         next[ready] += odds;
       }
@@ -291,12 +291,36 @@ BurstBreakdown EvaluateBurst(const Weapon& weapon, const Ability* ability, const
     average = static_cast<double>(casts.size());
     out.window_casts = static_cast<int>(casts.size());
     if (a->mp_cost > 0) {
+      // MP given back on the window's casts pays toward the next window's,
+      // and how much comes back depends on how many casts there are.
+      // MP back after the first k casts of a window, and for an average
+      // number of casts, between the whole numbers around it.
+      std::vector<double> back_after(casts.size() + 1, 0);
+      for (const MpRefund& r : a->refunds) {
+        const std::vector<double> odds = TriggerOdds(r.chance, r.cooldown_s, casts, window.every_s);
+        for (std::size_t k = 0; k < odds.size(); ++k) {
+          back_after[k + 1] += odds[k] * r.amount;
+        }
+      }
+      for (std::size_t k = 1; k < back_after.size(); ++k) {
+        back_after[k] += back_after[k - 1];
+      }
+      const auto back = [&](double n) {
+        const double whole = std::clamp(std::floor(n), 0.0, static_cast<double>(casts.size()));
+        const auto i = static_cast<std::size_t>(whole);
+        const double next = i + 1 < back_after.size() ? back_after[i + 1] : back_after[i];
+        return back_after[i] + (n - whole) * (next - back_after[i]);
+      };
       out.paid_casts = a->mp_per_second * window.every_s / a->mp_cost;
+      for (int settle = 0; settle < 50 && !a->refunds.empty(); ++settle) {
+        out.paid_casts = (a->mp_per_second * window.every_s + back(out.paid_casts)) / a->mp_cost;
+      }
       average = std::min(average, out.paid_casts);
     }
     out.assumptions.push_back(
         "the ability is cast as the window opens, its buffs up for the first volley, and again as soon as its "
-        "cooldown and MP allow; over many windows, each can only spend the MP that regenerates in between");
+        "cooldown and MP allow; over many windows, each can only spend the MP that regenerates in between and what "
+        "the gear gives back on casting");
     out.assumptions.push_back("a new cast restarts the buffs and debuffs of the last");
   }
   out.casts = average;
@@ -353,7 +377,7 @@ BurstBreakdown EvaluateBurst(const Weapon& weapon, const Ability* ability, const
       }
     }
     for (const AbilityPart& p : a ? a->parts : std::vector<AbilityPart>{}) {
-      const std::vector<double> odds = TriggerOdds(p, std::span(casts).first(count), window.every_s);
+      const std::vector<double> odds = TriggerOdds(p.chance, p.cooldown_s, std::span(casts).first(count), window.every_s);
       for (std::size_t k = 0; k < count; ++k) {
         const double landed = p.over_s > 0 ? std::clamp((length - casts[k]) / p.over_s, 0.0, 1.0) : 1.0;
         sum.second += odds[k] * landed * p.damage / p.share;

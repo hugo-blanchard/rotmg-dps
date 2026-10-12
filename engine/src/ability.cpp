@@ -144,17 +144,18 @@ bool GoesOffOnCast(const Activate& a) {
 }
 
 double CastShare(const Activate& a, double casts_per_second) {
-  if (casts_per_second <= 0) {
-    return 0;
-  }
-  const double proc = std::clamp(a.Number("proc").value_or(1), 0.0, 1.0);
-  if (proc <= 0) {
+  return CastShare(std::clamp(a.Number("proc").value_or(1), 0.0, 1.0), a.Number("cooldown").value_or(0),
+                   casts_per_second);
+}
+
+double CastShare(double chance, double cooldown_s, double casts_per_second) {
+  if (casts_per_second <= 0 || chance <= 0) {
     return 0;
   }
   // After it goes off, the casts within its cooldown can't set it off, then
   // each cast has the chance.
-  const double blocked = std::max(0.0, std::ceil(a.Number("cooldown").value_or(0) * casts_per_second - 1e-9) - 1);
-  return 1 / (blocked + 1 / proc);
+  const double blocked = std::max(0.0, std::ceil(cooldown_s * casts_per_second - 1e-9) - 1);
+  return 1 / (blocked + 1 / chance);
 }
 
 AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& character, const Target& target,
@@ -180,6 +181,32 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   out.casts_per_second = 1 / std::max(out.cooldown_s, 1e-3);
   if (out.mp_cost > 0) {
     out.casts_per_second = std::min(out.casts_per_second, out.mp_per_second / out.mp_cost);
+  }
+
+  // MP the gear gives back on casting lowers what a cast really costs, and
+  // how often it comes back depends on how often you cast, so the two are
+  // worked out together.
+  std::vector<int> worn_for_refunds = character.worn;
+  worn_for_refunds.push_back(ability.type);
+  for (const Activate& a : ability.on_ability) {
+    if (a.type == "Magic" && GearWorn(a, worn_for_refunds) && GoesOffOnCast(a)) {
+      out.refunds.push_back({Param(a, "amount"), std::clamp(a.Number("proc").value_or(1), 0.0, 1.0),
+                             a.Number("cooldown").value_or(0)});
+    }
+  }
+  if (!out.refunds.empty() && out.mp_cost > 0) {
+    for (int settle = 0; settle < 20; ++settle) {
+      out.mp_refund_per_cast = 0;
+      for (const MpRefund& r : out.refunds) {
+        out.mp_refund_per_cast += r.amount * CastShare(r.chance, r.cooldown_s, out.casts_per_second);
+      }
+      const double cost = out.mp_cost - out.mp_refund_per_cast;
+      out.casts_per_second = 1 / std::max(out.cooldown_s, 1e-3);
+      if (cost > 0) {
+        out.casts_per_second = std::min(out.casts_per_second, out.mp_per_second / cost);
+      }
+    }
+    assume("MP an item gives back on casting counts for the share of casts it comes back on");
   }
 
   // One effect of a cast. An item's effect that goes off on only a share of
@@ -342,7 +369,8 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   worn.push_back(ability.type);
   prefix = "On use, ";
   for (const Activate& a : ability.on_ability) {
-    if (!GearWorn(a, worn)) {
+    // MP given back is counted above, in how often you can cast.
+    if (!GearWorn(a, worn) || a.type == "Magic") {
       continue;
     }
     if (!GoesOffOnCast(a)) {

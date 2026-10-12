@@ -235,3 +235,20 @@ TEST_CASE("Scepters: lightning and shockblast scale as the wiki's tables say") {
   CHECK(rotmg::LightningDamage(storms, {.wisdom = 40}) == Approx(300));
   CHECK(rotmg::LightningTargets(storms, {.wisdom = 50}) == 5);
 }
+
+TEST_CASE("MP given back on casting lowers what a cast costs") {
+  // Plain Spell costs 80 MP; at 60 WIS, 7.7 MP/s. Getting 20 back on every
+  // cast makes it 60, and half the time makes it 70.
+  rotmg::Ability spell = Ability("Plain Spell");
+  rotmg::Activate magic;
+  magic.type = "Magic";
+  magic.params.emplace("amount", 20.0);
+  spell.on_ability.push_back(magic);
+  const auto every = EvaluateAbility(spell, kWis60, {}, {});
+  CHECK(every.mp_refund_per_cast == Approx(20));
+  CHECK(every.casts_per_second == Approx(7.7 / 60));
+  CHECK(every.unsupported.empty());
+
+  spell.on_ability.back().params.insert_or_assign("proc", 0.5);
+  CHECK(EvaluateAbility(spell, kWis60, {}, {}).casts_per_second == Approx(7.7 / 70));
+}

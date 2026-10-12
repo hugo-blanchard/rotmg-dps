@@ -184,3 +184,18 @@ TEST_CASE("an on-cast effect in a burst rolls per cast and waits out its own coo
   CHECK(b.casts == Approx(3));
   CHECK(b.ability_damage == Approx(1000 * (1 - 0.4 * 0.4 * 0.4)));
 }
+
+TEST_CASE("MP given back in a burst window pays toward the next window's casts") {
+  // 200 MP fits two 80 MP casts in 3 seconds; 77 MP regenerates in 10
+  // seconds. Getting 20 back on each cast makes a cast cost 60, so 77 / 60
+  // casts a window.
+  rotmg::Ability spell = *Find("Plain Spell");
+  rotmg::Activate magic;
+  magic.type = "Magic";
+  magic.params.emplace("amount", 20.0);
+  spell.on_ability.push_back(magic);
+  const auto b = rotmg::EvaluateBurst(Sword(), &spell, WithMp(200), {}, {}, {3, 10});
+  CHECK(b.window_casts == 2);
+  CHECK(b.paid_casts == Approx(77.0 / 60));
+  CHECK(b.casts == Approx(77.0 / 60));
+}
