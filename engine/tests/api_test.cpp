@@ -422,3 +422,22 @@ TEST_CASE("a simulation state carries only the history since the last one") {
   CHECK(state["history"]["from"] == 10);
   CHECK(state["history"]["mp"].size() == 5);
 }
+
+TEST_CASE("a second build can run in the same scene to compare") {
+  rotmg::Api api = LoadedApi();
+  REQUIRE(api.StartSimulation(R"({"weapon": "Plain Sword", "attack": 50, "dexterity": 50,
+      "scenario": {"targets": [{"x": 0, "y": 2}, {"x": 1, "y": 3}]},
+      "compare": {"weapon": "Plain Sword", "attack": 75, "dexterity": 50}})")
+              .empty());
+  const json state = json::parse(api.AdvanceSimulation(3000));
+  REQUIRE(state.contains("compare"));
+  const json& other = state["compare"];
+  CHECK(other["targets"].size() == 2);
+  CHECK(other["totals"]["volleys"] == state["totals"]["volleys"]);
+  // 75 ATT: (75 + 25) / 50 = 2 against 1.5 at 50.
+  CHECK(other["totals"]["damage"].get<double>() ==
+        Catch::Approx(state["totals"]["damage"].get<double>() * 2 / 1.5).epsilon(0.02));
+  CHECK_FALSE(other.contains("shots"));
+
+  CHECK_FALSE(api.StartSimulation(R"({"weapon": "Plain Sword", "compare": {"weapon": "Nope"}})").empty());
+}
