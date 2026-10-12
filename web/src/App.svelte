@@ -41,6 +41,12 @@
   let weaponName = $state("");
   let abilityName = $state("");
   let simOptions = $state<SimOptions>({ ...defaultSimOptions });
+  // A build pinned to compare with in the simulation.
+  let pinned = $state<{ request: EvaluateRequest; label: string } | null>(null);
+  function pin() {
+    const what = [weaponName, abilityName].filter(Boolean).join(" + ");
+    pinned = { request: $state.snapshot(request), label: `${what}, ${attack} ATT ${dexterity} DEX` };
+  }
   let attack = $state(0);
   let dexterity = $state(0);
   let wisdom = $state(0);
@@ -328,6 +334,9 @@
             expectedTotalDps={result.build?.dps ?? result.breakdown.dps}
             bosses={dataset?.targets ?? []}
             bind:options={simOptions}
+            {pinned}
+            onpin={pin}
+            onunpin={() => (pinned = null)}
           />
         </div>
       {/if}

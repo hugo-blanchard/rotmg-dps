@@ -2,7 +2,7 @@
   import { onDestroy } from "svelte";
   import type { DatasetAbility, DatasetTarget, DatasetWeapon } from "./dataset";
   import TimeChart from "./TimeChart.svelte";
-  import type { Engine, EvaluateRequest, SimState } from "./engine";
+  import type { Engine, EvaluateRequest, SimRun, SimState } from "./engine";
   import {
     layOut,
     placements,
@@ -27,6 +27,9 @@
     expectedTotalDps,
     bosses = [],
     options = $bindable(),
+    pinned = null,
+    onpin,
+    onunpin,
   }: {
     engine: Engine;
     request: EvaluateRequest;
@@ -46,6 +49,10 @@
     bosses?: DatasetTarget[];
     /** The scene, kept by the page so a link can carry it. */
     options: SimOptions;
+    /** A build to compare with in the same scene. */
+    pinned?: { request: EvaluateRequest; label: string } | null;
+    onpin: () => void;
+    onunpin: () => void;
   } = $props();
 
   const height = 360;
@@ -81,7 +88,11 @@
 
   // Restart whenever the build, the targets or the distance changes.
   $effect(() => {
-    const r = { ...$state.snapshot(request), scenario: $state.snapshot(scenario) };
+    const r = {
+      ...$state.snapshot(request),
+      scenario: $state.snapshot(scenario),
+      compare: pinned ? $state.snapshot(pinned.request) : undefined,
+    };
     engine.startSimulation(r).then((e) => {
       error = e;
       sim = null;
@@ -90,6 +101,7 @@
       bounds = null;
       damageHistory = [];
       mpHistory = [];
+      pinnedHistory = [];
       floaters = [];
       if (autoPaused) {
         playing = true;
@@ -113,6 +125,7 @@
 
   let damageHistory = $state.raw<number[]>([]);
   let mpHistory = $state.raw<number[]>([]);
+  let pinnedHistory = $state.raw<number[]>([]);
   // Damage numbers rising off the targets.
   let floaters: { target: number; text: string; from: string; born: number; dx: number }[] = [];
 
@@ -138,6 +151,9 @@
       damageHistory = [...damageHistory, ...next.history.damage];
       mpHistory = [...mpHistory, ...next.history.mp];
     }
+    if (next.compare && next.compare.history.from === pinnedHistory.length) {
+      pinnedHistory = [...pinnedHistory, ...next.compare.history.damage];
+    }
     if (showNumbers) {
       const born = performance.now();
       for (const h of next.hits) {
@@ -146,7 +162,8 @@
       floaters = floaters.filter((f) => born - f.born < 700).slice(-80);
     }
     // With nothing left alive there's nothing more to see.
-    if (targetHp > 0 && !options.respawn && next.targets.every((t) => t.hp <= 0)) {
+    const dead = (run: { targets: { hp: number }[] }) => run.targets.every((t) => t.hp <= 0);
+    if (targetHp > 0 && !options.respawn && dead(next) && (!next.compare || dead(next.compare))) {
       playing = false;
       autoPaused = true;
     }
@@ -395,11 +412,17 @@
   });
 
   const seconds = $derived(sim?.ok ? sim.timeMs / 1000 : 0);
-  const measuredDps = $derived(sim?.ok && seconds > 0 ? sim.totals.damage / seconds : 0);
-  const aimDps = $derived(sim?.ok && seconds > 0 ? (sim.targets[sim.aim]?.damage ?? 0) / seconds : 0);
-  const abilityDps = $derived(sim?.ok && seconds > 0 ? sim.ability.damage / seconds : 0);
-  const procDps = $derived(sim?.ok && seconds > 0 ? sim.procs.damage / seconds : 0);
-  const totalDps = $derived(sim?.ok && seconds > 0 ? sim.targets.reduce((n, t) => n + t.damage, 0) / seconds : 0);
+  // Rates count up to when the last target died, not the time spent after.
+  const fighting = $derived(
+    sim?.ok && !options.respawn && sim.targets.every((t) => t.killedMs !== null)
+      ? Math.max(...sim.targets.map((t) => t.killedMs!)) / 1000
+      : seconds,
+  );
+  const measuredDps = $derived(sim?.ok && fighting > 0 ? sim.totals.damage / fighting : 0);
+  const aimDps = $derived(sim?.ok && fighting > 0 ? (sim.targets[sim.aim]?.damage ?? 0) / fighting : 0);
+  const abilityDps = $derived(sim?.ok && fighting > 0 ? sim.ability.damage / fighting : 0);
+  const procDps = $derived(sim?.ok && fighting > 0 ? sim.procs.damage / fighting : 0);
+  const totalDps = $derived(sim?.ok && fighting > 0 ? sim.targets.reduce((n, t) => n + t.damage, 0) / fighting : 0);
   const hasProcs = $derived(expectedProcDps > 0 || (sim?.ok && sim.procs.activations > 0));
   const bucketS = 0.1;
   // DPS over the last second, and since the start.
@@ -410,10 +433,26 @@
       return sum / (Math.min(i + 1, 10) * bucketS);
     }),
   );
-  const sinceStart = $derived.by(() => {
+  const average = (history: number[]) => {
     let sum = 0;
-    return damageHistory.map((d, i) => (sum += d) / ((i + 1) * bucketS));
-  });
+    return history.map((d, i) => (sum += d) / ((i + 1) * bucketS));
+  };
+  const sinceStart = $derived(average(damageHistory));
+  const pinnedSinceStart = $derived(average(pinnedHistory));
+  // The figures the comparison lines up, for this build and the pinned one.
+  const runSummary = (run: Omit<SimRun, "shots" | "effects" | "hits">) => {
+    const kills = run.targets.map((t) => t.killedMs).filter((k) => k !== null);
+    const allDead = !options.respawn && kills.length === run.targets.length ? Math.max(...kills) / 1000 : null;
+    const s = allDead ?? run.timeMs / 1000;
+    const total = run.targets.reduce((n, t) => n + t.damage, 0);
+    return {
+      total: s > 0 ? total / s : 0,
+      weapon: s > 0 ? run.totals.damage / s : 0,
+      ability: s > 0 ? run.ability.damage / s : 0,
+      firstKill: kills.length ? Math.min(...kills) / 1000 : null,
+      allDead,
+    };
+  };
   const firstKillMs = $derived(
     sim?.ok ? Math.min(...sim.targets.map((t) => t.killedMs ?? Infinity)) : Infinity,
   );
@@ -518,6 +557,16 @@
     <label><input type="checkbox" bind:checked={showNumbers} /> Damage numbers</label>
   </div>
   <div class="controls">
+    {#if pinned}
+      <span class="hint">Comparing with <strong>{pinned.label}</strong></span>
+      <button type="button" onclick={onpin}>Pin this build instead</button>
+      <button type="button" onclick={onunpin}>Stop comparing</button>
+    {:else}
+      <button type="button" onclick={onpin}>Pin this build to compare</button>
+      <span class="hint">then change the build; both run in the same scene.</span>
+    {/if}
+  </div>
+  <div class="controls">
     <label>
       Target HP
       <select bind:value={options.hp}>
@@ -568,7 +617,7 @@
       </div>
       <div>
         <dt>Hits per second</dt>
-        <dd>{seconds > 0 ? fine.format(sim.totals.hits / seconds) : "0"}</dd>
+        <dd>{fighting > 0 ? fine.format(sim.totals.hits / fighting) : "0"}</dd>
       </div>
       <div>
         <dt>{sim.targets.length > 1 ? "Weapon DPS, all targets" : "Weapon DPS"}</dt>
@@ -625,16 +674,57 @@
         {/if}
       {/if}
     </dl>
+    {#if sim.compare && pinned}
+      {@const mine = runSummary(sim)}
+      {@const theirs = runSummary(sim.compare)}
+      {@const when = (v: number | null) => (v === null ? "not yet" : `${fine.format(v)} s`)}
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col"></th>
+              <th scope="col">This build</th>
+              <th scope="col">{pinned.label}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Total DPS</th><td>{whole.format(mine.total)}</td><td>{whole.format(theirs.total)}</td></tr>
+            <tr><th scope="row">Weapon DPS</th><td>{whole.format(mine.weapon)}</td><td>{whole.format(theirs.weapon)}</td></tr>
+            <tr>
+              <th scope="row">Ability DPS</th><td>{whole.format(mine.ability)}</td><td>{whole.format(theirs.ability)}</td>
+            </tr>
+            {#if targetHp > 0}
+              <tr><th scope="row">First kill</th><td>{when(mine.firstKill)}</td><td>{when(theirs.firstKill)}</td></tr>
+              {#if sim.targets.length > 1}
+                <tr><th scope="row">All dead</th><td>{when(mine.allDead)}</td><td>{when(theirs.allDead)}</td></tr>
+              {/if}
+            {/if}
+          </tbody>
+        </table>
+      </div>
+    {/if}
     {#if damageHistory.length > 1}
-      <TimeChart
-        caption="DPS over time"
-        bucketMs={100}
-        formatY={(v) => whole.format(v)}
-        series={[
-          { label: "Last second", values: lastSecond, color: "var(--accent)" },
-          { label: "Since the start", values: sinceStart, color: "var(--text-2)", dashed: true },
-        ]}
-      />
+      {#if pinned && pinnedHistory.length > 1}
+        <TimeChart
+          caption="Average DPS since the start"
+          bucketMs={100}
+          formatY={(v) => whole.format(v)}
+          series={[
+            { label: "This build", values: sinceStart, color: "var(--accent)" },
+            { label: pinned.label, values: pinnedSinceStart, color: "var(--text-2)", dashed: true },
+          ]}
+        />
+      {:else}
+        <TimeChart
+          caption="DPS over time"
+          bucketMs={100}
+          formatY={(v) => whole.format(v)}
+          series={[
+            { label: "Last second", values: lastSecond, color: "var(--accent)" },
+            { label: "Since the start", values: sinceStart, color: "var(--text-2)", dashed: true },
+          ]}
+        />
+      {/if}
       {#if ability}
         <TimeChart
           caption="MP"
@@ -668,8 +758,8 @@
                 <td>{fine.format(Math.hypot(t.x - sim.player.x, t.y - sim.player.y))}</td>
                 <td>{t.defense}</td>
                 <td>{t.hits}</td>
-                <td>{whole.format(seconds > 0 ? t.damage / seconds : 0)}</td>
-                {#if ability}<td>{whole.format(seconds > 0 ? t.abilityDamage / seconds : 0)}</td>{/if}
+                <td>{whole.format(fighting > 0 ? t.damage / fighting : 0)}</td>
+                {#if ability}<td>{whole.format(fighting > 0 ? t.abilityDamage / fighting : 0)}</td>{/if}
                 {#if targetHp > 0}
                   <td>{whole.format(t.hp)}</td>
                   <td>{options.respawn ? t.kills : t.killedMs !== null ? `${fine.format(t.killedMs / 1000)} s` : ""}</td>
@@ -771,7 +861,8 @@
     border-bottom: 1px solid var(--border);
   }
   th:first-child,
-  td:first-child {
+  td:first-child,
+  th[scope="row"] {
     text-align: left;
   }
   tr.aim td {

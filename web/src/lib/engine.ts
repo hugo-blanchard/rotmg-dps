@@ -204,32 +204,38 @@ export interface SimEffect {
   chain: { x: number; y: number }[];
 }
 
+/** One simulation's state; see AdvanceSimulation in engine/src/api.cpp. */
+export interface SimRun {
+  timeMs: number;
+  player: { x: number; y: number };
+  /** Tiles per second, from SPD. */
+  playerSpeed: number;
+  /** Index of the target the player aims at. */
+  aim: number;
+  target: { x: number; y: number; radius: number };
+  targets: SimTarget[];
+  shots: SimShot[];
+  totals: SimCounters;
+  perSubattack: SimCounters[];
+  mp: number;
+  mpMax: number;
+  /** Statuses and stat boosts on the player now, like "Berserk". */
+  statuses: string[];
+  ability: { casts: number; hits: number; damage: number };
+  procs: { activations: number; hits: number; damage: number };
+  /** Hits since the last state, for damage numbers. */
+  hits: { target: number; damage: number; from: "weapon" | "ability" | "proc" }[];
+  /** Damage done in each bucket and MP at its end, for buckets since the last state. */
+  history: { bucketMs: number; from: number; damage: number[]; mp: number[] };
+  effects: SimEffect[];
+}
+
 export type SimState =
-  | {
+  | (SimRun & {
       ok: true;
-      timeMs: number;
-      player: { x: number; y: number };
-      /** Tiles per second, from SPD. */
-      playerSpeed: number;
-      /** Index of the target the player aims at. */
-      aim: number;
-      target: { x: number; y: number; radius: number };
-      targets: SimTarget[];
-      shots: SimShot[];
-      totals: SimCounters;
-      perSubattack: SimCounters[];
-      mp: number;
-      mpMax: number;
-      /** Statuses and stat boosts on the player now, like "Berserk". */
-      statuses: string[];
-      ability: { casts: number; hits: number; damage: number };
-      procs: { activations: number; hits: number; damage: number };
-      /** Hits since the last state, for damage numbers. */
-      hits: { target: number; damage: number; from: "weapon" | "ability" | "proc" }[];
-      /** Damage done in each bucket and MP at its end, for buckets since the last state. */
-      history: { bucketMs: number; from: number; damage: number[]; mp: number[] };
-      effects: SimEffect[];
-    }
+      /** The build compared with, in the same scene, without what's only drawn. */
+      compare?: Omit<SimRun, "shots" | "effects" | "hits">;
+    })
   | { ok: false; error: string };
 
 type Message =
