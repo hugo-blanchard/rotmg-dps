@@ -41,7 +41,21 @@ export interface DatasetWeapon {
   projectiles?: { id: number; objectId: string; size?: number }[];
   // Items the weapon's on-shoot effects need worn, like a ring.
   gear?: { itemType: number; name: string; slotType: number }[];
+  // Item labels, which enchantments match against.
+  labels?: string[];
   unsupported?: string[];
+}
+
+export interface DatasetEnchantment {
+  type: number;
+  id: string;
+  name: string;
+  description: string;
+  compatible: string[];
+  incompatible?: string[];
+  incompatibleItems?: string[];
+  labels: string[];
+  incompatibleLabels?: string[];
 }
 
 // A boss to aim at, with its DEF from the client.
@@ -69,6 +83,7 @@ export interface Dataset {
   abilities?: DatasetAbility[];
   targets?: DatasetTarget[];
   sets?: DatasetSet[];
+  enchantments?: DatasetEnchantment[];
 }
 
 // Written by the pipeline next to the dataset. Older releases don't have one.
@@ -158,6 +173,25 @@ export function gearFor(
     slots.set(g.slotType, [...(slots.get(g.slotType) ?? []), { itemType: g.itemType, name: g.name }]);
   }
   return [...slots].map(([slotType, items]) => ({ slotType, items }));
+}
+
+/** Enchantments that can go on the weapon, by the engine's rule: every
+ * compatible label, no incompatible one. */
+export function enchantmentsFor(dataset: Dataset, weapon: DatasetWeapon | undefined): DatasetEnchantment[] {
+  const labels = weapon?.labels ?? [];
+  return (dataset.enchantments ?? []).filter(
+    (e) =>
+      e.compatible.every((l) => labels.includes(l)) &&
+      !(e.incompatible ?? []).some((l) => labels.includes(l)) &&
+      !(e.incompatibleItems ?? []).includes(weapon?.id ?? ""),
+  );
+}
+
+/** Whether two enchantments can't share an item. */
+export function clash(a: DatasetEnchantment, b: DatasetEnchantment): boolean {
+  const meets = (x: DatasetEnchantment, y: DatasetEnchantment) =>
+    (x.incompatibleLabels ?? []).some((l) => y.labels.includes(l));
+  return meets(a, b) || meets(b, a);
 }
 
 /** Class stats at their max, for the ones the editor doesn't show. */

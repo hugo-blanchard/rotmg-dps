@@ -31,6 +31,8 @@ export interface EvaluateRequest {
   target: Target;
   /** Item types of other set pieces worn, like armor and a ring. */
   wearing?: number[];
+  /** Ids of up to 4 enchantments on the weapon. */
+  enchantments?: string[];
   hitsPerVolley?: (number | null)[];
   curatedHitsPerVolley?: (number | null)[];
   hitModel?: { distance: number; radius: number };
@@ -130,6 +132,7 @@ export type EvaluateResponse =
       build: BuildBreakdown;
       ability?: AbilityBreakdown;
       sets?: WornSet[];
+      enchantmentStats?: { stat: string; amount: number }[];
       curve?: CurvePoint[];
       hitCurve?: HitCurvePoint[];
       hitModelGaps?: string[];

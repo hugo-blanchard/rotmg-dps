@@ -6,6 +6,7 @@
   import SimulationView from "./lib/SimulationView.svelte";
   import {
     abilitiesFor,
+    enchantmentsFor,
     loadDataset,
     loadStatus,
     gearFor,
@@ -39,6 +40,8 @@
   let radius = $state(0.5);
   // Armor and ring pieces of the gear's sets that you also wear.
   let wearing = $state<number[]>([]);
+  // Enchantment ids on the weapon, up to 4.
+  let enchantments = $state<string[]>([]);
   let hitOverrides = $state<(number | null)[]>([]);
 
   let response = $state<EvaluateResponse | null>(null);
@@ -61,6 +64,14 @@
     const gear = cls ? gearFor(weapon, cls, pieces).flatMap((g) => g.items.map((i) => i.itemType)) : [];
     return wearing.filter((t) => pieces.includes(t) || gear.includes(t));
   });
+  // Only enchantments that fit the current weapon are sent.
+  const enchanted = $derived.by(() => {
+    if (!dataset) {
+      return [];
+    }
+    const fitting = enchantmentsFor(dataset, weapon).map((e) => e.id);
+    return enchantments.filter((id) => fitting.includes(id));
+  });
 
   // What evaluating and simulating share; evaluating adds the two charts.
   const request = $derived<EvaluateRequest>({
@@ -74,6 +85,7 @@
     status: { ...status },
     target: { ...target, defense },
     wearing: [...worn],
+    enchantments: [...enchanted],
     hitsPerVolley: [...hitOverrides],
     hitModel: { distance: hitDistance, radius: Math.max(0.05, Number(radius) || 0.5) },
   });
@@ -110,8 +122,20 @@
       const d = loaded.dataset;
       const linked = fromQuery(location.search, d);
       if (linked) {
-        ({ classId, weaponName, abilityName, attack, dexterity, wisdom, status, target, distance, radius, wearing } =
-          linked);
+        ({
+          classId,
+          weaponName,
+          abilityName,
+          attack,
+          dexterity,
+          wisdom,
+          status,
+          target,
+          distance,
+          radius,
+          wearing,
+          enchantments,
+        } = linked);
       } else {
         const start = d.classes.find((c) => c.id === "Wizard") ?? d.classes[0];
         classId = start.id;
@@ -144,6 +168,7 @@
       distance,
       radius,
       wearing: worn,
+      enchantments: enchanted,
     });
     history.replaceState(null, "", `${location.pathname}?${query}`);
   });
@@ -182,6 +207,7 @@
     <BuildEditor
       {dataset}
       wornSets={result?.sets ?? []}
+      enchantmentStats={result?.enchantmentStats ?? []}
       bind:classId
       bind:weaponName
       bind:abilityName
@@ -193,6 +219,7 @@
       bind:distance
       bind:radius
       bind:wearing
+      bind:enchantments
     />
     {#if result}
       <Results

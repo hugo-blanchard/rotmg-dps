@@ -1,6 +1,8 @@
 <script lang="ts">
   import {
     abilitiesFor,
+    clash,
+    enchantmentsFor,
     gearFor,
     otherPieces,
     setsFor,
@@ -24,7 +26,9 @@
     distance = $bindable(),
     radius = $bindable(),
     wearing = $bindable(),
+    enchantments = $bindable(),
     wornSets,
+    enchantmentStats,
   }: {
     dataset: Dataset;
     classId: string;
@@ -40,6 +44,9 @@
     wearing: number[];
     /** The engine's view of the sets worn, for the bonus each one adds. */
     wornSets: WornSet[];
+    enchantments: string[];
+    /** Stats the engine added from the enchantments, after rounding. */
+    enchantmentStats: { stat: string; amount: number }[];
   } = $props();
 
   const classes = $derived([...dataset.classes].sort((a, b) => a.id.localeCompare(b.id)));
@@ -52,6 +59,31 @@
   const ability = $derived(abilities.find((a) => a.name === abilityName));
 
   const sets = $derived(setsFor(dataset, [weapon, ability]));
+
+  // Weapon enchantments first, then the stat ones, each by name.
+  const fitting = $derived(
+    enchantmentsFor(dataset, weapon).sort(
+      (a, b) =>
+        Number(b.compatible.includes("WEAPON")) - Number(a.compatible.includes("WEAPON")) ||
+        a.name.localeCompare(b.name),
+    ),
+  );
+  const slots = [0, 1, 2, 3];
+  function pickEnchantment(slot: number, id: string) {
+    const next = slots.map((i) => (i === slot ? id : (enchantments[i] ?? "")));
+    enchantments = next.filter((x) => x !== "");
+  }
+  // An option is off when it clashes with what the other slots hold.
+  function blocked(slot: number, id: string): boolean {
+    const e = fitting.find((x) => x.id === id);
+    return enchantments.some((other, i) => {
+      const o = fitting.find((x) => x.id === other);
+      return i !== slot && o !== undefined && e !== undefined && (o.id === e.id || clash(o, e));
+    });
+  }
+  const enchantmentSummary = $derived(
+    enchantmentStats.map((b) => `${b.amount > 0 ? "+" : ""}${b.amount} ${statNames[b.stat] ?? b.stat}`).join(", "),
+  );
   const gear = $derived(
     gearFor(
       weapon,
@@ -175,6 +207,35 @@
       </label>
     {/if}
   </fieldset>
+
+  {#if fitting.length}
+    <fieldset>
+      <legend>Enchantments on the weapon</legend>
+      {#each slots as slot (slot)}
+        {#if slot <= enchantments.length}
+          <label>
+            Slot {slot + 1}
+            <select value={enchantments[slot] ?? ""} onchange={(e) => pickEnchantment(slot, e.currentTarget.value)}>
+              <option value="">None</option>
+              <optgroup label="Weapon">
+                {#each fitting.filter((e) => e.compatible.includes("WEAPON")) as e (e.id)}
+                  <option value={e.id} disabled={blocked(slot, e.id)} title={e.description}>{e.name}</option>
+                {/each}
+              </optgroup>
+              <optgroup label="Stats">
+                {#each fitting.filter((e) => !e.compatible.includes("WEAPON")) as e (e.id)}
+                  <option value={e.id} disabled={blocked(slot, e.id)} title={e.description}>{e.name}</option>
+                {/each}
+              </optgroup>
+            </select>
+          </label>
+        {/if}
+      {/each}
+      {#if enchantmentSummary}
+        <p class="hint">Stat enchantments add {enchantmentSummary}.</p>
+      {/if}
+    </fieldset>
+  {/if}
 
   {#if gear.length}
     <fieldset>

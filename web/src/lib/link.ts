@@ -16,6 +16,7 @@ export interface Build {
   distance: number;
   radius: number;
   wearing: number[];
+  enchantments: string[];
 }
 
 const statusKeys = ["weak", "damaging", "berserk", "dazed"] as const;
@@ -45,6 +46,9 @@ export function toQuery(b: Build): string {
   }
   if (b.wearing.length) {
     q.set("wear", b.wearing.join(","));
+  }
+  if (b.enchantments.length) {
+    q.set("ench", b.enchantments.join(","));
   }
   return q.toString();
 }
@@ -83,5 +87,6 @@ export function fromQuery(query: string, dataset: Dataset): Build | null {
     distance: number("dist", 4),
     radius: number("size", 0.5),
     wearing: [...flags("wear")].map(Number).filter((n) => Number.isInteger(n) && n > 0),
+    enchantments: [...flags("ench")].filter((id) => dataset.enchantments?.some((e) => e.id === id)),
   };
 }
