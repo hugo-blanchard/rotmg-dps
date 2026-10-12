@@ -7,6 +7,7 @@
   import type {
     Engine,
     EstimateResponse,
+    ExplainResponse,
     EvaluateRequest,
     OptimizeOptions,
     OptimizeProgress,
@@ -61,8 +62,11 @@
   let startedAt = 0;
   let now = $state(0);
   let estimate = $state<EstimateResponse | null>(null);
-  // The result whose details are open.
+  // The result whose details are open, and its explanation.
   let opened = $state<number | null>(null);
+  let explained = $state<ExplainResponse | null>(null);
+  // The options of the search whose builds are shown, to explain them by.
+  let searched: OptimizeOptions | null = null;
   const enchantmentName = (id: string) => (dataset.enchantments ?? []).find((e) => e.id === id)?.name ?? id;
   // The build before the last one taken, for undo.
   let previous = $state<{ items: Record<Slot, string>; enchants: Record<Slot, string[]> } | null>(null);
@@ -120,6 +124,8 @@
     progress = null;
     stopped = false;
     rankedBy = { balance, burst: goal === "burst" };
+    searched = options();
+    opened = null;
     startedAt = now = performance.now();
     const ticking = setInterval(() => (now = performance.now()), 500);
     const res = await engine.optimize({ ...$state.snapshot(request), optimize: options() }, (p) => (progress = p));
@@ -127,6 +133,35 @@
     found = res ?? asResponse(progress);
     searching = false;
   }
+
+  async function details(i: number, b: OptimizedBuild) {
+    opened = opened === i ? null : i;
+    explained = null;
+    if (opened === null || !engine) return;
+    const res = await engine.explainBuild({
+      ...$state.snapshot(request),
+      weapon: b.weapon,
+      ability: b.ability || undefined,
+      armor: b.armor || undefined,
+      ring: b.ring || undefined,
+      enchantments: b.enchantments.weapon,
+      gearEnchantments: { ability: b.enchantments.ability, armor: b.enchantments.armor, ring: b.enchantments.ring },
+      optimize: searched ?? options(),
+    });
+    if (opened === i) explained = res;
+  }
+
+  // A loss without a piece, in the units of the search.
+  const without = (n: number | null | undefined) =>
+    n === null || n === undefined ? "" : ` (${signed(-n)}${scoreUnit || " DPS"} without it)`;
+  const statWorth = (e: ExplainResponse) =>
+    e.ok
+      ? e.stats
+          .filter((s) => Math.abs(s.perPoint) >= 0.05)
+          .sort((a, b) => b.perPoint - a.perPoint)
+          .map((s) => `${s.stat} ${s.perPoint > 0 ? "+" : ""}${tenths.format(s.perPoint)}`)
+          .join(", ")
+      : "";
 
   function stop() {
     stopped = true;
@@ -330,7 +365,7 @@
               </div>
               <div class="actions">
                 <button type="button" onclick={() => take(b)}>Use</button>
-                <button type="button" aria-expanded={opened === i} onclick={() => (opened = opened === i ? null : i)}>
+                <button type="button" aria-expanded={opened === i} onclick={() => details(i, b)}>
                   Details
                 </button>
               </div>
@@ -338,16 +373,35 @@
                 <ul class="details">
                   {#each slots as slot (slot)}
                     {@const item = b[slot] ? itemsFor(dataset, cls, slot).find((x) => x.name === b[slot]) : undefined}
+                    {@const e = explained?.ok ? explained : null}
                     {#if item}
                       <li>
-                        <strong>{item.name}</strong>{#if statSummary(item)}: {statSummary(item)}{/if}
-                        {#if b.enchantments[slot].length}
-                          <span>Enchantments: {b.enchantments[slot].map(enchantmentName).join(", ")}</span>
-                        {/if}
+                        <strong>{item.name}</strong>{#if statSummary(item)}: {statSummary(item)}{/if}{#if slot !== "weapon"}{without(
+                            e?.items[slot],
+                          )}{/if}
+                        {#each b.enchantments[slot] as id, k (k)}
+                          <span>{enchantmentName(id)}{without(e?.enchantments[slot][k])}</span>
+                        {/each}
                         {#each itemEffects(item) as line, k (k)}<span class="effect">{line}</span>{/each}
                       </li>
                     {/if}
                   {/each}
+                  {#if explained?.ok}
+                    {#if statWorth(explained)}
+                      <li>Each point of a stat adds: {statWorth(explained)}</li>
+                    {/if}
+                    {#if explained.burst && explained.burst.windowCasts > 0}
+                      {@const w = explained.burst}
+                      <li>
+                        {tenths.format(w.casts)} casts per window: the cooldown and a full MP pool fit {w.windowCasts} in
+                        it{#if w.paidCasts >= 0}, and the MP regenerated between windows pays for {tenths.format(
+                            w.paidCasts,
+                          )}{/if}.
+                      </li>
+                    {/if}
+                  {:else if explained && !explained.ok}
+                    <li role="alert">{explained.error}</li>
+                  {/if}
                 </ul>
               {/if}
             </li>
@@ -473,7 +527,7 @@
     display: grid;
     gap: 0.4rem;
   }
-  .builds li {
+  .builds > li {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 0.5rem;
@@ -497,6 +551,9 @@
     gap: 0.35rem;
     font-size: 0.78rem;
     color: var(--text-2);
+  }
+  .details li {
+    display: block;
   }
   .details strong {
     color: var(--text);

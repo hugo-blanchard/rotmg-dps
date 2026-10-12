@@ -305,6 +305,10 @@ export interface Burst extends BurstWindow {
   abilityDamage: number;
   /** On average over many windows. */
   casts: number;
+  /** How many fit in the window from a full pool of MP, as the cooldown allows. */
+  windowCasts: number;
+  /** How many the MP regenerated between windows pays for; -1 for an ability that costs none. */
+  paidCasts: number;
   assumptions: string[];
 }
 
@@ -340,6 +344,19 @@ export interface Choice {
 /** The build's DPS and each choice's, null for one the engine rejects; see Api::EvaluateChoices. */
 export type ChoicesResponse = { ok: true; dps: number; options: (number | null)[] } | { ok: false; error: string };
 
+/** What each piece and stat point adds to a build, in the units a search ranks by; see Api::ExplainBuild. */
+export type ExplainResponse =
+  | {
+      ok: true;
+      score: number;
+      /** What the score loses without each item but the weapon; null when it can't be worked out. */
+      items: Partial<Record<"ability" | "armor" | "ring", number | null>>;
+      enchantments: Record<"weapon" | "ability" | "armor" | "ring", (number | null)[]>;
+      stats: { stat: string; perPoint: number }[];
+      burst?: Burst;
+    }
+  | { ok: false; error: string };
+
 /** Roughly how long a search would take here; see Api::EstimateOptimize. */
 export type EstimateResponse =
   | { ok: true; evaluationS: number; evaluations: [number, number]; seconds: [number, number] }
@@ -365,7 +382,8 @@ type Message =
   | { kind: "simMany"; request: string }
   | { kind: "optimize"; request: string }
   | { kind: "estimate"; request: string }
-  | { kind: "choices"; request: string };
+  | { kind: "choices"; request: string }
+  | { kind: "explain"; request: string };
 
 export type WorkerRequest = Message & { id: number };
 
@@ -444,6 +462,15 @@ export class Engine {
       return { ok: false, error: res.error };
     }
     return JSON.parse(res.result!) as EvaluateResponse;
+  }
+
+  /** What each piece and stat point adds to the request's build; see Api::ExplainBuild. */
+  async explainBuild(request: EvaluateRequest & { optimize: OptimizeOptions }): Promise<ExplainResponse> {
+    const res = await this.send({ kind: "explain", request: JSON.stringify(request) });
+    if (res.error) {
+      return { ok: false, error: res.error };
+    }
+    return JSON.parse(res.result!) as ExplainResponse;
   }
 
   /** The build's DPS with one slot filled each way; see Api::EvaluateChoices. */
