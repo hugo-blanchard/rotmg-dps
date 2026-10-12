@@ -69,7 +69,7 @@ This section is enough to write your own extractor. Values keep the client's uni
 | `abilities` | Abilities, sorted by `type`. Missing from datasets made before abilities were added | the same object XML files |
 | `targets` | Bosses the site offers as targets. Optional | the same object XML files |
 | `sets` | Equipment sets with a weapon or ability in the dataset, sorted by `type`. Optional | `equipmentsets.xml` |
-| `enchantments` | Enchantments that fit at least one weapon in the dataset, sorted by `type`. Optional | `enchantments.xml` |
+| `enchantments` | Enchantments that fit at least one weapon in the dataset, or any ring, armor or ability, sorted by `type`. Optional | `enchantments.xml` |
 
 ### Classes
 
@@ -173,7 +173,7 @@ Each `<EquipmentSet>` lists its pieces with `<Setpiece slot itemtype>`, where sl
 
 ### Enchantments
 
-An enchantment fits an item that has every label in `compatible` and none in `incompatible`, and isn't named in `incompatibleItems`. Two enchantments can't share an item when one's `incompatibleLabels` includes one of the other's `labels`. An item holds up to 4.
+An enchantment fits an item that has every label in `compatible` and none in `incompatible`, and isn't named in `incompatibleItems`. It fits any ring, armor or ability when `compatible` only asks for `EQUIPMENT` and `RING`, `ARMOR` or `ABILITY`, and `incompatible` rules out neither. Two enchantments can't share an item when one's `incompatibleLabels` includes one of the other's `labels`. An item holds up to 4.
 
 | Field | Client source |
 |---|---|
