@@ -133,6 +133,30 @@
   });
   let latest = 0;
 
+  // On a phone the numbers sit below the whole build, so a bar at the
+  // bottom carries the DPS while they're out of sight.
+  let resultsEl = $state<HTMLElement | null>(null);
+  let resultsInView = $state(true);
+  // Checked again when the page changes height, as when sprites load.
+  $effect(() => {
+    const el = resultsEl;
+    if (!el) return;
+    const check = () => {
+      const r = el.getBoundingClientRect();
+      resultsInView = r.top < innerHeight && r.bottom > 0;
+    };
+    check();
+    const resized = new ResizeObserver(check);
+    resized.observe(document.body);
+    addEventListener("scroll", check, { passive: true });
+    addEventListener("resize", check);
+    return () => {
+      resized.disconnect();
+      removeEventListener("scroll", check);
+      removeEventListener("resize", check);
+    };
+  });
+
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
 
   // "3 days ago (Oct 8, 2026)", from the status.json of the deployed dataset.
@@ -222,6 +246,12 @@
   </div>
 </header>
 
+{#if result && !resultsInView}
+  <button type="button" class="peek" onclick={() => resultsEl?.scrollIntoView({ behavior: "smooth" })}>
+    <strong>{whole.format(result.build.dps)} DPS</strong> See the numbers
+  </button>
+{/if}
+
 <main>
   {#if loadError}
     <p role="alert">{loadError}</p>
@@ -244,7 +274,7 @@
       bind:distance
       bind:radius
     />
-    <div class="results">
+    <div class="results" bind:this={resultsEl}>
       <div class="tabs" role="tablist" aria-label="Results">
         <button
           type="button"
@@ -435,6 +465,34 @@
     margin: 0;
     font-size: 0.9rem;
     color: var(--text-2);
+  }
+  .peek {
+    display: none;
+  }
+  @media (max-width: 760px) {
+    .peek {
+      display: flex;
+      gap: 0.6rem;
+      align-items: baseline;
+      position: fixed;
+      left: 50%;
+      bottom: 0.75rem;
+      transform: translateX(-50%);
+      z-index: 10;
+      padding: 0.5rem 1rem;
+      border: 1px solid var(--accent);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--text-2);
+      font: inherit;
+      font-size: 0.9rem;
+      box-shadow: 0 2px 10px rgb(0 0 0 / 0.35);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .peek strong {
+      color: var(--text);
+    }
   }
   footer {
     margin-top: 3rem;
