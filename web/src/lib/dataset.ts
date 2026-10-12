@@ -25,7 +25,16 @@ export interface DatasetClass {
   wisdom?: StatRange;
 }
 
-export interface DatasetAbility {
+// How an item takes enchantments, and the item it's a reskin of. Missing
+// from older datasets.
+interface ItemRules {
+  enchantmentSlots?: number;
+  enchantmentPool?: string;
+  /** The item this one plays exactly like, when it's a reskin of it. */
+  reskinOf?: string;
+}
+
+export interface DatasetAbility extends ItemRules {
   type: number;
   id: string;
   name: string;
@@ -38,7 +47,7 @@ export interface DatasetAbility {
   labels?: undefined;
 }
 
-export interface DatasetWeapon {
+export interface DatasetWeapon extends ItemRules {
   type: number;
   id: string;
   name: string;
@@ -54,7 +63,7 @@ export interface DatasetWeapon {
 }
 
 // An armor or a ring.
-export interface DatasetGear {
+export interface DatasetGear extends ItemRules {
   type: number;
   id: string;
   name: string;

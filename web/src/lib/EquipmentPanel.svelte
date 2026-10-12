@@ -80,6 +80,7 @@
     { key: "tiered", label: "Tiered" },
     { key: "untiered", label: "Untiered" },
     { key: "set", label: "Set pieces" },
+    { key: "reskin", label: "Reskins" },
   ];
 
   interface PickerSetup {
@@ -102,19 +103,28 @@
     const slot = picking.slot;
     if (picking.kind === "item") {
       const none: PickerOption[] = slot === "weapon" ? [] : [{ key: "", name: `No ${slotNames[slot].toLowerCase()}` }];
+      // Reskins play exactly like another item, so they go last, under
+      // their own heading.
+      const option = (i: Item): PickerOption => ({
+        key: i.name,
+        name: i.name,
+        icon: itemIcon(sprites, i.type),
+        detail: i.reskinOf ? `Reskin of ${i.reskinOf}` : describe(i),
+        group: i.reskinOf ? "Reskins" : undefined,
+        tags: [
+          i.tier !== undefined ? "tiered" : "untiered",
+          ...(setTypes.has(i.type) ? ["set"] : []),
+          ...(i.reskinOf ? ["reskin"] : []),
+        ],
+      });
       return {
         title: slotNames[slot],
         selected: items[slot],
         filters: itemFilters,
         options: [
           ...none,
-          ...choices[slot].map((i) => ({
-            key: i.name,
-            name: i.name,
-            icon: itemIcon(sprites, i.type),
-            detail: describe(i),
-            tags: [i.tier !== undefined ? "tiered" : "untiered", ...(setTypes.has(i.type) ? ["set"] : [])],
-          })),
+          ...choices[slot].filter((i) => !i.reskinOf).map(option),
+          ...choices[slot].filter((i) => i.reskinOf).map(option),
         ],
       };
     }
