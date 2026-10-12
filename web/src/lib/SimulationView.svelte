@@ -31,6 +31,7 @@
     onpin,
     onunpin,
     expectedUptimes = [],
+    unmodelled = false,
   }: {
     engine: Engine;
     request: EvaluateRequest;
@@ -56,6 +57,8 @@
     onunpin: () => void;
     /** The share of the time the build's buffs and debuffs are up, as evaluated. */
     expectedUptimes?: { effect: string; on: "player" | "target"; share: number }[];
+    /** Whether the build has effects the engine doesn't model. */
+    unmodelled?: boolean;
   } = $props();
 
   const height = 360;
@@ -544,6 +547,7 @@
     The engine fires the weapon in real time, using the same motion as the hit estimate, and casts the ability at the
     aimed dummy whenever MP allows. With one dummy the weapon's numbers settle on the ones above; with more, shots that
     don't pierce stop at the first dummy in their way, and spells, poisons and lightning reach every dummy in range.
+    {#if unmodelled}What's listed above as not modelled yet is left out here too.{/if}
   </p>
   <div class="controls">
     <label>

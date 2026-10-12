@@ -336,6 +336,7 @@
             bind:options={simOptions}
             {pinned}
             expectedUptimes={result.build?.uptimes ?? []}
+            unmodelled={result.breakdown.unsupported.length + (result.ability?.unsupported.length ?? 0) > 0}
             onpin={pin}
             onunpin={() => (pinned = null)}
           />
