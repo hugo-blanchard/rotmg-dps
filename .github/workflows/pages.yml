@@ -1,8 +1,11 @@
 name: pages
 
 # Builds the engine and the web app, adds the newest dataset release, and
-# deploys the site. A data release from the pipeline triggers it too. Run it
-# by hand with an older data-* tag to roll the data back.
+# deploys the site to Cloudflare as a Worker that serves its files, set up
+# in web/wrangler.jsonc. A data release from the pipeline
+# triggers it too. Run it by hand with an older data-* tag to roll the data
+# back. Needs the CLOUDFLARE_API_TOKEN secret; wrangler finds the account
+# from the token.
 on:
   push:
     branches: [main]
@@ -17,8 +20,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -68,16 +69,11 @@ jobs:
         run: |
           npm ci
           npm run build
-      - uses: actions/upload-pages-artifact@v4
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
         with:
-          path: web/dist
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          wranglerVersion: "4.149.0"
+          workingDirectory: web
+          command: deploy
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4

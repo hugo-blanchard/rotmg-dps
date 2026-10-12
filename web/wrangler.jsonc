@@ -1,0 +1,7 @@
+// Deploys the built site as a Cloudflare Worker that only serves its
+// files. public/_headers sets the headers the optimizer's threads need.
+{
+  "name": "rotmg-dps",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./dist" }
+}
