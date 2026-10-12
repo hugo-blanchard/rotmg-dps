@@ -19,5 +19,7 @@
   { "weapon": "Burst Bow", "ability": "Toxic Vial", "attack": 70, "dexterity": 70, "wisdom": 64,
     "target": { "defense": 60, "cursed": true } },
   { "weapon": "Proc Wand", "ability": "Curse Orb", "attack": 40, "dexterity": 60, "wisdom": 73 },
+  { "weapon": "Plain Sword", "ability": "War Helm", "attack": 50, "dexterity": 50, "wearing": [28689, 28690] },
+  { "weapon": "Venom Katana", "attack": 50, "dexterity": 50, "target": { "defense": 30, "cursed": true } },
   { "weapon": "No Such Weapon" }
 ]

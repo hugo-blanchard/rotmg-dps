@@ -9,6 +9,7 @@
 #include "rotmg/dataset.hpp"
 #include "rotmg/evaluate.hpp"
 #include "rotmg/hits.hpp"
+#include "rotmg/sets.hpp"
 
 // Request:
 //   {"weapon": "Doom Bow", "ability": "Magic Quiver",
@@ -16,18 +17,22 @@
 //    "defense": 25, "speed": 50, "maxHitPoints": 700, "maxMagicPoints": 300,
 //    "status": {"weak", "damaging", "berserk", "dazed"},
 //    "target": {"defense", "armored", "armorBroken", "exposed", "cursed"},
+//    "wearing": [14381, 14382],
 //    "hitsPerVolley": [null, 1.5], "curatedHitsPerVolley": [2, null],
 //    "hitModel": {"distance": 4, "radius": 0.5},
 //    "curve": {"from": 0, "to": 150, "step": 5},
 //    "hitCurve": {"from": 0.5, "to": 10, "step": 0.25}}
-// Only "weapon" is required. "curve" adds the build's DPS at each DEF in
-// the range, with everything else in the request unchanged. "hitCurve"
-// adds the geometric estimate's total hits per volley at each distance.
+// Only "weapon" is required. "wearing" lists the item types of other set
+// pieces worn, like armor and a ring. "curve" adds the build's DPS at each
+// DEF in the range, with everything else in the request unchanged.
+// "hitCurve" adds the geometric estimate's total hits per volley at each
+// distance.
 //
 // Response:
 //   {"ok": true, "breakdown": {...the weapon on its own...},
 //    "build": {"dps", "weaponDps", "uptimes": [...], "assumptions": [...]},
-//    "ability": {...}, "curve": [{"defense", "dps"}],
+//    "ability": {...}, "sets": [{"type", "name", "pieces", "stats", "unsupported"}],
+//    "curve": [{"defense", "dps"}],
 //    "hitCurve": [{"distance", "hits"}], "hitModelGaps": ["..."]}
 // "ability" is only there when the request names one.
 //   {"ok": false, "error": "..."}
@@ -139,6 +144,7 @@ struct Request {
   Character character;
   Target target;
   Assumptions assumptions;
+  std::vector<WornSet> sets;
 };
 
 // Reads the parts of a request Evaluate and StartSimulation share. Throws on
@@ -184,7 +190,32 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
     r.assumptions.distance = it->value("distance", 4.0);
     r.assumptions.target_radius = it->value("radius", kDefaultTargetRadius);
   }
+  // Set bonuses count the weapon and ability plus the other pieces worn,
+  // and add to the character like gear does.
+  std::vector<int> worn = req.value("wearing", std::vector<int>{});
+  if (r.weapon) {
+    worn.push_back(r.weapon->type);
+  }
+  if (r.ability) {
+    worn.push_back(r.ability->type);
+  }
+  r.sets = WornSets(dataset, worn);
+  for (const WornSet& s : r.sets) {
+    r.character = r.character.With(s.stats);
+  }
   return r;
+}
+
+json ToJson(const WornSet& s) {
+  json stats = json::array();
+  for (const StatBonus& b : s.stats) {
+    stats.push_back({{"stat", b.stat}, {"amount", b.amount}});
+  }
+  return {{"type", s.set->type},
+          {"name", s.set->name},
+          {"pieces", s.pieces},
+          {"stats", stats},
+          {"unsupported", s.set->unsupported}};
 }
 
 json ToJson(const Simulation::Counters& c) {
@@ -214,7 +245,8 @@ std::string Api::Evaluate(std::string_view request_json) const {
   }
   try {
     const json req = json::parse(request_json);
-    const auto [weapon, ability, unknown_ability, character, target, assumptions] = ParseRequest(req, *dataset_);
+    const Request r = ParseRequest(req, *dataset_);
+    const auto& [weapon, ability, unknown_ability, character, target, assumptions, sets] = r;
     if (weapon == nullptr) {
       return Error("no weapon named \"" + req.at("weapon").get<std::string>() + "\"").dump();
     }
@@ -226,6 +258,10 @@ std::string Api::Evaluate(std::string_view request_json) const {
     json res = {{"ok", true}, {"breakdown", ToJson(build.weapon)}, {"build", ToJson(build)}};
     if (build.ability) {
       res["ability"] = ToJson(*build.ability);
+    }
+    res["sets"] = json::array();
+    for (const WornSet& s : sets) {
+      res["sets"].push_back(ToJson(s));
     }
     if (auto it = req.find("curve"); it != req.end()) {
       const int from = it->value("from", 0);

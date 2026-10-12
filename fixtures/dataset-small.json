@@ -280,6 +280,23 @@
       ]
     }
   ],
+  "sets": [
+    {
+      "type": 28688,
+      "name": "Swordsman Set",
+      "pieces": [
+        { "slot": 0, "itemType": 4097, "name": "Plain Sword" },
+        { "slot": 1, "itemType": 20482, "name": "War Helm" },
+        { "slot": 2, "itemType": 28689, "name": "Plain Mail" },
+        { "slot": 3, "itemType": 28690, "name": "Plain Ring" }
+      ],
+      "bonuses": [
+        { "pieces": 2, "stats": [ { "stat": "ATT", "amount": 5 } ] },
+        { "pieces": 3, "stats": [ { "stat": "ATT", "amount": 5 } ] },
+        { "pieces": 4, "stats": [ { "stat": "ATT", "amount": 10 }, { "stat": "DEX", "amount": 4 } ] }
+      ]
+    }
+  ],
   "abilities": [
     {
       "type": 20481,

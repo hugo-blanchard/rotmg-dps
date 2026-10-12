@@ -138,12 +138,33 @@ struct Ability {
   Weapon AsWeapon() const;
 };
 
+/// An equipment set. Slots are 0 weapon, 1 ability, 2 armor, 3 ring; a slot
+/// can accept several items.
+struct EquipmentSet {
+  struct Piece {
+    int slot = 0;
+    int item_type = 0;
+    std::string name;
+  };
+  /// Stats added once this many slots hold a piece. Bonuses add up.
+  struct Bonus {
+    int pieces = 0;
+    std::vector<StatBonus> stats;
+  };
+  int type = 0;
+  std::string name;
+  std::vector<Piece> pieces;
+  std::vector<Bonus> bonuses;
+  std::vector<std::string> unsupported;
+};
+
 struct Dataset {
   int schema_version = 0;
   std::string build;
   std::vector<Class> classes;
   std::vector<Weapon> weapons;
   std::vector<Ability> abilities;
+  std::vector<EquipmentSet> sets;
 };
 
 }  // namespace rotmg

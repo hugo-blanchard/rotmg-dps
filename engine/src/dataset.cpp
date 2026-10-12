@@ -162,6 +162,22 @@ Ability ReadAbility(const json& j) {
   return a;
 }
 
+EquipmentSet ReadSet(const json& j) {
+  EquipmentSet s;
+  j.at("type").get_to(s.type);
+  j.at("name").get_to(s.name);
+  for (const json& p : j.at("pieces")) {
+    s.pieces.push_back({p.at("slot").get<int>(), p.at("itemType").get<int>(), p.value("name", "")});
+  }
+  if (auto it = j.find("bonuses"); it != j.end()) {
+    for (const json& b : *it) {
+      s.bonuses.push_back({b.at("pieces").get<int>(), ReadStatBonuses({{"statBonuses", b.at("stats")}})});
+    }
+  }
+  ReadDefault(j, "unsupported", s.unsupported);
+  return s;
+}
+
 Weapon ReadWeapon(const json& j) {
   Weapon w;
   j.at("type").get_to(w.type);
@@ -220,6 +236,11 @@ Dataset ParseDataset(std::string_view text) {
     if (auto it = j.find("abilities"); it != j.end()) {
       for (const json& a : *it) {
         d.abilities.push_back(ReadAbility(a));
+      }
+    }
+    if (auto it = j.find("sets"); it != j.end()) {
+      for (const json& s : *it) {
+        d.sets.push_back(ReadSet(s));
       }
     }
     return d;

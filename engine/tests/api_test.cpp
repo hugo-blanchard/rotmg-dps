@@ -114,3 +114,40 @@ TEST_CASE("evaluates a build with an ability") {
   CHECK(json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "ability": "Nope"})"))["error"] ==
         "no ability named \"Nope\"");
 }
+
+TEST_CASE("adds set bonuses for the pieces worn") {
+  // Swordsman Set: +5 ATT at 2 pieces, +5 at 3, +10 ATT and +4 DEX at 4.
+  const rotmg::Api api = LoadedApi();
+  const auto attack = [&](const char* request) {
+    const json res = json::parse(api.Evaluate(request));
+    REQUIRE(res["ok"] == true);
+    for (const json& t : res["breakdown"]["terms"]) {
+      if (t["name"] == "ATT with weapon") {
+        return std::pair{t["value"].get<double>(), res["sets"]};
+      }
+    }
+    FAIL("no ATT term");
+    return std::pair{0.0, json()};
+  };
+  const auto [alone, alone_sets] = attack(R"({"weapon": "Plain Sword", "attack": 50})");
+  CHECK(alone == 50);
+  REQUIRE(alone_sets.size() == 1);
+  CHECK(alone_sets[0]["pieces"] == 1);
+  CHECK(alone_sets[0]["stats"].empty());
+
+  const auto [pair, pair_sets] = attack(R"({"weapon": "Plain Sword", "ability": "War Helm", "attack": 50})");
+  CHECK(pair == 55);
+  CHECK(pair_sets[0]["pieces"] == 2);
+
+  const auto [full, full_sets] =
+      attack(R"({"weapon": "Plain Sword", "ability": "War Helm", "attack": 50, "wearing": [28689, 28690]})");
+  CHECK(full == 70);
+  CHECK(full_sets[0]["name"] == "Swordsman Set");
+  CHECK(full_sets[0]["pieces"] == 4);
+
+  // A lone piece of a set gives nothing, whatever the weapon.
+  const auto [other, other_sets] = attack(R"({"weapon": "Burst Bow", "attack": 50, "wearing": [28689]})");
+  CHECK(other == 50);
+  REQUIRE(other_sets.size() == 1);
+  CHECK(other_sets[0]["pieces"] == 1);
+}
