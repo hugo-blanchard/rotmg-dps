@@ -31,7 +31,9 @@
   import { fromQuery, toQuery } from "./lib/link";
   import { loadSprites, type Sprites } from "./lib/sprites";
 
-  let dataset = $state<Dataset | null>(null);
+  // Never changed once loaded, so it needs no deep reactivity, which made
+  // reading it slow.
+  let dataset = $state.raw<Dataset | null>(null);
   let dataStatus = $state<DatasetStatus | null>(null);
   let engine = $state<Engine | null>(null);
   let loadError = $state("");
