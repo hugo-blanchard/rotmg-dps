@@ -69,6 +69,7 @@ This section is enough to write your own extractor. Values keep the client's uni
 | `abilities` | Abilities, sorted by `type`. Missing from datasets made before abilities were added | the same object XML files |
 | `targets` | Bosses the site offers as targets. Optional | the same object XML files |
 | `sets` | Equipment sets with a weapon or ability in the dataset, sorted by `type`. Optional | `equipmentsets.xml` |
+| `enchantments` | Enchantments that fit at least one weapon in the dataset, sorted by `type`. Optional | `enchantments.xml` |
 
 ### Classes
 
@@ -101,6 +102,7 @@ Many weapons have Shiny or Retro reskins with the same `<DisplayId>`. A reskin w
 | `onShoot` | one `{"type", "params"}` per `<OnPlayerShootActivate>`, read like an ability's `activates` (below) |
 | `createdProjectiles` | as for abilities (below): the projectiles on-shoot effects name by `type` |
 | `gear` | `{"itemType", "name", "slotType"}` for each item an on-shoot effect's `mustWear` names; `mustWear` items must all be worn |
+| `labels` | `<Labels>`, split on commas. Enchantments match against them |
 | `unsupported` | names of tags on the item that can change its damage but aren't modelled yet, e.g. `OnEnemyHitActivate` or `TurnRate` |
 
 ### Projectiles
@@ -168,6 +170,17 @@ Each `<EquipmentSet>` lists its pieces with `<Setpiece slot itemtype>`, where sl
 | `pieces` | `{"slot", "itemType", "name"}` per `<Setpiece>`; `name` is that item's `<DisplayId>` or `id`, empty if the client has no such item |
 | `bonuses` | `{"pieces", "stats"}`: `stats` are `{"stat", "amount"}` from `<ActivateOnEquip2>`, `<ActivateOnEquip3>` and `<ActivateOnEquipAll>` `IncrementStat` elements, at 2, 3 and the set's number of slots |
 | `unsupported` | other set effects, which aren't modelled. `ChangeSkin` only changes looks and is left out |
+
+### Enchantments
+
+An enchantment fits an item that has every label in `compatible` and none in `incompatible`, and isn't named in `incompatibleItems`. Two enchantments can't share an item when one's `incompatibleLabels` includes one of the other's `labels`. An item holds up to 4.
+
+| Field | Client source |
+|---|---|
+| `type`, `id`, `name`, `description` | `type` and `id` attributes, `<DisplayId>`, `<Description>` |
+| `compatible`, `incompatible`, `incompatibleItems` | `<CompatibleWithItemLabels>`, `<IncompatibleWithItemLabels>`, `<IncompatibleWithItemIds>`, split on commas |
+| `labels`, `incompatibleLabels` | `<EnchantmentLabels>`, `<IncompatibleWithEnchantmentLabels>` |
+| `mutators` | `{"tag", "value", "params"}` per element under `<Mutators>`: its name, its text (a number like `1.05` or a kind like `IncrementStat`) and its attributes, read like an activate's `params` |
 
 ### Example
 
