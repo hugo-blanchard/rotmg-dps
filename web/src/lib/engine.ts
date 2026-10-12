@@ -1,6 +1,8 @@
 // Runs the WebAssembly engine in a Web Worker so evaluating never blocks the
 // page. Request and response shapes mirror engine/src/api.cpp.
 
+import type { Scenario } from "./scenario";
+
 export interface PlayerStatus {
   weak: boolean;
   damaging: boolean;
@@ -43,6 +45,8 @@ export interface EvaluateRequest {
   gearEnchantments?: GearEnchantments;
   /** Class id, which relative enchantments measure bonus stats against. */
   class?: string;
+  /** Where the simulation's targets stand; one ahead at the hit model's distance without it. */
+  scenario?: Scenario;
   hitsPerVolley?: (number | null)[];
   curatedHitsPerVolley?: (number | null)[];
   hitModel?: { distance: number; radius: number };
@@ -168,11 +172,24 @@ export interface SimCounters {
   resolvedHits: number;
 }
 
+export interface SimTarget {
+  x: number;
+  y: number;
+  radius: number;
+  defense: number;
+  hits: number;
+  damage: number;
+}
+
 export type SimState =
   | {
       ok: true;
       timeMs: number;
+      player: { x: number; y: number };
+      /** Index of the target the player aims at. */
+      aim: number;
       target: { x: number; y: number; radius: number };
+      targets: SimTarget[];
       shots: SimShot[];
       totals: SimCounters;
       perSubattack: SimCounters[];

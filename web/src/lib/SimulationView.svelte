@@ -2,6 +2,7 @@
   import { onDestroy } from "svelte";
   import type { DatasetWeapon } from "./dataset";
   import type { Engine, EvaluateRequest, SimState } from "./engine";
+  import { layOut, placements, type Placement } from "./scenario";
   import type { Rect, Sprites } from "./sprites";
 
   let {
@@ -35,17 +36,24 @@
   let sim = $state<SimState | null>(null);
   let error = $state("");
 
+  let placement = $state<Placement>("single");
+  let count = $state(5);
+  let spacing = $state(1.5);
+  const scenario = $derived(
+    layOut({ placement, count, spacing }, request.hitModel?.distance ?? 4, request.hitModel?.radius ?? 0.5),
+  );
+
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
   const fine = new Intl.NumberFormat("en", { maximumFractionDigits: 2 });
 
-  // Restart whenever the build, the target or the distance changes.
+  // Restart whenever the build, the targets or the distance changes.
   $effect(() => {
-    const r = $state.snapshot(request);
+    const r = { ...$state.snapshot(request), scenario: $state.snapshot(scenario) };
     engine.startSimulation(r).then((e) => {
       error = e;
       sim = null;
-      flashUntil = 0;
-      lastHits = 0;
+      flashUntil = [];
+      lastHits = [];
       trails?.getContext("2d")?.clearRect(0, 0, trails.width, trails.height);
     });
   });
@@ -53,8 +61,9 @@
   let frame = 0;
   let last = 0;
   let pending = false;
-  let flashUntil = 0;
-  let lastHits = 0;
+  // Per target: when its hit flash ends, and its hits last frame.
+  let flashUntil: number[] = [];
+  let lastHits: number[] = [];
   let lastVolleyMs = -1000;
 
   async function advance(ms: number) {
@@ -66,13 +75,15 @@
       error = next.error;
       return;
     }
-    if (next.totals.hits > lastHits) {
-      flashUntil = performance.now() + 120;
-    }
+    next.targets.forEach((t, i) => {
+      if (t.hits > (lastHits[i] ?? 0)) {
+        flashUntil[i] = performance.now() + 120;
+      }
+    });
     if (sim?.ok && next.totals.volleys > sim.totals.volleys) {
       lastVolleyMs = next.timeMs;
     }
-    lastHits = next.totals.hits;
+    lastHits = next.targets.map((t) => t.hits);
     sim = next;
     draw();
   }
@@ -113,20 +124,26 @@
 
     const styles = getComputedStyle(canvas!);
     const color = (name: string) => styles.getPropertyValue(name).trim();
-    const { target } = sim;
+    const { player, targets, aim } = sim;
 
-    // Fit the player, the target and a tile of room around both.
-    const tile = Math.max(16, Math.min(64, (height - 40) / (target.y + 2)));
-    const ox = width / 2;
-    const oy = height - 20 - tile;
-    const sx = (x: number) => ox + x * tile;
-    const sy = (y: number) => oy - y * tile;
+    // Fit the player, every target and a tile and a half of room around them.
+    let [minX, maxX, minY, maxY] = [player.x, player.x, player.y, player.y];
+    for (const t of targets) {
+      minX = Math.min(minX, t.x - t.radius);
+      maxX = Math.max(maxX, t.x + t.radius);
+      minY = Math.min(minY, t.y - t.radius);
+      maxY = Math.max(maxY, t.y + t.radius);
+    }
+    const margin = 1.5;
+    const tile = Math.max(8, Math.min(64, width / (maxX - minX + 2 * margin), height / (maxY - minY + 2 * margin)));
+    const sx = (x: number) => width / 2 + (x - (minX + maxX) / 2) * tile;
+    const sy = (y: number) => height / 2 - (y - (minY + maxY) / 2) * tile;
 
     ctx.fillStyle = color("--surface");
     ctx.fillRect(0, 0, width, height);
     ctx.strokeStyle = color("--grid");
     ctx.lineWidth = 1;
-    for (let y = 0; sy(y) > 0; y++) {
+    for (let y = Math.floor(minY - margin * 2); sy(y) > 0; y++) {
       ctx.beginPath();
       ctx.moveTo(0, Math.round(sy(y)) + 0.5);
       ctx.lineTo(width, Math.round(sy(y)) + 0.5);
@@ -165,34 +182,43 @@
       ctx.restore();
     };
 
-    // Target
-    const flashing = performance.now() < flashUntil;
-    if (sprites?.index.target[2]) {
-      blit(sprites.index.target, sx(target.x), sy(target.y), tile);
-    } else {
-      ctx.fillStyle = color("--muted");
-      ctx.beginPath();
-      ctx.arc(sx(target.x), sy(target.y), tile * 0.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    if (showHitbox || flashing) {
-      ctx.strokeStyle = flashing ? color("--accent") : color("--axis");
-      ctx.lineWidth = flashing ? 3 : 1;
-      ctx.beginPath();
-      ctx.arc(sx(target.x), sy(target.y), target.radius * tile, 0, Math.PI * 2);
-      ctx.stroke();
-    }
+    // Targets, sized by their hitbox; the one aimed at gets a marker.
+    targets.forEach((target, i) => {
+      const flashing = performance.now() < (flashUntil[i] ?? 0);
+      const size = tile * 2 * target.radius;
+      if (sprites?.index.target[2]) {
+        blit(sprites.index.target, sx(target.x), sy(target.y), size);
+      } else {
+        ctx.fillStyle = color("--muted");
+        ctx.beginPath();
+        ctx.arc(sx(target.x), sy(target.y), size * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (showHitbox || flashing) {
+        ctx.strokeStyle = flashing ? color("--accent") : color("--axis");
+        ctx.lineWidth = flashing ? 3 : 1;
+        ctx.beginPath();
+        ctx.arc(sx(target.x), sy(target.y), target.radius * tile, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      if (targets.length > 1) {
+        ctx.fillStyle = i === aim ? color("--accent") : color("--text-2");
+        ctx.font = `${Math.max(10, Math.min(14, tile * 0.35))}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.fillText(i === aim ? `${i + 1} (aim)` : String(i + 1), sx(target.x), sy(target.y) - target.radius * tile - 4);
+      }
+    });
 
     // Player, in an attack pose for a moment after each volley.
     const frames = sprites?.index.classes[className];
     if (frames) {
       const attacking = sim.timeMs - lastVolleyMs < 120 && frames.attack.length > 0;
       const rect = attacking ? frames.attack[Math.floor(sim.timeMs / 60) % frames.attack.length] : frames.stand;
-      blit(rect, sx(0), sy(0), tile);
+      blit(rect, sx(player.x), sy(player.y), tile);
     } else {
       ctx.fillStyle = color("--text-2");
       ctx.beginPath();
-      ctx.arc(sx(0), sy(0), tile * 0.35, 0, Math.PI * 2);
+      ctx.arc(sx(player.x), sy(player.y), tile * 0.35, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -223,6 +249,7 @@
 
   const seconds = $derived(sim?.ok ? sim.timeMs / 1000 : 0);
   const measuredDps = $derived(sim?.ok && seconds > 0 ? sim.totals.damage / seconds : 0);
+  const aimDps = $derived(sim?.ok && seconds > 0 ? (sim.targets[sim.aim]?.damage ?? 0) / seconds : 0);
   const measuredHits = $derived(
     sim?.ok
       ? sim.perSubattack.reduce((sum, c) => sum + (c.resolvedVolleys ? c.resolvedHits / c.resolvedVolleys : 0), 0)
@@ -233,9 +260,32 @@
 <section class="sim">
   <h2>Simulation</h2>
   <p class="hint">
-    The engine fires the weapon at the target in real time, using the same motion as the hit estimate. Over time its
-    numbers settle on the weapon's numbers above. The ability isn't simulated.
+    The engine fires the weapon in real time, using the same motion as the hit estimate. With one dummy its numbers
+    settle on the weapon's numbers above; with more, shots that don't pierce stop at the first dummy in their way.
+    The ability isn't simulated.
   </p>
+  <div class="controls">
+    <label>
+      Targets
+      <select bind:value={placement}>
+        {#each placements as p (p.value)}
+          <option value={p.value}>{p.label}</option>
+        {/each}
+      </select>
+    </label>
+    {#if placement !== "single"}
+      <label>
+        {placement === "boss" ? "Adds" : "How many"}
+        <input type="number" min="1" max="20" bind:value={count} />
+      </label>
+      {#if placement !== "ring"}
+        <label>
+          Spacing
+          <input type="number" min="0.2" max="10" step="0.1" bind:value={spacing} />
+        </label>
+      {/if}
+    {/if}
+  </div>
   <div class="controls">
     <button type="button" onclick={() => (playing = !playing)}>{playing ? "Pause" : "Play"}</button>
     <button type="button" onclick={step}>Step</button>
@@ -276,10 +326,42 @@
         <dd>{seconds > 0 ? fine.format(sim.totals.hits / seconds) : "0"}</dd>
       </div>
       <div>
-        <dt>DPS</dt>
-        <dd>{whole.format(measuredDps)} <span>engine {whole.format(expectedDps)}</span></dd>
+        <dt>{sim.targets.length > 1 ? "DPS, all targets" : "DPS"}</dt>
+        <dd>{whole.format(measuredDps)} <span>engine {whole.format(expectedDps)} on one</span></dd>
       </div>
+      {#if sim.targets.length > 1}
+        <div>
+          <dt>DPS on the aim target</dt>
+          <dd>{whole.format(aimDps)}</dd>
+        </div>
+      {/if}
     </dl>
+    {#if sim.targets.length > 1}
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Target</th>
+              <th scope="col">Distance</th>
+              <th scope="col">DEF</th>
+              <th scope="col">Hits</th>
+              <th scope="col">DPS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each sim.targets as t, i (i)}
+              <tr class:aim={i === sim.aim}>
+                <td>{i + 1}{i === sim.aim ? " (aim)" : ""}</td>
+                <td>{fine.format(Math.hypot(t.x - sim.player.x, t.y - sim.player.y))}</td>
+                <td>{t.defense}</td>
+                <td>{t.hits}</td>
+                <td>{whole.format(seconds > 0 ? t.damage / seconds : 0)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
   {/if}
 </section>
 
@@ -328,6 +410,36 @@
   }
   canvas {
     display: block;
+  }
+  input[type="number"] {
+    width: 4.5rem;
+    font: inherit;
+    color: var(--text);
+    background: var(--page);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.2rem 0.4rem;
+  }
+  .table-scroll {
+    overflow-x: auto;
+  }
+  table {
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+  }
+  th,
+  td {
+    text-align: right;
+    padding: 0.2rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  th:first-child,
+  td:first-child {
+    text-align: left;
+  }
+  tr.aim td {
+    color: var(--accent);
   }
   .counters {
     display: grid;
