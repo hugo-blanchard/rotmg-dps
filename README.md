@@ -186,12 +186,13 @@ A short list of current endgame bosses, chosen by hand by object `id`. Most boss
 
 ### Sets
 
-Each `<EquipmentSet>` lists its pieces with `<Setpiece slot itemtype>`, where slot 0 is the weapon, 1 the ability, 2 the armor and 3 the ring. A slot can accept several items: a few "sets" are really one ring that goes with any of many weapons. Bonuses add up, so a full set gets the 2-piece, 3-piece and full-set stats together.
+Each `<EquipmentSet>` lists its pieces with `<Setpiece slot itemtype>`, where slot 0 is the weapon, 1 the ability, 2 the armor and 3 the ring. A slot can accept several items: a few "sets" are really one ring that goes with any of many weapons, and several of those list the same weapons and armors, like the Alien cores. Such a set only counts while its key piece, usually the ring, is worn. Bonuses add up, so a full set gets the 2-piece, 3-piece and full-set stats together.
 
 | Field | Client source |
 |---|---|
 | `type`, `name` | `type` and `id` attributes |
 | `pieces` | `{"slot", "itemType", "name"}` per `<Setpiece>`; `name` is that item's `<DisplayId>` or `id`, empty if the client has no such item |
+| `keyPieces` | the `itemType`s of the pieces whose own `<Object>` has a `setType` attribute naming this set. When there are any, the set only counts while one of them is worn. Missing from older datasets |
 | `bonuses` | `{"pieces", "stats"}`: `stats` are `{"stat", "amount"}` from `<ActivateOnEquip2>`, `<ActivateOnEquip3>` and `<ActivateOnEquipAll>` `IncrementStat` elements, at 2, 3 and the set's number of slots |
 | `unsupported` | other set effects, which aren't modelled. `ChangeSkin` only changes looks and is left out |
 
