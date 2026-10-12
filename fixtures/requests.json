@@ -26,5 +26,7 @@
   { "weapon": "Plain Sword", "enchantments": ["Attack_Bonus_1", "Dexterity_Bonus_2"] },
   { "weapon": "Plain Sword", "class": "Swordsman", "attack": 95, "dexterity": 60,
     "enchantments": ["Relative_Attack_Bonus_4", "Dexterity_To_Attack_Bonus_3", "OnShoot_Attack_Bonus_4"] },
+  { "weapon": "Plain Sword", "ability": "Plain Spell", "class": "Swordsman", "attack": 90, "wisdom": 55,
+    "gearEnchantments": { "ring": ["Relative_Attack_Bonus_4", "OnShoot_Attack_Bonus_4"], "ability": ["MP_Cost_Reduction_4"] } },
   { "weapon": "No Such Weapon" }
 ]

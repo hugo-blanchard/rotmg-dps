@@ -349,7 +349,8 @@
       "mutators": [ { "tag": "MultiplyRateOfFire", "value": 1.05, "params": { "subAttackIndex": -1 } } ] },
     { "type": 268, "id": "Staff_Only", "name": "Staff Only", "compatible": ["WEAPON", "STAFF"], "labels": [],
       "mutators": [] },
-    { "type": 270, "id": "OnShoot_Attack_Bonus_4", "name": "OnShoot Attack Boost IV", "compatible": ["WEAPON"],
+    { "type": 270, "id": "OnShoot_Attack_Bonus_4", "name": "OnShoot Attack Boost IV", "compatible": ["EQUIPMENT"],
+      "incompatible": ["ARMOR", "ABILITY"],
       "labels": ["ONSHOOT", "PROCATTACK"], "incompatibleLabels": ["PROCATTACK"],
       "mutators": [ { "tag": "AddOnPlayerShootActivate", "value": "StatBoostSelf",
                       "params": { "amount": 8, "channel": "noStack", "cooldown": 15, "duration": 6, "proc": 0.03,
@@ -380,6 +381,10 @@
           ],
           "unsupported": ["CollisionMult"] }
       ] },
+    { "type": 274, "id": "MP_Cost_Reduction_4", "name": "MP Cost Reduction IV", "compatible": ["ABILITY"], "labels": ["MPCOST"],
+      "mutators": [ { "tag": "MultiplyMPCost", "value": 0.9 } ] },
+    { "type": 275, "id": "Lucky_Ring", "name": "Lucky Ring", "compatible": ["RING"], "labels": ["LOOT"],
+      "mutators": [ { "tag": "ActivateOnEquip", "value": "LootBonus", "params": { "amount": 5 } } ] },
     { "type": 269, "id": "Odd_Enchant", "name": "Odd Enchant", "compatible": ["WEAPON"], "labels": ["ODD"],
       "mutators": [ { "tag": "AddOnPlayerHitActivate", "value": "Heal", "params": { "amount": 20 } } ] }
   ],

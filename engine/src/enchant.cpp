@@ -1,6 +1,7 @@
 #include "rotmg/enchant.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <map>
 
@@ -91,6 +92,12 @@ bool Fits(const Enchantment& e, const Weapon& w) {
          !Has(e.incompatible_items, w.id);
 }
 
+bool FitsSlot(const Enchantment& e, const std::string& slot_label) {
+  const auto generic = [&](const std::string& l) { return l == "EQUIPMENT" || l == slot_label; };
+  return !e.compatible.empty() && std::ranges::all_of(e.compatible, generic) &&
+         std::ranges::none_of(e.incompatible, generic);
+}
+
 bool Conflict(const Enchantment& a, const Enchantment& b) {
   const auto meets = [](const Enchantment& x, const Enchantment& y) {
     return std::ranges::any_of(x.incompatible_labels, [&](const std::string& l) { return Has(y.labels, l); });
@@ -98,10 +105,46 @@ bool Conflict(const Enchantment& a, const Enchantment& b) {
   return meets(a, b) || meets(b, a);
 }
 
-Enchanted Enchant(const Weapon& weapon, const std::vector<const Enchantment*>& enchantments) {
-  Enchanted out{weapon, {}, {}, {}};
+Enchanted Enchant(const Weapon& weapon, const std::vector<const Enchantment*>& enchantments,
+                  const GearEnchantments& gear) {
+  Enchanted out{weapon, {}, {}, 1, {}};
   Weapon& w = out.weapon;
   std::map<std::string, double> stats;
+  // Effects that work the same on any item.
+  const auto shared = [&](const Mutator& m) {
+    if (m.tag == "AddOnPlayerShootActivate") {
+      Activate effect = m.attributes;
+      effect.type = m.text;
+      w.on_shoot.push_back(std::move(effect));
+    } else if (m.tag == "ActivateOnEquip" && m.text == "BonusStatRelative") {
+      out.relative.push_back({m.attributes.Text("stat"), m.attributes.Text("statRelativeTo"),
+                              m.attributes.Number("amount").value_or(0)});
+    } else if (m.tag == "ActivateOnEquip" && m.text == "IncrementStat") {
+      stats[m.attributes.Text("stat")] += m.attributes.Number("amount").value_or(0);
+    } else {
+      return false;
+    }
+    return true;
+  };
+  for (const auto& [slot, list] : gear) {
+    for (const Enchantment* e : list) {
+      bool modelled = true;
+      for (const Mutator& m : e->mutators) {
+        if (slot == "ABILITY" && m.tag == "MultiplyMPCost") {
+          out.mp_cost *= m.number.value_or(1);
+        } else if (!shared(m)) {
+          modelled = false;
+        }
+      }
+      if (!modelled) {
+        std::string item = slot;
+        std::ranges::transform(item, item.begin(), [](unsigned char ch) {
+          return static_cast<char>(std::tolower(ch));
+        });
+        out.unsupported.push_back(e->name + " (" + item + " enchantment)");
+      }
+    }
+  }
   for (const Enchantment* e : enchantments) {
     bool modelled = true;
     for (const Mutator& m : e->mutators) {
@@ -127,16 +170,7 @@ Enchanted Enchant(const Weapon& weapon, const std::vector<const Enchantment*>& e
         }
       } else if (m.tag == "SetSubAttack" || m.tag == "AddSubAttack") {
         modelled = TakeSubattack(w, *e, m) && modelled;
-      } else if (m.tag == "AddOnPlayerShootActivate") {
-        Activate effect = m.attributes;
-        effect.type = m.text;
-        w.on_shoot.push_back(std::move(effect));
-      } else if (m.tag == "ActivateOnEquip" && m.text == "BonusStatRelative") {
-        out.relative.push_back({m.attributes.Text("stat"), m.attributes.Text("statRelativeTo"),
-                                m.attributes.Number("amount").value_or(0)});
-      } else if (m.tag == "ActivateOnEquip" && m.text == "IncrementStat") {
-        stats[m.attributes.Text("stat")] += m.attributes.Number("amount").value_or(0);
-      } else {
+      } else if (!shared(m)) {
         modelled = false;
       }
     }

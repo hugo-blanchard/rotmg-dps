@@ -145,7 +145,7 @@ for (const a of abilities) {
 }
 
 // Every enchantment that changes a weapon, rather than only adding stats,
-// evaluates on the first weapon it fits.
+// evaluates on the first weapon it fits. Ones for other gear are skipped.
 const { enchantments = [] } = JSON.parse(text);
 const fits = (e, w) =>
   e.compatible.every((l) => (w.labels ?? []).includes(l)) &&
@@ -155,10 +155,7 @@ let enchanted = 0;
 for (const e of enchantments) {
   if ((e.mutators ?? []).every((m) => m.tag === "ActivateOnEquip")) continue;
   const weapon = weapons.find((w) => fits(e, w));
-  if (!weapon) {
-    failures.push(`${e.name}: no weapon it fits`);
-    continue;
-  }
+  if (!weapon) continue;
   const res = evaluate({ weapon: weapon.name, enchantments: [e.id], attack: 50, dexterity: 50, hitModel: { distance: 4 } });
   if (!res.ok) {
     failures.push(`${e.name} on ${weapon.name}: ${res.error}`);

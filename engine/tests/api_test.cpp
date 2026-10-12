@@ -269,3 +269,28 @@ TEST_CASE("an awakened enchantment swaps in and adds subattacks") {
   const json& unsupported = res["breakdown"]["unsupported"];
   CHECK(std::ranges::find(unsupported, "CollisionMult") != unsupported.end());
 }
+
+TEST_CASE("enchantments on the other gear add stats and cut MP costs") {
+  const rotmg::Api api = LoadedApi();
+  const auto evaluate = [&](const std::string& gear) {
+    return json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "ability": "Plain Spell", "wisdom": 50,
+                                        "gearEnchantments": )" + gear + "}"));
+  };
+  // +1.4 ATT on the ring and +0.7 on the armor add to 2.1: +2.
+  const json stats = evaluate(R"({"ring": ["Attack_Bonus_1"], "armor": ["Vitality_Bonus_1"]})");
+  REQUIRE(stats["ok"] == true);
+  CHECK(stats["enchantmentStats"] == json::parse(R"([{"stat": "ATT", "amount": 2}])"));
+
+  const json plain = evaluate("{}");
+  const json cheaper = evaluate(R"({"ability": ["MP_Cost_Reduction_4"]})");
+  REQUIRE(cheaper["ok"] == true);
+  CHECK(cheaper["ability"]["mpCost"].get<double>() == Catch::Approx(plain["ability"]["mpCost"].get<double>() * 0.9));
+
+  const json lucky = evaluate(R"({"ring": ["Lucky_Ring"]})");
+  REQUIRE(lucky["ok"] == true);
+  CHECK(lucky["breakdown"]["unsupported"].back() == "Lucky Ring (ring enchantment)");
+
+  const json wrong = evaluate(R"({"ring": ["Damage_Bonus_4"]})");
+  REQUIRE(wrong["ok"] == false);
+  CHECK(wrong["error"].get<std::string>().find("doesn't go on your ring") != std::string::npos);
+}

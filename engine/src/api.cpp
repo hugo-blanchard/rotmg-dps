@@ -27,7 +27,8 @@
 //    "hitCurve": {"from": 0.5, "to": 10, "step": 0.25}}
 // Only "weapon" is required. "wearing" lists the item types of other gear
 // worn, like a set's armor or a ring a weapon's procs need.
-// "enchantments" are ids of up to 4 enchantments on the weapon; relative
+// "enchantments" are ids of up to 4 enchantments on the weapon, and
+// "gearEnchantments" up to 4 each on {"ring", "armor", "ability"}; relative
 // ones ("% of Bonus ATT") need "class", the class id. "curve" adds
 // the build's DPS at each DEF in the range, with everything else in the
 // request unchanged. "hitCurve" adds the geometric estimate's total hits
@@ -153,6 +154,8 @@ struct Request {
   std::vector<WornSet> sets;
   // The weapon with its enchantments, when it has any; `weapon` points here.
   std::shared_ptr<const Weapon> enchanted;
+  // The ability with its enchantments, when they change it; `ability` points here.
+  std::shared_ptr<const Ability> enchanted_ability;
   std::vector<StatBonus> enchantment_stats;
   // Assumptions the request's gear brings, for the build's list.
   std::vector<std::string> notes;
@@ -212,15 +215,16 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
   }
   r.sets = WornSets(dataset, worn);
   r.character.worn = worn;
-  if (auto it = req.find("enchantments"); it != req.end() && r.weapon != nullptr) {
+  // Reads one item's enchantment ids, checking each fits and that none clash.
+  const auto pick = [&](const json& ids, const std::string& item, const auto& fits) {
     std::vector<const Enchantment*> picked;
-    for (const json& id : *it) {
+    for (const json& id : ids) {
       const auto e = std::ranges::find(dataset.enchantments, id.get<std::string>(), &Enchantment::id);
       if (e == dataset.enchantments.end()) {
         throw std::runtime_error("no enchantment named \"" + id.get<std::string>() + "\"");
       }
-      if (!Fits(*e, *r.weapon)) {
-        throw std::runtime_error(e->name + " doesn't go on " + r.weapon->name);
+      if (!fits(*e)) {
+        throw std::runtime_error(e->name + " doesn't go on " + item);
       }
       for (const Enchantment* other : picked) {
         if (Conflict(*e, *other)) {
@@ -233,7 +237,30 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
     if (picked.size() > 4) {
       throw std::runtime_error("an item holds at most 4 enchantments");
     }
-    Enchanted en = Enchant(*r.weapon, picked);
+    return picked;
+  };
+  const auto on_weapon = req.find("enchantments");
+  const auto on_gear = req.find("gearEnchantments");
+  if ((on_weapon != req.end() || on_gear != req.end()) && r.weapon != nullptr) {
+    const std::vector<const Enchantment*> picked =
+        on_weapon == req.end() ? std::vector<const Enchantment*>{}
+                               : pick(*on_weapon, r.weapon->name, [&](const Enchantment& e) { return Fits(e, *r.weapon); });
+    GearEnchantments gear;
+    if (on_gear != req.end()) {
+      for (const auto& [key, label] : {std::pair{"ring", "RING"}, {"armor", "ARMOR"}, {"ability", "ABILITY"}}) {
+        if (auto ids = on_gear->find(key); ids != on_gear->end()) {
+          gear.emplace_back(label, pick(*ids, std::string("your ") + key,
+                                        [&](const Enchantment& e) { return FitsSlot(e, label); }));
+        }
+      }
+    }
+    Enchanted en = Enchant(*r.weapon, picked, gear);
+    if (en.mp_cost != 1 && r.ability != nullptr && r.ability->mp_cost) {
+      Ability cheaper = *r.ability;
+      cheaper.mp_cost = *cheaper.mp_cost * en.mp_cost;
+      r.enchanted_ability = std::make_shared<const Ability>(std::move(cheaper));
+      r.ability = r.enchanted_ability.get();
+    }
     r.enchantment_stats = en.stats;
     r.character = r.character.With(en.stats);
     if (!en.stats.empty()) {
@@ -311,8 +338,8 @@ std::string Api::Evaluate(std::string_view request_json) const {
   try {
     const json req = json::parse(request_json);
     const Request r = ParseRequest(req, *dataset_);
-    const auto& [weapon, ability, unknown_ability, character, target, assumptions, sets, enchanted, enchantment_stats,
-                 notes] = r;
+    const auto& [weapon, ability, unknown_ability, character, target, assumptions, sets, enchanted, enchanted_ability,
+                 enchantment_stats, notes] = r;
     if (weapon == nullptr) {
       return Error("no weapon named \"" + req.at("weapon").get<std::string>() + "\"").dump();
     }
