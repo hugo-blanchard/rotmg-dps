@@ -108,6 +108,7 @@ A reskin under its own name stays in, with `reskinOf` naming the item it plays l
 | `enchantmentPool` | `<EnchantmentSlots enchantmentList>`, the pool its enchantments roll from, or the default pool when the client doesn't define that list (the Void weapons name ones like "Tiered Flail Table 5") |
 | `reskinOf` | the name of the item this one plays exactly like, when it's a reskin (above) |
 | `variantOf` | the name of the item this one plays like when the only difference is the enchantments it can take, like Cupid's Bow and its Valentine enchantments |
+| `tooltip` | the game's own lines describing the item's effects, each `{name, text}` from an `<EffectInfo name description>` in `<ExtraTooltipData>`, empty ones left out |
 | `unobtainable` | `true` for admin items (`<AdminOnly>`, or ADMIN in the `id`), for items whose `<ExtraTooltipData>` says "not available to players" or "only available for testing", and for tiered items past T0 without `<EnchantmentSlots>`: every tiered item players can get has slots, and today these are the Tier 8 abilities, which RealmEye lists as unobtainable |
 | `projectiles` | one per `<Projectile>` |
 | `subattacks` | one per `<Subattack>` |
@@ -153,7 +154,7 @@ An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is som
 | Field | Client source |
 |---|---|
 | `type`, `id`, `name`, `slotType`, `tier`, `texture`, `statBonuses`, `labels` | as for weapons |
-| `onShoot`, `onEquip`, `onAbility`, `enchantmentSlots`, `enchantmentPool`, `reskinOf`, `variantOf`, `unobtainable` | as for weapons. `onShoot` effects go off as the weapon fires |
+| `onShoot`, `onEquip`, `onAbility`, `enchantmentSlots`, `enchantmentPool`, `reskinOf`, `variantOf`, `tooltip`, `unobtainable` | as for weapons. `onShoot` effects go off as the weapon fires |
 | `mpCost`, `cooldown` | `<MpCost>`, `<Cooldown>` in seconds, when set |
 | `projectiles`, `subattacks` | as for weapons, when the ability fires any |
 | `activates` | one `{"type", "params"}` per `<Activate>`: its text, like `BulletNova`, and its attributes |
@@ -169,7 +170,7 @@ An item is an armor or a ring when its `<Class>` is `Equipment` and its `<SlotTy
 | Field | Client source |
 |---|---|
 | `type`, `id`, `name`, `slotType`, `tier`, `texture`, `statBonuses`, `labels` | as for weapons |
-| `onShoot`, `createdProjectiles`, `onEquip`, `onAbility`, `enchantmentSlots`, `enchantmentPool`, `reskinOf`, `variantOf`, `unobtainable` | as for weapons. `onShoot` effects go off as the weapon fires |
+| `onShoot`, `createdProjectiles`, `onEquip`, `onAbility`, `enchantmentSlots`, `enchantmentPool`, `reskinOf`, `variantOf`, `tooltip`, `unobtainable` | as for weapons. `onShoot` effects go off as the weapon fires |
 | `unsupported` | tags on the item that can change damage but aren't modelled, e.g. `OnPlayerHitActivate` |
 
 ### Targets
