@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "fixture.hpp"
+#include "rotmg/ability.hpp"
 #include "rotmg/evaluate.hpp"
 #include "rotmg/sim.hpp"
 
@@ -112,4 +113,18 @@ TEST_CASE("a target takes nothing while it's invulnerable") {
   b.Advance(10'000);
   CHECK(b.PerTarget()[0].hits == a.PerTarget()[0].hits);
   CHECK(b.PerTarget()[0].damage / a.PerTarget()[0].damage == Approx(0.6).margin(0.03));
+}
+
+TEST_CASE("a target that respawns is a new enemy, without the old one's poison") {
+  // The vial's 380 impact kills a 300 HP target out of the sword's reach;
+  // the poison it would go on to deal isn't carried to the new one.
+  static const rotmg::Dataset dataset = LoadSmallDataset();
+  Scenario s;
+  s.targets.push_back({{0, 8}, 0.5, {}, {}, 300});
+  s.respawn = true;
+  Simulation sim(Sword(), {.attack = 50, .dexterity = 50, .wisdom = 60}, s, rotmg::FindAbility(dataset, "Toxic Vial"));
+  sim.Advance(3000);
+  CHECK(sim.PerTarget()[0].kills == 1);
+  CHECK(sim.PerTarget()[0].damage == Approx(300));
+  CHECK(sim.TargetStatuses(0).empty());
 }

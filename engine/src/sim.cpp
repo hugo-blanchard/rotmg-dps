@@ -454,8 +454,6 @@ void Simulation::Step() {
   ++steps_;
   const double now = TimeMs();
   Move();
-  Retarget();
-  const bool anyone = !world_.targets.empty() && Alive(world_.aim);
 
   // Buffs and debuffs that have run out go first.
   const auto expired = [now](const Timed& t) { return t.until_ms <= now; };
@@ -492,6 +490,9 @@ void Simulation::Step() {
   TickPoisons();
   RunPending();
   CheckTraps();
+  // Only now, so nothing is cast or fired at a target that just died.
+  Retarget();
+  const bool anyone = !world_.targets.empty() && Alive(world_.aim);
 
   if (ability_) {
     mp_ = std::min(max_mp_, mp_ + MpPerSecond(Current().wisdom) * kStepMs / 1000);
@@ -855,8 +856,13 @@ void Simulation::RunPending() {
         if (!inside(t)) {
           continue;
         }
-        poison.targets.push_back(t);
+        const long kills = per_target_[t].kills;
         Damage(t, impact * (TargetNow(t).cursed ? 1.25 : 1), p.from);
+        // An enemy the impact killed isn't there to poison.
+        if (per_target_[t].kills != kills) {
+          continue;
+        }
+        poison.targets.push_back(t);
         if (const auto boost = BuffOf(act, base_)) {
           Debuff(t, boost->effect, boost->duration_s, 0, boost->factor);
         }
@@ -956,6 +962,11 @@ void Simulation::Explode(const Trap& trap) {
 void Simulation::Debuff(std::size_t target, const std::string& raw, double duration_s, double delay_ms,
                         double factor) {
   const std::string effect = raw == "ArmorBroken" ? "Armor Broken" : raw;
+  // Statuses still land on an invulnerable target, an assumption, but not on
+  // a dead one.
+  if (!Alive(target)) {
+    return;
+  }
   // Only the statuses that change damage matter here.
   if (effect != "Curse" && effect != "Exposed" && effect != "Armor Broken" && effect != kPoisonBoost) {
     return;
@@ -1004,8 +1015,15 @@ double Simulation::Damage(std::size_t target, double amount, From from, bool sho
       c.killed_ms = TimeMs();
     }
     if (start_.respawn) {
+      // A new enemy: nothing on the old one carries over.
       c.hp = max_hp;
       target_debuffs_[target].clear();
+      for (Poison& p : poisons_) {
+        std::erase(p.targets, target);
+      }
+      std::erase_if(pending_, [target](const Pending& p) {
+        return (p.kind == Pending::Kind::kShockblast || p.kind == Pending::Kind::kStickyBomb) && p.source == target;
+      });
     }
   }
   return amount;
@@ -1047,6 +1065,7 @@ void Simulation::Land(Live& shot) {
   for (const auto& [entry, i] : touched) {
     shot.hit[i] = true;
     ++per_target_[i].hits;
+    const long kills = per_target_[i].kills;
     const double damage = Damage(i, HitDamage(g, shot.multiplier, i), g.from);
     if (g.subattack < 0) {
       ++(g.from == From::kProc ? proc_totals_ : ability_totals_).hits;
@@ -1067,7 +1086,9 @@ void Simulation::Land(Live& shot) {
     // so shots of the same volley landing together don't gain from them. The
     // server applies them, so in the game they come later still.
     for (const ConditionEffect& e : g.projectile->condition_effects) {
-      Debuff(i, e.effect, e.duration, kStepMs);
+      if (per_target_[i].kills == kills) {
+        Debuff(i, e.effect, e.duration, kStepMs);
+      }
     }
   }
 }
