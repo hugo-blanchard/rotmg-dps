@@ -512,6 +512,18 @@ TEST_CASE("an item takes enchantments from its pool, or by artifact, up to its s
         "bad request: Venom Katana can't be enchanted");
 }
 
+TEST_CASE("an Alien boost only goes off with Alien gear on") {
+  rotmg::Api api = LoadedApi();
+  const auto uptimes = [&](const char* armor) {
+    return json::parse(api.Evaluate(std::string(R"({"weapon": "Plain Sword", "attack": 50, "dexterity": 50,
+        "enchantments": ["Alien_OnShoot_Attack_Boost"], "armor": )") + armor + "}"))["build"]["uptimes"];
+  };
+  // Its mustWearOR names Plain Mail.
+  CHECK(uptimes("null").empty());
+  REQUIRE(uptimes(R"("Plain Mail")").size() == 1);
+  CHECK(uptimes(R"("Plain Mail")")[0]["amount"] == 10);
+}
+
 TEST_CASE("the optimizer finds the build with the most DPS") {
   rotmg::Api api = LoadedApi();
   const std::string start = R"({"class": "Swordsman", "weapon": "Plain Sword", "ability": "Plain Spell",

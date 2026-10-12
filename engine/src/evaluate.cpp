@@ -55,11 +55,14 @@ std::vector<int> TypeList(const std::string& list) {
 }
 
 // Whether the gear an on-shoot effect asks for is on: every mustWear item,
-// none of the mustNotWear ones. Wand of Geb's needs all four set pieces,
-// matching its tooltip's "With Full Set".
+// one of the mustWearOR ones if it lists any, none of the mustNotWear ones.
+// Wand of Geb's needs all four set pieces, matching its tooltip's "With
+// Full Set"; the Alien enchantments' boosts need any one Alien item.
 bool GearWorn(const Activate& a, const std::vector<int>& worn) {
   const auto wearing = [&](int type) { return std::ranges::find(worn, type) != worn.end(); };
+  const std::vector<int> any = TypeList(a.Text("mustWearOR"));
   return std::ranges::all_of(TypeList(a.Text("mustWear")), wearing) &&
+         (any.empty() || std::ranges::any_of(any, wearing)) &&
          std::ranges::none_of(TypeList(a.Text("mustNotWear")), wearing) &&
          std::ranges::none_of(TypeList(a.Text("mustNotWearOR")), wearing);
 }
