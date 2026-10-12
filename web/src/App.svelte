@@ -121,9 +121,11 @@
     }
   });
 
-  // Hits typed in for one weapon don't carry over to the next.
+  // Hits typed in for one weapon don't carry over to the next, nor past an
+  // enchantment that can add or swap subattacks.
   $effect(() => {
     void weaponName;
+    void enchanted.join();
     hitOverrides = [];
   });
   let latest = 0;
