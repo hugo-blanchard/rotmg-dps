@@ -68,6 +68,7 @@ This section is enough to write your own extractor. Values keep the client's uni
 | `weapons` | Weapons, sorted by `type` | object XML files listed under `objects` in the client's `manifest` |
 | `abilities` | Abilities, sorted by `type`. Missing from datasets made before abilities were added | the same object XML files |
 | `targets` | Bosses the site offers as targets. Optional | the same object XML files |
+| `sets` | Equipment sets with a weapon or ability in the dataset, sorted by `type`. Optional | `equipmentsets.xml` |
 
 ### Classes
 
@@ -154,6 +155,17 @@ A short list of current endgame bosses, chosen by hand by object `id`. Most boss
 | `name` | `<DisplayId>`, or a clearer name where several bosses share one (Oryx the Mad God 1, 2 and 3) |
 | `defense` | `<Defense>`, 0 if missing |
 | `maxHitPoints` | `<MaxHitPoints>` |
+
+### Sets
+
+Each `<EquipmentSet>` lists its pieces with `<Setpiece slot itemtype>`, where slot 0 is the weapon, 1 the ability, 2 the armor and 3 the ring. A slot can accept several items: a few "sets" are really one ring that goes with any of many weapons. Bonuses add up, so a full set gets the 2-piece, 3-piece and full-set stats together.
+
+| Field | Client source |
+|---|---|
+| `type`, `name` | `type` and `id` attributes |
+| `pieces` | `{"slot", "itemType", "name"}` per `<Setpiece>`; `name` is that item's `<DisplayId>` or `id`, empty if the client has no such item |
+| `bonuses` | `{"pieces", "stats"}`: `stats` are `{"stat", "amount"}` from `<ActivateOnEquip2>`, `<ActivateOnEquip3>` and `<ActivateOnEquipAll>` `IncrementStat` elements, at 2, 3 and the set's number of slots |
+| `unsupported` | other set effects, which aren't modelled. `ChangeSkin` only changes looks and is left out |
 
 ### Example
 
