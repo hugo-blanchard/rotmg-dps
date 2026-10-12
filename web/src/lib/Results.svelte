@@ -79,7 +79,8 @@
     ...new Set([...breakdown.assumptions, ...(ability?.assumptions ?? []), ...build.assumptions]),
   ]);
 
-  function buffName(b: { effect: string; amount: number }): string {
+  function buffName(b: { effect: string; amount: number; factor: number }): string {
+    if (b.factor > 1) return `${b.effect} (+${(100 * (b.factor - 1)).toFixed(1)}%)`;
     return b.amount ? `+${b.amount} ${b.effect}` : b.effect;
   }
 

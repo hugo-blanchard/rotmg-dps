@@ -96,6 +96,8 @@ export interface Buff {
   on: "player" | "target";
   amount: number;
   durationS: number;
+  /** A damage boost's multiplier on damage taken; 1 for anything else. */
+  factor: number;
 }
 
 export interface AbilityBreakdown {
