@@ -174,6 +174,10 @@ class BuildSearch {
   std::vector<double> parts_done_;
   std::vector<double> part_sizes_;
   std::chrono::steady_clock::time_point last_report_ = std::chrono::steady_clock::now();
+  // The most progress reported yet. A descent's share is a guess that drops
+  // when a round finds something better and needs another, but a report
+  // never goes back.
+  double reported_ = 0;
 };
 
 std::string BuildSearch::Key(const Build& b) {
@@ -1074,8 +1078,9 @@ void BuildSearch::Report() {
         total += part_sizes_[i];
       }
     }
+    reported_ = std::max(reported_, total > 0 ? done / total : 0);
     try {
-      p_.progress(total > 0 ? done / total : 0, Results());
+      p_.progress(reported_, Results());
     } catch (...) {
       stopped_by_ = std::current_exception();
       stopping_ = true;
