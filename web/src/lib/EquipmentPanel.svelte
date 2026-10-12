@@ -84,6 +84,7 @@
     { key: "tiered", label: "Tiered" },
     { key: "untiered", label: "Untiered" },
     { key: "set", label: "Set pieces" },
+    { key: "unobtainable", label: "Unobtainable" },
     { key: "reskin", label: "Reskins" },
   ];
 
@@ -107,29 +108,27 @@
     const slot = picking.slot;
     if (picking.kind === "item") {
       const none: PickerOption[] = slot === "weapon" ? [] : [{ key: "", name: `No ${slotNames[slot].toLowerCase()}` }];
-      // Reskins play exactly like another item, so they go last, under
-      // their own heading.
+      // Items no one can get, then reskins, which play exactly like another
+      // item, go last under their own headings.
+      const kind = (i: Item) => (i.unobtainable ? "unobtainable" : i.reskinOf ? "reskin" : "");
       const option = (i: Item): PickerOption => ({
         key: i.name,
         name: i.name,
         icon: itemIcon(sprites, i.type),
-        detail: i.reskinOf ? `Reskin of ${i.reskinOf}` : describe(i),
-        group: i.reskinOf ? "Reskins" : undefined,
+        detail: kind(i) === "reskin" ? `Reskin of ${i.reskinOf}` : describe(i),
+        group: { unobtainable: "Unobtainable", reskin: "Reskins", "": undefined }[kind(i)],
         tags: [
           i.tier !== undefined ? "tiered" : "untiered",
           ...(setTypes.has(i.type) ? ["set"] : []),
-          ...(i.reskinOf ? ["reskin"] : []),
+          ...(kind(i) ? [kind(i)] : []),
         ],
       });
+      const of = (k: string) => choices[slot].filter((i) => kind(i) === k).map(option);
       return {
         title: slotNames[slot],
         selected: items[slot],
         filters: itemFilters,
-        options: [
-          ...none,
-          ...choices[slot].filter((i) => !i.reskinOf).map(option),
-          ...choices[slot].filter((i) => i.reskinOf).map(option),
-        ],
+        options: [...none, ...of(""), ...of("unobtainable"), ...of("reskin")],
       };
     }
     const index = picking.index;

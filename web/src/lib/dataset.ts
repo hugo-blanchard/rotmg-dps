@@ -25,11 +25,12 @@ export interface DatasetClass {
   wisdom?: StatRange;
 }
 
-// How an item takes enchantments, and the item it's a reskin of. Missing
-// from older datasets.
+// How an item takes enchantments, whether players can get it, and the item
+// it's a reskin of. Missing from older datasets.
 interface ItemRules {
   enchantmentSlots?: number;
   enchantmentPool?: string;
+  unobtainable?: boolean;
   /** The item this one plays exactly like, when it's a reskin of it. */
   reskinOf?: string;
 }
@@ -177,6 +178,12 @@ export function armorsFor(dataset: Dataset, cls: DatasetClass): DatasetGear[] {
 /** Rings a class can wear, in the same order as weapons. */
 export function ringsFor(dataset: Dataset, cls: DatasetClass): DatasetGear[] {
   return (dataset.rings ?? []).filter((r) => r.slotType === cls.ringSlotType).sort(byTierThenName);
+}
+
+/** Whether an item is one to suggest: one players can get, and not a reskin
+ * of another. */
+export function suggested(item: Item): boolean {
+  return !item.unobtainable && !item.reskinOf;
 }
 
 /** The four equipment slots, in the game's order. */

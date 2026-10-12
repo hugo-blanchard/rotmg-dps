@@ -8,6 +8,7 @@
   import {
     enchantmentSlotsOf,
     enchantmentsForItem,
+    suggested,
     itemsFor,
     loadDataset,
     loadStatus,
@@ -68,14 +69,15 @@
   const ability = $derived(dataset?.abilities?.find((a) => a.name === items.ability));
 
   // A class change keeps the items the new class can use and fills the
-  // rest with its first choice; an empty ability, armor or ring stays empty.
+  // rest with its first choice players can get that isn't a reskin; an
+  // empty ability, armor or ring stays empty.
   $effect(() => {
     if (!dataset || !cls) return;
     const fixed = { ...items };
     for (const slot of slots) {
       const choices = itemsFor(dataset, cls, slot);
       if (!choices.some((i) => i.name === items[slot]) && (items[slot] || slot === "weapon")) {
-        fixed[slot] = choices[0]?.name ?? "";
+        fixed[slot] = (choices.find(suggested) ?? choices[0])?.name ?? "";
       }
     }
     if (slots.some((s) => fixed[s] !== items[s])) {
@@ -164,10 +166,12 @@
       } else {
         const start = d.classes.find((c) => c.id === "Wizard") ?? d.classes[0];
         classId = start.id;
-        items = Object.fromEntries(slots.map((s) => [s, itemsFor(d, start, s)[0]?.name ?? ""])) as Record<
-          Slot,
-          string
-        >;
+        items = Object.fromEntries(
+          slots.map((s) => {
+            const choices = itemsFor(d, start, s);
+            return [s, (choices.find(suggested) ?? choices[0])?.name ?? ""];
+          }),
+        ) as Record<Slot, string>;
       }
       dataset = d;
     } catch (e) {
