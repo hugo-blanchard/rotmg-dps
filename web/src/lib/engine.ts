@@ -270,11 +270,17 @@ export interface OptimizeOptions {
    * with: every one (the default), none, or one, like "DEF".
    */
   around?: string;
+  /** What the weapon's DPS, with the ability's buffs, and the ability's own count for; 1 each unless set. */
+  weights?: { weapon: number; ability: number };
   results?: number;
 }
 
 export interface OptimizedBuild {
+  /** What builds are ranked by: the weighted weapon and ability DPS. */
+  score: number;
   dps: number;
+  weaponDps: number;
+  abilityDps: number;
   weapon: string;
   ability: string;
   armor: string;

@@ -41,6 +41,10 @@
   let artifacts = $state(true);
   let perItem = $state(2);
   let around = $state("every stat");
+  // From 0, weapon DPS only, through 0.5, both in full, to 1, ability DPS only.
+  let balance = $state(0.5);
+  // The balance of the search whose builds are shown.
+  let rankedBy = $state(0.5);
   let searching = $state(false);
   let found = $state<OptimizeResponse | null>(null);
   // The running search's last report, and whether the builds shown are
@@ -65,6 +69,16 @@
     ["MAXMP", "Max MP"],
   ];
 
+  const weights = (t: number) => ({ weapon: Math.min(1, 2 * (1 - t)), ability: Math.min(1, 2 * t) });
+  const balanceText: Record<number, string> = {
+    0: "Weapon DPS only",
+    0.25: "Weapon DPS, plus half the ability's",
+    0.5: "Weapon and ability DPS",
+    0.75: "Ability DPS, plus half the weapon's",
+    1: "Ability DPS only",
+  };
+  const scoreUnit: Record<number, string> = { 0: " weapon DPS", 0.5: "", 1: " ability DPS" };
+
   const asResponse = (p: OptimizeProgress | null): OptimizeResponse | null =>
     p && { ok: true, baseline: p.baseline, evaluated: p.evaluated, builds: p.builds };
 
@@ -74,6 +88,7 @@
     found = null;
     progress = null;
     stopped = false;
+    rankedBy = balance;
     startedAt = now = performance.now();
     const ticking = setInterval(() => (now = performance.now()), 500);
     const options: OptimizeOptions = {
@@ -83,6 +98,7 @@
       artifacts,
       slots: perItem,
       around,
+      weights: weights(balance),
       results: 5,
     };
     const res = await engine.optimize({ ...$state.snapshot(request), optimize: options }, (p) => (progress = p));
@@ -179,6 +195,11 @@
           {/each}
         </select>
       </label>
+      <label class="mode">
+        Rank by
+        <input type="range" min="0" max="1" step="0.25" bind:value={balance} />
+        <span class="balance">{balanceText[balance]}</span>
+      </label>
       {#if searching}
         <div class="progress">
           <progress max="1" value={progress?.done ?? 0}></progress>
@@ -217,7 +238,9 @@
               <div class="figures">
                 <strong>{whole.format(b.dps)} DPS</strong>
                 <span>
-                  {signed(b.dps - shown.baseline)} on yours{#if enchantCount(b)}, {enchantCount(b)} enchantments{/if}
+                  {b.abilityDps > 0 ? `${whole.format(b.weaponDps)} weapon, ${whole.format(b.abilityDps)} ability, ` : ""}
+                  {signed(b.score - shown.baseline)}{scoreUnit[rankedBy] ?? " weighted"} on yours{#if enchantCount(b)},
+                    {enchantCount(b)} enchantments{/if}
                 </span>
               </div>
               <button type="button" onclick={() => take(b)}>Use</button>
@@ -310,6 +333,13 @@
   .progress button {
     grid-row: 1 / span 2;
     grid-column: 2;
+  }
+  input[type="range"] {
+    accent-color: var(--accent);
+  }
+  .balance {
+    font-size: 0.85rem;
+    color: var(--text);
   }
   .hint {
     margin: 0;
