@@ -32,6 +32,7 @@
     onunpin,
     expectedUptimes = [],
     unmodelled = false,
+    advanced,
   }: {
     engine: Engine;
     request: EvaluateRequest;
@@ -59,6 +60,8 @@
     expectedUptimes?: { effect: string; on: "player" | "target"; share: number }[];
     /** Whether the build has effects the engine doesn't model. */
     unmodelled?: boolean;
+    /** Show every option, the charts and the per-target table too. */
+    advanced: boolean;
   } = $props();
 
   const height = 360;
@@ -619,6 +622,7 @@
   <div class="controls">
     <button type="button" onclick={() => (playing = !playing)}>{playing ? "Pause" : "Play"}</button>
     <button type="button" onclick={step}>Step</button>
+    {#if advanced}
     <label>
       Speed
       <select bind:value={speed}>
@@ -635,6 +639,7 @@
       <label><input type="checkbox" bind:checked={options.fullMp} /> Start with full MP</label>
     {/if}
     <label><input type="checkbox" bind:checked={showNumbers} /> Damage numbers</label>
+    {/if}
   </div>
   <div class="controls">
     {#if pinned}
@@ -663,6 +668,7 @@
     {#if targetHp > 0}
       <label><input type="checkbox" bind:checked={options.respawn} /> Respawn</label>
     {/if}
+    {#if advanced}
     <label>
       Invulnerable every
       <input type="number" min="0" step="1" bind:value={options.invulnerableEvery} />
@@ -678,6 +684,7 @@
     <label><input type="checkbox" bind:checked={options.randomRolls} /> Random rolls</label>
     {#if options.randomRolls}
       <button type="button" onclick={() => (options.seed += 1)}>Reroll</button>
+    {/if}
     {/if}
   </div>
   {#if ability && sim?.ok}
@@ -703,6 +710,7 @@
         <dt>Time</dt>
         <dd>{fine.format(seconds)} s</dd>
       </div>
+      {#if advanced}
       <div>
         <dt>Hits per volley</dt>
         <dd>{fine.format(measuredHits)} <span>engine {fine.format(expectedHits)}</span></dd>
@@ -711,6 +719,7 @@
         <dt>Hits per second</dt>
         <dd>{fighting > 0 ? fine.format(sim.totals.hits / fighting) : "0"}</dd>
       </div>
+      {/if}
       <div>
         <dt>{sim.targets.length > 1 ? "Weapon DPS, all targets" : "Weapon DPS"}</dt>
         <dd>{whole.format(measuredDps)} <span>engine {whole.format(expectedDps)} on one</span></dd>
@@ -766,7 +775,7 @@
         {/if}
       {/if}
     </dl>
-    {#if uptimes.length}
+    {#if advanced && uptimes.length}
       <p class="hint">
         Up so far:
         {#each uptimes as u, i (u.on + u.effect)}
@@ -775,6 +784,7 @@
         {/each}
       </p>
     {/if}
+    {#if advanced}
     <div class="controls">
       <button type="button" onclick={runMany} disabled={spreading}>
         {spreading ? "Running…" : `Run it ${manyRuns} times`}
@@ -790,6 +800,7 @@
           <li><strong>{pinned.label}</strong>: {describe(spread.compare)}.</li>
         {/if}
       </ul>
+    {/if}
     {/if}
     {#if sim.compare && pinned}
       {@const mine = runSummary(sim)}
@@ -820,7 +831,7 @@
         </table>
       </div>
     {/if}
-    {#if damageHistory.length > 1}
+    {#if advanced && damageHistory.length > 1}
       {#if pinned && pinnedHistory.length > 1}
         <TimeChart
           caption="Average DPS since the start"
@@ -851,7 +862,7 @@
         />
       {/if}
     {/if}
-    {#if sim.targets.length > 1}
+    {#if advanced && sim.targets.length > 1}
       <div class="table-scroll">
         <table>
           <thead>

@@ -6,6 +6,7 @@
     breakdown,
     build,
     ability,
+    advanced,
     defense,
     distance,
     hitOverrides,
@@ -15,6 +16,8 @@
     breakdown: Breakdown;
     build: BuildBreakdown;
     ability?: AbilityBreakdown;
+    /** Show the breakdown tables and the sources too. */
+    advanced: boolean;
     defense: number;
     distance: number;
     hitOverrides: (number | null)[];
@@ -122,7 +125,22 @@
 
   {@render chart?.()}
 
-  {#if ability}
+  {#if ability && !advanced && abilityUnsupported.length}
+    <p class="notice">
+      <strong>Ability effects not modelled yet:</strong>
+      {abilityUnsupported.join(", ")}. The real damage can differ from what's shown here.
+    </p>
+  {/if}
+
+  {#if !advanced && build.uptimes.length}
+    <p class="buffs">
+      With {#each build.uptimes as u, i (i)}{i > 0 ? (i === build.uptimes.length - 1 ? " and " : ", ") : ""}{buffName(
+          u,
+        )}{u.on === "target" ? " on the target" : ""} up {percent.format(u.share)} of the time{/each}.
+    </p>
+  {/if}
+
+  {#if ability && advanced}
     <h2>Ability</h2>
     <dl class="figures">
       <div><dt>Casts per second</dt><dd>{fine.format(ability.castsPerSecond)}</dd></div>
@@ -145,6 +163,7 @@
     {/if}
   {/if}
 
+  {#if advanced}
   <h2>{ability ? "Weapon" : "How it adds up"}</h2>
   {#if build.uptimes.length}
     <p class="buffs">
@@ -206,7 +225,8 @@
     Type in the hits column to set hits per volley by hand; clear it to go back to the estimate.
   </p>
 
-  <h2>Where the numbers come from</h2>
+  <details class="sources">
+  <summary>Sources and assumptions</summary>
   <ul class="terms">
     {#each [...breakdown.terms, ...(ability?.terms ?? [])] as t (t.name)}
       <li>
@@ -227,6 +247,8 @@
       <strong>Assumed, with no source yet:</strong>
       {allAssumptions.join("; ")}.
     </p>
+  {/if}
+  </details>
   {/if}
 </section>
 
@@ -283,6 +305,13 @@
     font-weight: 600;
     color: var(--text-2);
     white-space: nowrap;
+  }
+  .sources summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .sources[open] summary {
+    margin-bottom: 0.6rem;
   }
   .terms {
     list-style: none;

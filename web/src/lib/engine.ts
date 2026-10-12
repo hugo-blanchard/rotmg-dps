@@ -37,7 +37,10 @@ export interface EvaluateRequest {
   maxMagicPoints?: number;
   status: PlayerStatus;
   target: Target;
-  /** Item types of other set pieces worn, like armor and a ring. */
+  /** The armor and ring worn, by name. */
+  armor?: string;
+  ring?: string;
+  /** Item types of other gear worn, when it isn't named as the armor or ring. */
   wearing?: number[];
   /** Ids of up to 4 enchantments on the weapon. */
   enchantments?: string[];

@@ -14,6 +14,9 @@ export interface DatasetClass {
   dexterity: StatRange;
   // Missing from datasets made before abilities were added.
   abilitySlotType?: number;
+  // Missing from datasets made before armor and rings were added.
+  armorSlotType?: number;
+  ringSlotType?: number;
   maxHitPoints?: StatRange;
   maxMagicPoints?: StatRange;
   defense?: StatRange;
@@ -31,6 +34,8 @@ export interface DatasetAbility {
   statBonuses?: { stat: string; amount: number }[];
   projectiles?: { id: number; objectId: string; size?: number }[];
   createdProjectiles?: { type: number; projectile: { objectId: string; size?: number } }[];
+  // An ability has no labels in the dataset; its enchantments match on the slot.
+  labels?: undefined;
 }
 
 export interface DatasetWeapon {
@@ -48,6 +53,18 @@ export interface DatasetWeapon {
   unsupported?: string[];
 }
 
+// An armor or a ring.
+export interface DatasetGear {
+  type: number;
+  id: string;
+  name: string;
+  slotType: number;
+  tier?: number;
+  statBonuses?: { stat: string; amount: number }[];
+  labels?: string[];
+  unsupported?: string[];
+}
+
 export interface DatasetEnchantment {
   type: number;
   id: string;
@@ -58,6 +75,7 @@ export interface DatasetEnchantment {
   incompatibleItems?: string[];
   labels: string[];
   incompatibleLabels?: string[];
+  texture?: { file: string; index: number };
 }
 
 // A boss to aim at, with its DEF from the client.
@@ -86,6 +104,8 @@ export interface Dataset {
   targets?: DatasetTarget[];
   sets?: DatasetSet[];
   enchantments?: DatasetEnchantment[];
+  armors?: DatasetGear[];
+  rings?: DatasetGear[];
 }
 
 // Written by the pipeline next to the dataset. Older releases don't have one.
@@ -137,56 +157,71 @@ export function abilitiesFor(dataset: Dataset, cls: DatasetClass): DatasetAbilit
   return (dataset.abilities ?? []).filter((a) => a.slotType === cls.abilitySlotType).sort(byTierThenName);
 }
 
-/** Sets with a piece among these items, like the chosen weapon and ability. */
-export function setsFor(dataset: Dataset, items: ({ type: number } | undefined)[]): DatasetSet[] {
-  const types = items.filter((i) => i !== undefined).map((i) => i.type);
-  return (dataset.sets ?? []).filter((s) => s.pieces.some((p) => types.includes(p.itemType)));
+/** Armor a class can wear, in the same order as weapons. */
+export function armorsFor(dataset: Dataset, cls: DatasetClass): DatasetGear[] {
+  return (dataset.armors ?? []).filter((a) => a.slotType === cls.armorSlotType).sort(byTierThenName);
 }
 
-/** A set's armor and ring pieces by slot: what you can say you also wear. */
-export function otherPieces(set: DatasetSet): { slot: number; itemTypes: number[]; names: string[] }[] {
-  const slots = new Map<number, { slot: number; itemTypes: number[]; names: string[] }>();
-  for (const p of set.pieces.filter((p) => p.slot >= 2)) {
-    const entry = slots.get(p.slot) ?? { slot: p.slot, itemTypes: [], names: [] };
-    entry.itemTypes.push(p.itemType);
-    if (p.name) {
-      entry.names.push(p.name);
-    }
-    slots.set(p.slot, entry);
+/** Rings a class can wear, in the same order as weapons. */
+export function ringsFor(dataset: Dataset, cls: DatasetClass): DatasetGear[] {
+  return (dataset.rings ?? []).filter((r) => r.slotType === cls.ringSlotType).sort(byTierThenName);
+}
+
+/** The four equipment slots, in the game's order. */
+export const slots = ["weapon", "ability", "armor", "ring"] as const;
+export type Slot = (typeof slots)[number];
+
+/** An item in any slot: what the equipment panel and pickers need. */
+export type Item = DatasetWeapon | DatasetAbility | DatasetGear;
+
+/** The items a class can put in a slot. */
+export function itemsFor(dataset: Dataset, cls: DatasetClass, slot: Slot): Item[] {
+  switch (slot) {
+    case "weapon":
+      return weaponsFor(dataset, cls);
+    case "ability":
+      return abilitiesFor(dataset, cls);
+    case "armor":
+      return armorsFor(dataset, cls);
+    case "ring":
+      return ringsFor(dataset, cls);
   }
-  return [...slots.values()].sort((a, b) => a.slot - b.slot);
+}
+
+/** Enchantments that can go on an item in a slot, by the engine's rules: a
+ * weapon, armor or ring by its own labels, an ability by the slot's. */
+export function enchantmentsForItem(dataset: Dataset, slot: Slot, item: Item | undefined): DatasetEnchantment[] {
+  if (!item) {
+    return [];
+  }
+  if (slot === "ability") {
+    return enchantmentsForSlot(dataset, "ABILITY");
+  }
+  const labels = "labels" in item ? (item.labels ?? []) : [];
+  return (dataset.enchantments ?? []).filter(
+    (e) =>
+      e.compatible.length > 0 &&
+      e.compatible.every((l) => labels.includes(l)) &&
+      !(e.incompatible ?? []).some((l) => labels.includes(l)) &&
+      !(e.incompatibleItems ?? []).includes(item.id),
+  );
 }
 
 /**
- * Items a weapon's procs need that the editor should ask about, by slot
- * type: not the weapon or ability themselves, and not pieces a set box
- * already offers.
+ * An item's enchantment slots with only what can be there together: ids
+ * among `options`, no repeats or clashes with an earlier slot. Slots keep
+ * their place; an empty or dropped one is "". Always 4 long.
  */
-export function gearFor(
-  weapon: DatasetWeapon | undefined,
-  cls: DatasetClass,
-  offered: number[],
-): { slotType: number; items: { itemType: number; name: string }[] }[] {
-  const slots = new Map<number, { itemType: number; name: string }[]>();
-  for (const g of weapon?.gear ?? []) {
-    if (g.slotType === cls.weaponSlotType || g.slotType === cls.abilitySlotType || offered.includes(g.itemType)) {
-      continue;
+export function usableSlots(ids: string[], options: DatasetEnchantment[]): string[] {
+  const kept: DatasetEnchantment[] = [];
+  return [0, 1, 2, 3].map((i) => {
+    const e = options.find((x) => x.id === ids[i]);
+    if (!e || kept.some((k) => k.id === e.id || clash(k, e))) {
+      return "";
     }
-    slots.set(g.slotType, [...(slots.get(g.slotType) ?? []), { itemType: g.itemType, name: g.name }]);
-  }
-  return [...slots].map(([slotType, items]) => ({ slotType, items }));
-}
-
-/** Enchantments that can go on the weapon, by the engine's rule: every
- * compatible label, no incompatible one. */
-export function enchantmentsFor(dataset: Dataset, weapon: DatasetWeapon | undefined): DatasetEnchantment[] {
-  const labels = weapon?.labels ?? [];
-  return (dataset.enchantments ?? []).filter(
-    (e) =>
-      e.compatible.every((l) => labels.includes(l)) &&
-      !(e.incompatible ?? []).some((l) => labels.includes(l)) &&
-      !(e.incompatibleItems ?? []).includes(weapon?.id ?? ""),
-  );
+    kept.push(e);
+    return e.id;
+  });
 }
 
 /** Enchantments that fit any item of a slot (RING, ARMOR or ABILITY), by
@@ -198,22 +233,6 @@ export function enchantmentsForSlot(dataset: Dataset, slot: string): DatasetEnch
   );
 }
 
-/**
- * The ids, in order, that can go on one item together: ones among
- * `options`, no repeats or clashes with an earlier one, at most 4. A link
- * from an older dataset can hold any of these mistakes.
- */
-export function usableEnchantments(ids: string[], options: DatasetEnchantment[]): string[] {
-  const kept: DatasetEnchantment[] = [];
-  for (const id of ids) {
-    const e = options.find((x) => x.id === id);
-    if (e && kept.length < 4 && !kept.some((k) => k.id === e.id || clash(k, e))) {
-      kept.push(e);
-    }
-  }
-  return kept.map((e) => e.id);
-}
-
 /** Whether two enchantments can't share an item. */
 export function clash(a: DatasetEnchantment, b: DatasetEnchantment): boolean {
   const meets = (x: DatasetEnchantment, y: DatasetEnchantment) =>
@@ -221,9 +240,12 @@ export function clash(a: DatasetEnchantment, b: DatasetEnchantment): boolean {
   return meets(a, b) || meets(b, a);
 }
 
-/** Class stats at their max, for the ones the editor doesn't show. */
+/** Class stats at their max: builds are always for a maxed character. */
 export function maxStats(cls: DatasetClass) {
   return {
+    attack: cls.attack.max,
+    dexterity: cls.dexterity.max,
+    wisdom: cls.wisdom?.max ?? 0,
     vitality: cls.vitality?.max ?? 0,
     defense: cls.defense?.max ?? 0,
     speed: cls.speed?.max ?? 0,

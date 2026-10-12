@@ -10,6 +10,9 @@ export interface SpriteIndex {
   build: string;
   projectiles: Record<string, { rect: Rect; angleCorrection?: number; rotation?: number }>;
   weapons: Record<string, Rect>;
+  // Missing from sheets made before abilities, armor and rings had icons.
+  items?: Record<string, Rect>;
+  enchantments?: Record<string, Rect>;
   classes: Record<string, { stand: Rect; attack: Rect[] }>;
   target: Rect;
 }
@@ -20,6 +23,14 @@ export interface Sprites {
 }
 
 const supportedVersion = 1;
+
+/** An item's icon by its type, whatever slot it's for. */
+export function itemIcon(sprites: Sprites | null, type: number | undefined): Rect | undefined {
+  if (!sprites || type === undefined) {
+    return undefined;
+  }
+  return sprites.index.weapons[type] ?? sprites.index.items?.[type];
+}
 
 /** Null when there are no sprites, or they're a version this site can't read. */
 export async function loadSprites(): Promise<Sprites | null> {

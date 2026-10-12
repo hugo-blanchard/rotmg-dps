@@ -6,28 +6,18 @@
   import SimulationView from "./lib/SimulationView.svelte";
   import { defaultSimOptions, simFromQuery, simToQuery, type SimOptions } from "./lib/scenario";
   import {
-    abilitiesFor,
-    enchantmentsFor,
-    enchantmentsForSlot,
+    enchantmentsForItem,
+    itemsFor,
     loadDataset,
     loadStatus,
-    gearFor,
     maxStats,
-    otherPieces,
-    setsFor,
-    usableEnchantments,
-    weaponsFor,
+    slots,
+    usableSlots,
     type Dataset,
     type DatasetStatus,
+    type Slot,
   } from "./lib/dataset";
-  import {
-    Engine,
-    type EvaluateRequest,
-    type EvaluateResponse,
-    type GearEnchantments,
-    type PlayerStatus,
-    type Target,
-  } from "./lib/engine";
+  import { Engine, type EvaluateRequest, type EvaluateResponse, type PlayerStatus, type Target } from "./lib/engine";
   import { fromQuery, toQuery } from "./lib/link";
   import { loadSprites, type Sprites } from "./lib/sprites";
 
@@ -37,30 +27,32 @@
   let loadError = $state("");
   let sprites = $state<Sprites | null>(null);
 
+  // Advanced shows more of the numbers and the simulation; the build is the
+  // same in both.
+  let advanced = $state(false);
+  let tab = $state<"numbers" | "simulation">("numbers");
+
   let classId = $state("");
-  let weaponName = $state("");
-  let abilityName = $state("");
+  let items = $state<Record<Slot, string>>({ weapon: "", ability: "", armor: "", ring: "" });
+  const noEnchants = () => ["", "", "", ""];
+  let enchants = $state<Record<Slot, string[]>>({
+    weapon: noEnchants(),
+    ability: noEnchants(),
+    armor: noEnchants(),
+    ring: noEnchants(),
+  });
+  let status = $state<PlayerStatus>({ weak: false, damaging: false, berserk: false, dazed: false });
+  let target = $state<Target>({ defense: 0, armored: false, armorBroken: false, exposed: false, cursed: false });
+  let distance = $state(4);
+  let radius = $state(0.5);
+  let hitOverrides = $state<(number | null)[]>([]);
+
   let simOptions = $state<SimOptions>({ ...defaultSimOptions });
   // A build pinned to compare with in the simulation.
   let pinned = $state<{ request: EvaluateRequest; label: string } | null>(null);
   function pin() {
-    const what = [weaponName, abilityName].filter(Boolean).join(" + ");
-    pinned = { request: $state.snapshot(request), label: `${what}, ${attack} ATT ${dexterity} DEX` };
+    pinned = { request: $state.snapshot(request), label: slots.map((s) => items[s]).filter(Boolean).join(", ") };
   }
-  let attack = $state(0);
-  let dexterity = $state(0);
-  let wisdom = $state(0);
-  let status = $state<PlayerStatus>({ weak: false, damaging: false, berserk: false, dazed: false });
-  let target = $state<Target>({ defense: 0, armored: false, armorBroken: false, exposed: false, cursed: false });
-
-  let distance = $state(4);
-  let radius = $state(0.5);
-  // Armor and ring pieces of the gear's sets that you also wear.
-  let wearing = $state<number[]>([]);
-  // Enchantment ids on the weapon, up to 4, and on the other gear.
-  let enchantments = $state<string[]>([]);
-  let gearEnchantments = $state<GearEnchantments>({ ring: [], armor: [], ability: [] });
-  let hitOverrides = $state<(number | null)[]>([]);
 
   let response = $state<EvaluateResponse | null>(null);
   const result = $derived(response?.ok ? response : null);
@@ -70,70 +62,66 @@
     result ? result.breakdown.subattacks.reduce((n, s) => n + s.projectilesPerVolley, 0) : 1,
   );
 
-  const weapon = $derived(dataset?.weapons.find((w) => w.name === weaponName));
   const cls = $derived(dataset?.classes.find((c) => c.id === classId));
-  const ability = $derived(dataset?.abilities?.find((a) => a.name === abilityName));
-  // Only pieces of a set the chosen weapon or ability is in count.
-  const worn = $derived.by(() => {
-    if (!dataset) {
-      return [];
+  const weapon = $derived(dataset?.weapons.find((w) => w.name === items.weapon));
+  const ability = $derived(dataset?.abilities?.find((a) => a.name === items.ability));
+
+  // A class change keeps the items the new class can use and fills the
+  // rest with its first choice; an empty ability, armor or ring stays empty.
+  $effect(() => {
+    if (!dataset || !cls) return;
+    const fixed = { ...items };
+    for (const slot of slots) {
+      const choices = itemsFor(dataset, cls, slot);
+      if (!choices.some((i) => i.name === items[slot]) && (items[slot] || slot === "weapon")) {
+        fixed[slot] = choices[0]?.name ?? "";
+      }
     }
-    const pieces = setsFor(dataset, [weapon, ability]).flatMap((s) => otherPieces(s).flatMap((p) => p.itemTypes));
-    const gear = cls ? gearFor(weapon, cls, pieces).flatMap((g) => g.items.map((i) => i.itemType)) : [];
-    return wearing.filter((t) => pieces.includes(t) || gear.includes(t));
+    if (slots.some((s) => fixed[s] !== items[s])) {
+      items = fixed;
+    }
   });
-  // Only enchantments that can be on the current items together are sent.
-  const enchanted = $derived(dataset ? usableEnchantments(enchantments, enchantmentsFor(dataset, weapon)) : []);
-  const gearEnchanted = $derived<GearEnchantments>({
-    ring: dataset ? usableEnchantments(gearEnchantments.ring, enchantmentsForSlot(dataset, "RING")) : [],
-    armor: dataset ? usableEnchantments(gearEnchantments.armor, enchantmentsForSlot(dataset, "ARMOR")) : [],
-    // Ability enchantments only mean something with an ability.
-    ability:
-      dataset && abilityName ? usableEnchantments(gearEnchantments.ability, enchantmentsForSlot(dataset, "ABILITY")) : [],
+
+  // Enchantments the item in their slot can't hold are dropped, so nothing
+  // shows that isn't sent.
+  $effect(() => {
+    if (!dataset || !cls) return;
+    const fixed = { ...enchants };
+    for (const slot of slots) {
+      const item = itemsFor(dataset, cls, slot).find((i) => i.name === items[slot]);
+      fixed[slot] = usableSlots(enchants[slot], enchantmentsForItem(dataset, slot, item));
+    }
+    if (slots.some((s) => fixed[s].join() !== enchants[s].join())) {
+      enchants = fixed;
+    }
   });
 
   // What evaluating and simulating share; evaluating adds the two charts.
+  // Builds are always for a maxed character.
   const request = $derived<EvaluateRequest>({
-    weapon: weaponName,
-    ability: abilityName || undefined,
-    attack: Number(attack) || 0,
-    dexterity: Number(dexterity) || 0,
-    wisdom: Number(wisdom) || 0,
-    // Stats the editor doesn't show are at the class's max.
-    ...(cls ? maxStats(cls) : {}),
+    weapon: items.weapon,
+    ability: items.ability || undefined,
+    armor: items.armor || undefined,
+    ring: items.ring || undefined,
+    ...(cls ? maxStats(cls) : { attack: 0, dexterity: 0 }),
     status: { ...status },
     target: { ...target, defense },
-    wearing: [...worn],
-    enchantments: [...enchanted],
+    enchantments: enchants.weapon.filter(Boolean),
     gearEnchantments: {
-      ring: [...gearEnchanted.ring],
-      armor: [...gearEnchanted.armor],
-      ability: [...gearEnchanted.ability],
+      ring: enchants.ring.filter(Boolean),
+      armor: enchants.armor.filter(Boolean),
+      ability: items.ability ? enchants.ability.filter(Boolean) : [],
     },
     class: classId,
     hitsPerVolley: [...hitOverrides],
     hitModel: { distance: hitDistance, radius: Math.max(0.05, Number(radius) || 0.5) },
   });
 
-  // Drop what can't be on the items from the editor too, so its selects
-  // never hold an id they can't show.
-  $effect(() => {
-    if (!dataset) {
-      return;
-    }
-    if (enchanted.join() !== enchantments.join()) {
-      enchantments = [...enchanted];
-    }
-    if (JSON.stringify(gearEnchanted) !== JSON.stringify(gearEnchantments)) {
-      gearEnchantments = { ...gearEnchanted };
-    }
-  });
-
   // Hits typed in for one weapon don't carry over to the next, nor past an
   // enchantment that can add or swap subattacks.
   $effect(() => {
-    void weaponName;
-    void enchanted.join();
+    void items.weapon;
+    void enchants.weapon.join();
     hitOverrides = [];
   });
   let latest = 0;
@@ -161,32 +149,20 @@
       const loaded = await loadDataset();
       engine = await Engine.start(loaded.text);
       const d = loaded.dataset;
-      const linked = fromQuery(location.search, d);
+      const query = new URLSearchParams(location.search);
+      advanced = query.get("view") === "advanced";
+      tab = query.get("tab") === "simulation" ? "simulation" : "numbers";
       simOptions = simFromQuery(location.search);
+      const linked = fromQuery(location.search, d);
       if (linked) {
-        ({
-          classId,
-          weaponName,
-          abilityName,
-          attack,
-          dexterity,
-          wisdom,
-          status,
-          target,
-          distance,
-          radius,
-          wearing,
-          enchantments,
-          gearEnchantments,
-        } = linked);
+        ({ classId, items, enchants, status, target, distance, radius } = linked);
       } else {
         const start = d.classes.find((c) => c.id === "Wizard") ?? d.classes[0];
         classId = start.id;
-        weaponName = weaponsFor(d, start)[0]?.name ?? "";
-        abilityName = abilitiesFor(d, start)[0]?.name ?? "";
-        attack = start.attack.max;
-        dexterity = start.dexterity.max;
-        wisdom = start.wisdom?.max ?? 0;
+        items = Object.fromEntries(slots.map((s) => [s, itemsFor(d, start, s)[0]?.name ?? ""])) as Record<
+          Slot,
+          string
+        >;
       }
       dataset = d;
     } catch (e) {
@@ -194,33 +170,20 @@
     }
   });
 
-  // Keep the URL on the current build, so it can be shared.
+  // Keep the URL on the current build and view, so it can be shared.
   $effect(() => {
-    if (!dataset || !weaponName) {
+    if (!dataset || !items.weapon) {
       return;
     }
-    const query = toQuery({
-      classId,
-      weaponName,
-      abilityName,
-      attack,
-      dexterity,
-      wisdom,
-      status,
-      target,
-      distance,
-      radius,
-      wearing: worn,
-      enchantments: enchanted,
-      gearEnchantments: gearEnchanted,
-    });
-    const q = new URLSearchParams(query);
+    const q = new URLSearchParams(toQuery({ classId, items, enchants, status, target, distance, radius }));
     simToQuery(simOptions, q);
+    if (advanced) q.set("view", "advanced");
+    if (tab === "simulation") q.set("tab", "simulation");
     history.replaceState(null, "", `${location.pathname}?${q}`);
   });
 
   $effect(() => {
-    if (!engine || !weaponName) {
+    if (!engine || !items.weapon) {
       return;
     }
     const withCharts = {
@@ -240,8 +203,14 @@
 </script>
 
 <header>
-  <h1>rotmg-dps</h1>
-  <p>Damage per second for any Realm of the Mad God weapon, against any target.</p>
+  <div>
+    <h1>rotmg-dps</h1>
+    <p>Damage per second for any Realm of the Mad God build, against any target.</p>
+  </div>
+  <div class="mode" role="group" aria-label="How much to show">
+    <button type="button" aria-pressed={!advanced} onclick={() => (advanced = false)}>Simple</button>
+    <button type="button" aria-pressed={advanced} onclick={() => (advanced = true)}>Advanced</button>
+  </div>
 </header>
 
 <main>
@@ -252,79 +221,100 @@
   {:else}
     <BuildEditor
       {dataset}
+      {sprites}
+      {advanced}
       wornSets={result?.sets ?? []}
       enchantmentStats={result?.enchantmentStats ?? []}
       bind:classId
-      bind:weaponName
-      bind:abilityName
-      bind:attack
-      bind:dexterity
-      bind:wisdom
+      bind:items
+      bind:enchants
       bind:status
       bind:target
       bind:distance
       bind:radius
-      bind:wearing
-      bind:enchantments
-      bind:gearEnchantments
     />
-    {#if result}
-      <Results
-        breakdown={result.breakdown}
-        build={result.build}
-        ability={result.ability}
-        {defense}
-        distance={hitDistance}
-        {hitOverrides}
-        onhits={(i, hits) => {
-          const next = [...hitOverrides];
-          next[i] = hits;
-          hitOverrides = next;
-        }}
-      >
-        {#snippet chart()}
-          {#if result.curve}
-            <LineChart
-              caption="DPS against target DEF"
-              points={result.curve.map((p) => ({ x: p.defense, y: p.dps }))}
-              selected={defense}
-              onpick={(d) => (target.defense = d)}
-              formatX={(d) => `${d} DEF`}
-              formatY={(v) => `${whole.format(v)} DPS`}
-              sliderLabel="Target DEF on the DPS chart"
-              keyStep={1}
-              tableEvery={10}
-            />
+    <div class="results">
+      <div class="tabs" role="tablist" aria-label="Results">
+        <button
+          type="button"
+          role="tab"
+          id="tab-numbers"
+          aria-selected={tab === "numbers"}
+          aria-controls="panel"
+          onclick={() => (tab = "numbers")}>Numbers</button
+        >
+        <button
+          type="button"
+          role="tab"
+          id="tab-simulation"
+          aria-selected={tab === "simulation"}
+          aria-controls="panel"
+          onclick={() => (tab = "simulation")}>Simulation</button
+        >
+      </div>
+      <div id="panel" role="tabpanel" aria-labelledby="tab-{tab}">
+        {#if !result}
+          {#if response && !response.ok}
+            <p role="alert">{response.error}</p>
           {/if}
-          {#if result.hitModelGaps?.length}
-            <p class="note">
-              The hit estimate can't follow {result.hitModelGaps.join(" or ")}, so it assumes every shot hits.
-            </p>
-          {:else if result.hitCurve}
-            <LineChart
-              caption="Estimated hits per volley against distance"
-              points={result.hitCurve.map((p) => ({ x: p.distance, y: p.hits }))}
-              selected={hitDistance}
-              onpick={(d) => (distance = d)}
-              formatX={(d) => `${d} tiles`}
-              formatY={(h) => `${h} of ${totalProjectiles} hits`}
-              sliderLabel="Distance to the target on the hits chart"
-              keyStep={0.25}
-              stepped
-              integerY
-              yAtLeast={totalProjectiles}
-              tableEvery={1}
-            />
-          {/if}
-        {/snippet}
-      </Results>
-      {#if engine && weapon}
-        <div class="sim-row">
+        {:else if tab === "numbers"}
+          <Results
+            breakdown={result.breakdown}
+            build={result.build}
+            ability={result.ability}
+            {advanced}
+            {defense}
+            distance={hitDistance}
+            {hitOverrides}
+            onhits={(i, hits) => {
+              const next = [...hitOverrides];
+              next[i] = hits;
+              hitOverrides = next;
+            }}
+          >
+            {#snippet chart()}
+              {#if result.curve}
+                <LineChart
+                  caption="DPS against target DEF"
+                  points={result.curve.map((p) => ({ x: p.defense, y: p.dps }))}
+                  selected={defense}
+                  onpick={(d) => (target.defense = d)}
+                  formatX={(d) => `${d} DEF`}
+                  formatY={(v) => `${whole.format(v)} DPS`}
+                  sliderLabel="Target DEF on the DPS chart"
+                  keyStep={1}
+                  tableEvery={10}
+                />
+              {/if}
+              {#if advanced && result.hitModelGaps?.length}
+                <p class="note">
+                  The hit estimate can't follow {result.hitModelGaps.join(" or ")}, so it assumes every shot hits.
+                </p>
+              {:else if advanced && result.hitCurve}
+                <LineChart
+                  caption="Estimated hits per volley against distance"
+                  points={result.hitCurve.map((p) => ({ x: p.distance, y: p.hits }))}
+                  selected={hitDistance}
+                  onpick={(d) => (distance = d)}
+                  formatX={(d) => `${d} tiles`}
+                  formatY={(h) => `${h} of ${totalProjectiles} hits`}
+                  sliderLabel="Distance to the target on the hits chart"
+                  keyStep={0.25}
+                  stepped
+                  integerY
+                  yAtLeast={totalProjectiles}
+                  tableEvery={1}
+                />
+              {/if}
+            {/snippet}
+          </Results>
+        {:else if engine && weapon}
           <SimulationView
             {engine}
             {request}
             {weapon}
             {ability}
+            {advanced}
             className={classId}
             {sprites}
             expectedDps={result.breakdown.subattacks.reduce((n, s) => n + s.dps, 0)}
@@ -340,11 +330,9 @@
             onpin={pin}
             onunpin={() => (pinned = null)}
           />
-        </div>
-      {/if}
-    {:else if response && !response.ok}
-      <p role="alert">{response.error}</p>
-    {/if}
+        {/if}
+      </div>
+    </div>
   {/if}
 </main>
 
@@ -367,18 +355,43 @@
   }
   header {
     padding-top: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1.5rem;
+    align-items: center;
+    justify-content: space-between;
   }
   h1 {
     margin: 0;
     font-size: 1.5rem;
   }
   header p {
-    margin: 0.25rem 0 1.5rem;
+    margin: 0.25rem 0 0;
     color: var(--text-2);
   }
+  .mode {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .mode button,
+  .tabs button {
+    font: inherit;
+    padding: 0.35rem 0.9rem;
+    border: none;
+    background: var(--page);
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .mode button[aria-pressed="true"] {
+    background: var(--accent);
+    color: white;
+  }
   main {
+    margin-top: 1.5rem;
     display: grid;
-    grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 24rem) minmax(0, 1fr);
     gap: 2rem;
     align-items: start;
   }
@@ -387,14 +400,25 @@
       grid-template-columns: minmax(0, 1fr);
     }
   }
-  .sim-row {
-    grid-column: 2;
+  .results {
+    display: grid;
+    gap: 1rem;
     min-width: 0;
   }
-  @media (max-width: 760px) {
-    .sim-row {
-      grid-column: 1;
-    }
+  .tabs {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .tabs button {
+    background: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    font-weight: 600;
+  }
+  .tabs button[aria-selected="true"] {
+    color: var(--text);
+    border-bottom-color: var(--accent);
   }
   .note {
     margin: 0;

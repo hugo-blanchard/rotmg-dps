@@ -1,43 +1,41 @@
 // The build in the page's URL, so a link opens the same build. Anything
 // missing or no longer in the dataset falls back to the defaults.
 
-import { abilitiesFor, weaponsFor, type Dataset } from "./dataset";
-import type { GearEnchantments, PlayerStatus, Target } from "./engine";
+import { itemsFor, slots, type Dataset, type Slot } from "./dataset";
+import type { PlayerStatus, Target } from "./engine";
 
 export interface Build {
   classId: string;
-  weaponName: string;
-  abilityName: string;
-  attack: number;
-  dexterity: number;
-  wisdom: number;
+  /** Item names by slot, "" for an empty one. */
+  items: Record<Slot, string>;
+  /** Enchantment ids by slot, 4 each, "" for an empty one. */
+  enchants: Record<Slot, string[]>;
   status: PlayerStatus;
   target: Target;
   distance: number;
   radius: number;
-  wearing: number[];
-  enchantments: string[];
-  gearEnchantments: GearEnchantments;
 }
 
 const statusKeys = ["weak", "damaging", "berserk", "dazed"] as const;
-const gearSlots = ["ring", "armor", "ability"] as const;
 const targetKeys = ["armored", "armorBroken", "exposed", "cursed"] as const;
+// The weapon's enchantments keep the name they had before other gear had any.
+const enchantKeys: Record<Slot, string> = {
+  weapon: "ench",
+  ability: "ench_ability",
+  armor: "ench_armor",
+  ring: "ench_ring",
+};
 
 export function toQuery(b: Build): string {
-  const q = new URLSearchParams({
-    class: b.classId,
-    weapon: b.weaponName,
-    att: String(b.attack),
-    dex: String(b.dexterity),
-    wis: String(b.wisdom),
-    def: String(b.target.defense),
-    dist: String(b.distance),
-    size: String(b.radius),
-  });
-  if (b.abilityName) {
-    q.set("ability", b.abilityName);
+  const q = new URLSearchParams({ class: b.classId, weapon: b.items.weapon });
+  for (const slot of ["ability", "armor", "ring"] as const) {
+    if (b.items[slot]) {
+      q.set(slot, b.items[slot]);
+    }
   }
+  q.set("def", String(b.target.defense));
+  q.set("dist", String(b.distance));
+  q.set("size", String(b.radius));
   const self = statusKeys.filter((k) => b.status[k]);
   if (self.length) {
     q.set("self", self.join(","));
@@ -46,15 +44,14 @@ export function toQuery(b: Build): string {
   if (on.length) {
     q.set("target", on.join(","));
   }
-  if (b.wearing.length) {
-    q.set("wear", b.wearing.join(","));
-  }
-  if (b.enchantments.length) {
-    q.set("ench", b.enchantments.join(","));
-  }
-  for (const slot of gearSlots) {
-    if (b.gearEnchantments[slot].length) {
-      q.set(`ench_${slot}`, b.gearEnchantments[slot].join(","));
+  for (const slot of slots) {
+    // Slots keep their place, so empty ones in the middle stay as blanks.
+    const list = [...b.enchants[slot]];
+    while (list.length && !list[list.length - 1]) {
+      list.pop();
+    }
+    if (list.length) {
+      q.set(enchantKeys[slot], list.join(","));
     }
   }
   return q.toString();
@@ -62,31 +59,30 @@ export function toQuery(b: Build): string {
 
 /**
  * Null when the query doesn't name a class and weapon this dataset has.
- * Stats it leaves out are the class's max.
+ * Items that aren't for the class are left empty.
  */
 export function fromQuery(query: string, dataset: Dataset): Build | null {
   const q = new URLSearchParams(query);
   const cls = dataset.classes.find((c) => c.id === q.get("class"));
-  const weapon = cls && weaponsFor(dataset, cls).find((w) => w.name === q.get("weapon"));
-  if (!cls || !weapon) {
+  if (!cls || !itemsFor(dataset, cls, "weapon").some((w) => w.name === q.get("weapon"))) {
     return null;
   }
-  const ability = abilitiesFor(dataset, cls).find((a) => a.name === q.get("ability"));
+  const item = (slot: Slot) => itemsFor(dataset, cls, slot).find((i) => i.name === q.get(slot))?.name ?? "";
   const number = (key: string, otherwise: number) => {
     const n = Number(q.get(key));
     return q.has(key) && Number.isFinite(n) && n >= 0 ? n : otherwise;
   };
   const flags = (key: string) => new Set((q.get(key) ?? "").split(","));
-  const known = (ids: Set<string>) => [...ids].filter((id) => dataset.enchantments?.some((e) => e.id === id));
+  const known = (key: string) => {
+    const ids = (q.get(key) ?? "").split(",").slice(0, 4);
+    return [0, 1, 2, 3].map((i) => (dataset.enchantments?.some((e) => e.id === ids[i]) ? ids[i] : ""));
+  };
   const self = flags("self");
   const on = flags("target");
   return {
     classId: cls.id,
-    weaponName: weapon.name,
-    abilityName: ability?.name ?? "",
-    attack: number("att", cls.attack.max),
-    dexterity: number("dex", cls.dexterity.max),
-    wisdom: number("wis", cls.wisdom?.max ?? 0),
+    items: { weapon: item("weapon"), ability: item("ability"), armor: item("armor"), ring: item("ring") },
+    enchants: Object.fromEntries(slots.map((s) => [s, known(enchantKeys[s])])) as Record<Slot, string[]>,
     status: Object.fromEntries(statusKeys.map((k) => [k, self.has(k)])) as unknown as PlayerStatus,
     target: {
       defense: number("def", 0),
@@ -94,12 +90,5 @@ export function fromQuery(query: string, dataset: Dataset): Build | null {
     },
     distance: number("dist", 4),
     radius: number("size", 0.5),
-    wearing: [...flags("wear")].map(Number).filter((n) => Number.isInteger(n) && n > 0),
-    enchantments: known(flags("ench")),
-    gearEnchantments: {
-      ring: known(flags("ench_ring")),
-      armor: known(flags("ench_armor")),
-      ability: known(flags("ench_ability")),
-    },
   };
 }
