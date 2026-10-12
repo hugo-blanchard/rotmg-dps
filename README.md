@@ -67,8 +67,9 @@ This section is enough to write your own extractor. Values keep the client's uni
 | `classes` | Player classes, sorted by `type` | `<Object>` elements with `<Player/>` in `players.xml` |
 | `weapons` | Weapons, sorted by `type` | object XML files listed under `objects` in the client's `manifest` |
 | `abilities` | Abilities, sorted by `type`. Missing from datasets made before abilities were added | the same object XML files |
+| `armors`, `rings` | Armor and rings, each sorted by `type`. Missing from datasets made before they were added | the same object XML files |
 | `targets` | Bosses the site offers as targets. Optional | the same object XML files |
-| `sets` | Equipment sets with a weapon or ability in the dataset, sorted by `type`. Optional | `equipmentsets.xml` |
+| `sets` | Equipment sets with a piece in the dataset, sorted by `type`. Optional | `equipmentsets.xml` |
 | `enchantments` | Enchantments that fit at least one weapon in the dataset, or any ring, armor or ability, sorted by `type`. Optional | `enchantments.xml` |
 
 ### Classes
@@ -80,6 +81,7 @@ This section is enough to write your own extractor. Values keep the client's uni
 | `weaponSlotType` | first value of `<SlotTypes>` |
 | `attack`, `dexterity` | `{"base", "max"}` from `<Attack max="60">23</Attack>` and `<Dexterity>` |
 | `abilitySlotType` | second value of `<SlotTypes>` |
+| `armorSlotType`, `ringSlotType` | third and fourth values of `<SlotTypes>`; missing from datasets made before armor and rings were added |
 | `maxHitPoints`, `maxMagicPoints`, `defense`, `speed`, `vitality`, `wisdom` | `{"base", "max"}` from `<MaxHitPoints>`, `<MaxMagicPoints>`, `<Defense>`, `<Speed>`, `<HpRegen>` and `<MpRegen>` |
 
 The fields from `abilitySlotType` down were added with abilities and are missing from older datasets.
@@ -149,6 +151,16 @@ An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is som
 
 `params` keeps the attributes as the client has them: numbers where they parse as numbers, `true` and `false` as booleans, everything else, including hex colours, as strings. The engine reads the ones it understands and lists every effect type it doesn't model.
 
+### Armor and rings
+
+An item is an armor or a ring when its `<Class>` is `Equipment` and its `<SlotType>` is some class's armor or ring slot. Admin-only items and test files are left out, and reskins are merged, as with weapons.
+
+| Field | Client source |
+|---|---|
+| `type`, `id`, `name`, `slotType`, `tier`, `texture`, `statBonuses` | as for weapons |
+| `labels` | `<Labels>`, split on commas; enchantments match against them |
+| `unsupported` | tags on the item that can change damage but aren't modelled, e.g. `OnPlayerHitActivate` |
+
 ### Targets
 
 A short list of current endgame bosses, chosen by hand by object `id`. Most bosses also have old, legacy or event copies under other ids; the list names the ones in today's dungeons. The site uses them to fill in the target's DEF.
@@ -173,7 +185,7 @@ Each `<EquipmentSet>` lists its pieces with `<Setpiece slot itemtype>`, where sl
 
 ### Enchantments
 
-An enchantment fits an item that has every label in `compatible` and none in `incompatible`, and isn't named in `incompatibleItems`. It fits any ring, armor or ability when `compatible` only asks for `EQUIPMENT` and `RING`, `ARMOR` or `ABILITY`, and `incompatible` rules out neither. Two enchantments can't share an item when one's `incompatibleLabels` includes one of the other's `labels`. An item holds up to 4.
+An enchantment fits an item that has every label in `compatible` and none in `incompatible`, and isn't named in `incompatibleItems`. An armor or ring is matched on its own `labels`. An ability, which has none in the dataset, takes an enchantment when `compatible` only asks for `EQUIPMENT` and `ABILITY`, and `incompatible` rules out neither. Two enchantments can't share an item when one's `incompatibleLabels` includes one of the other's `labels`. An item holds up to 4.
 
 | Field | Client source |
 |---|---|
@@ -182,6 +194,7 @@ An enchantment fits an item that has every label in `compatible` and none in `in
 | `labels`, `incompatibleLabels` | `<EnchantmentLabels>`, `<IncompatibleWithEnchantmentLabels>` |
 | `mutators` | `{"tag", "value", "params"}` per element under `<Mutators>`: its name, its text (a number like `1.05` or a kind like `IncrementStat`) and its attributes, read like an activate's `params` |
 | `containers` | `{"id", "projectiles", "subattacks", "unsupported"}` for each item a `<SetSubAttack>` or `<AddSubAttack>` names in `subAttackObject`, read like a weapon. Its subattack `subAttackIndex` goes into the weapon's subattack slot given by the element's text |
+| `texture` | `{"file", "index"}` from `<Texture>`, the enchantment's icon |
 
 ### Example
 
@@ -220,6 +233,8 @@ Every rectangle is `[x, y, width, height]` in pixels in `sprites.png`.
 | `build` | Client build, as in the dataset | |
 | `projectiles` | By projectile `objectId`: `{"rect", "angleCorrection", "rotation"}` | the projectile object's `<Texture>` (or the first of its `<RandomTexture>`), `<AngleCorrection>` and `<Rotation>` |
 | `weapons` | By weapon `type`, as a string: the item's icon | the weapon's `<Texture>` |
+| `items` | By ability, armor or ring `type`, as a string: the item's icon | the item's `<Texture>` |
+| `enchantments` | By enchantment `id`: its icon | the enchantment's `<Texture>` |
 | `classes` | By class `id`: `{"stand", "attack": [...]}`, seen from behind | the class's `<AnimatedTexture>`, facing up, standing and attacking |
 | `target` | The target the simulation shoots at | the `Target Strong` object's `<Texture>` |
 
