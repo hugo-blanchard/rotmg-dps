@@ -830,22 +830,23 @@ std::string Api::Optimize(std::string_view request_json) const {
       return tier ? "tiered" : in_sets.contains(type) ? "set" : "untiered";
     };
     std::array<std::vector<std::string>, 4> candidates;
-    const auto offer = [&](std::size_t slot, int type, const std::optional<int>& tier, const std::string& name) {
-      if (pools.contains(pool(type, tier))) {
-        candidates[slot].push_back(name);
+    // A reskin plays exactly like its base, so only the base is tried.
+    const auto offer = [&](std::size_t slot, const auto& item) {
+      if (item.reskin_of.empty() && pools.contains(pool(item.type, item.tier))) {
+        candidates[slot].push_back(item.name);
       }
     };
     for (const Weapon& w : d.weapons) {
-      if (w.slot_type == cls->weapon_slot_type) offer(0, w.type, w.tier, w.name);
+      if (w.slot_type == cls->weapon_slot_type) offer(0, w);
     }
     for (const Ability& a : d.abilities) {
-      if (a.slot_type == cls->ability_slot_type) offer(1, a.type, a.tier, a.name);
+      if (a.slot_type == cls->ability_slot_type) offer(1, a);
     }
     for (const Gear& g : d.armors) {
-      if (g.slot_type == cls->armor_slot_type) offer(2, g.type, g.tier, g.name);
+      if (g.slot_type == cls->armor_slot_type) offer(2, g);
     }
     for (const Gear& g : d.rings) {
-      if (g.slot_type == cls->ring_slot_type) offer(3, g.type, g.tier, g.name);
+      if (g.slot_type == cls->ring_slot_type) offer(3, g);
     }
 
     struct Build {

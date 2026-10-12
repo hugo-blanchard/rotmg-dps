@@ -542,6 +542,10 @@ TEST_CASE("the optimizer finds the build with the most DPS") {
   // The ring with ATT, which also makes 4 pieces of the Swordsman Set with
   // the helm, beats the amulet's DEX.
   CHECK(best["ring"] == "Plain Ring");
+  // Festive Ring is a reskin of it, so it's never tried.
+  for (const json& b : res["builds"]) {
+    CHECK(b["ring"] != "Festive Ring");
+  }
 }
 
 TEST_CASE("the optimizer keeps locked slots and fills enchantments legally") {
