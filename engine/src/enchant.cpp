@@ -60,6 +60,10 @@ Enchanted Enchant(const Weapon& weapon, const std::vector<const Enchantment*>& e
             (m.tag == "MultiplySpeed" ? p.speed : p.lifetime_ms) *= n;
           }
         }
+      } else if (m.tag == "AddOnPlayerShootActivate") {
+        Activate effect = m.attributes;
+        effect.type = m.text;
+        w.on_shoot.push_back(std::move(effect));
       } else if (m.tag == "ActivateOnEquip" && m.text == "IncrementStat") {
         stats[m.attributes.Text("stat")] += m.attributes.Number("amount").value_or(0);
       } else {

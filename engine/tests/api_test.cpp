@@ -205,3 +205,25 @@ TEST_CASE("refuses enchantments that can't be on the weapon together") {
   CHECK(error(R"(["Attack_Bonus_1", "Dexterity_Bonus_2"])").find("can't share an item") != std::string::npos);
   CHECK(error(R"(["Nope"])").find("no enchantment named") != std::string::npos);
 }
+
+TEST_CASE("an on-shoot boost with a chance is up part of the time") {
+  // 3% a shot for +8 ATT over 6 s, 15 s cooldown: once the cooldown ends
+  // the next boost comes 1 / (0.03 x shots a second) later on average.
+  const rotmg::Api api = LoadedApi();
+  const json res = json::parse(
+      api.Evaluate(R"({"weapon": "Plain Sword", "attack": 50, "dexterity": 0, "enchantments": ["OnShoot_Attack_Bonus_4"]})"));
+  REQUIRE(res["ok"] == true);
+  const double shots = res["breakdown"]["subattacks"][0]["volleysPerSecond"].get<double>();
+  const double share = 6 / (15 + 1 / (0.03 * shots));
+  REQUIRE(res["build"]["uptimes"].size() == 1);
+  CHECK(res["build"]["uptimes"][0]["effect"] == "ATT");
+  CHECK(res["build"]["uptimes"][0]["share"].get<double>() == Catch::Approx(share));
+  CHECK(res["breakdown"]["unsupported"].empty());
+
+  const auto dps = [&](int attack) {
+    return json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "dexterity": 0, "attack": )" +
+                                    std::to_string(attack) + "}"))["breakdown"]["dps"]
+        .get<double>();
+  };
+  CHECK(res["build"]["weaponDps"].get<double>() == Catch::Approx((1 - share) * dps(50) + share * dps(58)));
+}

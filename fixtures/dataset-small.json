@@ -349,6 +349,11 @@
       "mutators": [ { "tag": "MultiplyRateOfFire", "value": 1.05, "params": { "subAttackIndex": -1 } } ] },
     { "type": 268, "id": "Staff_Only", "name": "Staff Only", "compatible": ["WEAPON", "STAFF"], "labels": [],
       "mutators": [] },
+    { "type": 270, "id": "OnShoot_Attack_Bonus_4", "name": "OnShoot Attack Boost IV", "compatible": ["WEAPON"],
+      "labels": ["ONSHOOT", "PROCATTACK"], "incompatibleLabels": ["PROCATTACK"],
+      "mutators": [ { "tag": "AddOnPlayerShootActivate", "value": "StatBoostSelf",
+                      "params": { "amount": 8, "channel": "noStack", "cooldown": 15, "duration": 6, "proc": 0.03,
+                                  "stat": "ATT" } } ] },
     { "type": 269, "id": "Odd_Enchant", "name": "Odd Enchant", "compatible": ["WEAPON"], "labels": ["ODD"],
       "mutators": [ { "tag": "AddOnPlayerHitActivate", "value": "Heal", "params": { "amount": 20 } } ] }
   ],

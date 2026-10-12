@@ -28,6 +28,29 @@ double WeaponDps(const Weapon& weapon, Character character, Target target, const
   return EvaluateWeapon(weapon, character, target, assumptions).dps;
 }
 
+// The weapon's DPS averaged over its chance boosts being up or not, each on
+// its own, with whatever else is up.
+double MixedDps(const Weapon& weapon, const Character& character, const Target& target,
+                const Assumptions& assumptions, const std::vector<const Buff*>& active,
+                const std::vector<ChanceBoost>& boosts) {
+  double total = 0;
+  for (unsigned mask = 0; mask < (1u << boosts.size()); ++mask) {
+    double weight = 1;
+    Character c = character;
+    for (std::size_t i = 0; i < boosts.size(); ++i) {
+      const bool up = (mask >> i) & 1u;
+      weight *= up ? boosts[i].share : 1 - boosts[i].share;
+      if (up) {
+        c = c.With({boosts[i].bonus});
+      }
+    }
+    if (weight > 0) {
+      total += weight * WeaponDps(weapon, c, target, assumptions, active);
+    }
+  }
+  return total;
+}
+
 }  // namespace
 
 BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const Character& character,
@@ -35,7 +58,20 @@ BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const
   BuildBreakdown out;
   const Character with_ability_gear = ability ? character.With(ability->stat_bonuses) : character;
   out.weapon = EvaluateWeapon(weapon, with_ability_gear, target, assumptions);
-  out.weapon_dps = out.weapon.dps;
+  double shots_per_second = 0;
+  for (const SubattackResult& s : out.weapon.subattacks) {
+    shots_per_second = std::max(shots_per_second, s.volleys_per_second);
+  }
+  const std::vector<ChanceBoost> boosts = ChanceBoosts(weapon, character.worn, shots_per_second);
+  for (const ChanceBoost& b : boosts) {
+    out.uptimes.push_back({{Buff::On::kPlayer, b.bonus.stat, b.bonus.amount, b.duration_s}, b.share});
+  }
+  if (!boosts.empty()) {
+    out.assumptions.push_back(
+        "an on-shoot boost's cooldown starts when it goes off, and boosts go off independently of each other");
+  }
+  out.weapon_dps =
+      boosts.empty() ? out.weapon.dps : MixedDps(weapon, with_ability_gear, target, assumptions, {}, boosts);
   out.dps = out.weapon_dps;
   if (ability == nullptr) {
     return out;
@@ -50,6 +86,7 @@ BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const
   if (a.buffs.empty() || a.casts_per_second <= 0) {
     return out;
   }
+  const double no_buffs = out.weapon_dps;
 
   const double period = 1 / a.casts_per_second;
   std::vector<double> lasts;
@@ -74,11 +111,11 @@ BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const
         active.push_back(&a.buffs[i]);
       }
     }
-    weighted += (end - start) * WeaponDps(weapon, with_ability_gear, target, assumptions, active);
+    weighted += (end - start) * MixedDps(weapon, with_ability_gear, target, assumptions, active, boosts);
     start = end;
   }
   if (start < period) {
-    weighted += (period - start) * out.weapon.dps;
+    weighted += (period - start) * no_buffs;
   }
   out.weapon_dps = weighted / period;
   out.dps = out.weapon_dps + a.dps;

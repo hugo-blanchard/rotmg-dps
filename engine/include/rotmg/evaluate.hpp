@@ -100,6 +100,20 @@ struct Breakdown {
 /// Valor's -10 ATT. Only the ones the engine can model.
 std::vector<StatBonus> WhileShooting(const Weapon& weapon);
 
+/// An on-shoot stat boost that goes off by chance, like the OnShoot Attack
+/// Boost enchantment's 3% for +5 ATT, and the share of the time it's up.
+struct ChanceBoost {
+  StatBonus bonus;
+  double duration_s = 0;
+  double share = 0;
+};
+
+/// The weapon's chance boosts at `shots_per_second`. After a boost goes off
+/// its cooldown runs; then each shot has the chance, so the next one comes
+/// 1 / (chance x shots per second) seconds later on average. A boost is up
+/// for its duration out of that cycle.
+std::vector<ChanceBoost> ChanceBoosts(const Weapon& weapon, const std::vector<int>& worn, double shots_per_second);
+
 /// Single-target DPS of a weapon. Each subattack fires on its own at its own
 /// rate (RealmEye: Weapon Attributes), so the total is their sum.
 Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const Target& target,

@@ -22,7 +22,7 @@ struct Enchanted {
 };
 
 /// Applies damage, fire rate, projectile speed and lifetime multipliers,
-/// and adds flat stat bonuses. Fractional stats (+1.8 VIT) add up and the
+/// adds flat stat bonuses, and adds on-shoot effects to the weapon's own. Fractional stats (+1.8 VIT) add up and the
 /// total rounds down; that's an assumption.
 Enchanted Enchant(const Weapon& weapon, const std::vector<const Enchantment*>& enchantments);
 

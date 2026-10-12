@@ -64,6 +64,14 @@ bool GearWorn(const Activate& a, const std::vector<int>& worn) {
          std::ranges::none_of(TypeList(a.Text("mustNotWearOR")), wearing);
 }
 
+// A stat boost with a chance per shot and a cooldown, like the OnShoot
+// boost enchantments. Ones that need HP or a status aren't modelled.
+bool IsChanceBoost(const Activate& a) {
+  const double proc = a.Number("proc").value_or(1);
+  return a.type == "StatBoostSelf" && proc > 0 && proc < 1 && a.Number("duration").value_or(0) > 0 &&
+         InCombatOnly(a) && !a.Number("hpRequiredRelative") && !a.Number("hpMinThresholdRelative");
+}
+
 // Extra shots made at the cursor on every shot past a cooldown, like
 // Marionette Ravager's or a Syndicate Gear ring's. Novas around the player
 // (Wand of Geb), meter-gated ones (Staff of Esben) and ones that need a
@@ -79,6 +87,23 @@ bool IsProcShot(const Weapon& w, const Activate& a) {
 }
 
 }  // namespace
+
+std::vector<ChanceBoost> ChanceBoosts(const Weapon& weapon, const std::vector<int>& worn, double shots_per_second) {
+  std::vector<ChanceBoost> out;
+  std::vector<int> wearing = worn;
+  wearing.push_back(weapon.type);
+  for (const Activate& a : weapon.on_shoot) {
+    if (!IsChanceBoost(a) || !GearWorn(a, wearing) || shots_per_second <= 0) {
+      continue;
+    }
+    const double duration = *a.Number("duration");
+    const double cycle = a.Number("cooldown").value_or(0) + 1 / (*a.Number("proc") * shots_per_second);
+    out.push_back({{a.Text("stat"), static_cast<int>(a.Number("amount").value_or(0))},
+                   duration,
+                   std::min(1.0, duration / cycle)});
+  }
+  return out;
+}
 
 std::vector<StatBonus> WhileShooting(const Weapon& weapon) {
   std::vector<StatBonus> out;
@@ -130,7 +155,8 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
     const bool harmless = a.type == "ConditionEffectSelf" && kHarmlessSelfEffects.contains(a.Text("effect"));
     // An effect for gear that isn't worn doesn't go off, so it can't be missing.
     const bool off = !GearWorn(a, worn);
-    if (!harmless && !off && !IsWhileShooting(a) && !IsPoisonBurst(a) && !IsProcShot(weapon, a)) {
+    if (!harmless && !off && !IsWhileShooting(a) && !IsPoisonBurst(a) && !IsProcShot(weapon, a) &&
+        !IsChanceBoost(a)) {
       unmodelled_on_shoot = true;
     }
   }
