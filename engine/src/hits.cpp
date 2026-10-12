@@ -1,7 +1,11 @@
 #include "rotmg/hits.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
+#include <map>
 #include <set>
+#include <vector>
 
 #include "rotmg/path.hpp"
 
@@ -16,6 +20,58 @@ const std::set<std::string, std::less<>> kMotionTags = {
     "TurnClamp",       "CircleTurnAngle", "CircleTurnDelay",   "CollisionMult",    "ProjectilePattern",
     "DefaultAngleIncr",
 };
+
+// Everything a volley's paths depend on (see path.cpp), for remembering
+// estimates. A missing value is NaN, which no real value is.
+std::vector<double> VolleyKey(const Projectile& p, const Subattack& s, double distance, double radius) {
+  constexpr double kNone = std::numeric_limits<double>::quiet_NaN();
+  const auto [x, y] = s.pos_offset.value_or(std::array<double, 2>{kNone, kNone});
+  return {p.speed,
+          p.lifetime_ms,
+          p.acceleration.value_or(kNone),
+          p.acceleration_delay.value_or(kNone),
+          p.speed_clamp.value_or(kNone),
+          p.amplitude.value_or(kNone),
+          p.frequency.value_or(kNone),
+          p.wavy ? 1.0 : 0.0,
+          p.boomerang ? 1.0 : 0.0,
+          p.circle_turn_delay.value_or(kNone),
+          p.circle_turn_angle.value_or(kNone),
+          static_cast<double>(s.num_projectiles),
+          s.default_angle.value_or(kNone),
+          s.arc_gap.value_or(kNone),
+          x,
+          y,
+          distance,
+          radius};
+}
+
+// Orders keys with NaN equal to NaN, unlike operator<.
+struct KeyLess {
+  bool operator()(const std::vector<double>& a, const std::vector<double>& b) const {
+    return std::ranges::lexicographical_compare(a, b, [](double x, double y) {
+      if (std::isnan(x) || std::isnan(y)) {
+        return std::isnan(y) && !std::isnan(x);
+      }
+      return x < y;
+    });
+  }
+};
+
+int TraceHits(const Projectile& p, const Subattack& subattack, double distance, double radius) {
+  const Point target{0, distance};
+  int hits = 0;
+  for (int i = 0; i < subattack.num_projectiles; ++i) {
+    const ProjectilePath path(p, subattack, i);
+    for (int step = 0; step <= path.Steps(); ++step) {
+      if (path.Touches(step, target, radius)) {
+        ++hits;
+        break;
+      }
+    }
+  }
+  return hits;
+}
 
 }  // namespace
 
@@ -41,17 +97,19 @@ int HitsPerVolley(const Weapon& weapon, const Subattack& subattack, double dista
   if (p == nullptr) {
     return 0;
   }
-  const Point target{0, distance};
-  int hits = 0;
-  for (int i = 0; i < subattack.num_projectiles; ++i) {
-    const ProjectilePath path(*p, subattack, i);
-    for (int step = 0; step <= path.Steps(); ++step) {
-      if (path.Touches(step, target, radius)) {
-        ++hits;
-        break;
-      }
-    }
+  // Tracing long-lived or circling shots is slow, and the optimizer asks
+  // about the same volleys over and over, so estimates are remembered. The
+  // answer depends only on the key, so this can't change a result.
+  static std::map<std::vector<double>, int, KeyLess> known;
+  if (known.size() > 4096) {
+    known.clear();
   }
+  const std::vector<double> key = VolleyKey(*p, subattack, distance, radius);
+  if (const auto it = known.find(key); it != known.end()) {
+    return it->second;
+  }
+  const int hits = TraceHits(*p, subattack, distance, radius);
+  known.emplace(key, hits);
   return hits;
 }
 
