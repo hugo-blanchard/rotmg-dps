@@ -136,15 +136,6 @@
         {/each}
       </ul>
     {/if}
-    {#if build.uptimes.length}
-      <p class="buffs">
-        Weapon DPS goes from {whole.format(breakdown.dps)} to {whole.format(build.weaponDps)} with
-        {#each build.uptimes as u, i (i)}{i > 0 ? (i === build.uptimes.length - 1 ? " and " : ", ") : ""}{buffName(u)}{u.on ===
-          "target"
-            ? " on the target"
-            : ""} up {percent.format(u.share)} of the time{/each}.
-      </p>
-    {/if}
     {#if abilityUnsupported.length}
       <p class="notice">
         <strong>Ability effects not modelled yet:</strong>
@@ -154,6 +145,15 @@
   {/if}
 
   <h2>{ability ? "Weapon" : "How it adds up"}</h2>
+  {#if build.uptimes.length}
+    <p class="buffs">
+      Weapon DPS goes from {whole.format(breakdown.dps)} to {whole.format(build.weaponDps)} with
+      {#each build.uptimes as u, i (i)}{i > 0 ? (i === build.uptimes.length - 1 ? " and " : ", ") : ""}{buffName(u)}{u.on ===
+        "target"
+          ? " on the target"
+          : ""} up {percent.format(u.share)} of the time{/each}.
+    </p>
+  {/if}
   <div class="table-scroll">
     <table>
       <thead>
