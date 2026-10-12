@@ -191,6 +191,8 @@ export interface SimTarget {
   kills: number;
   /** When it first died. */
   killedMs: number | null;
+  /** How long each debuff has been up on it. */
+  uptimeMs: Record<string, number>;
 }
 
 export interface SimEffect {
@@ -221,6 +223,8 @@ export interface SimRun {
   mpMax: number;
   /** Statuses and stat boosts on the player now, like "Berserk". */
   statuses: string[];
+  /** How long each status or stat boost has been up on the player. */
+  uptimeMs: Record<string, number>;
   ability: { casts: number; hits: number; damage: number };
   procs: { activations: number; hits: number; damage: number };
   /** Hits since the last state, for damage numbers. */

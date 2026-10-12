@@ -335,6 +335,7 @@
             bosses={dataset?.targets ?? []}
             bind:options={simOptions}
             {pinned}
+            expectedUptimes={result.build?.uptimes ?? []}
             onpin={pin}
             onunpin={() => (pinned = null)}
           />

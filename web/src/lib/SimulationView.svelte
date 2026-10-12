@@ -30,6 +30,7 @@
     pinned = null,
     onpin,
     onunpin,
+    expectedUptimes = [],
   }: {
     engine: Engine;
     request: EvaluateRequest;
@@ -53,6 +54,8 @@
     pinned?: { request: EvaluateRequest; label: string } | null;
     onpin: () => void;
     onunpin: () => void;
+    /** The share of the time the build's buffs and debuffs are up, as evaluated. */
+    expectedUptimes?: { effect: string; on: "player" | "target"; share: number }[];
   } = $props();
 
   const height = 360;
@@ -459,6 +462,20 @@
   const abilityDps = $derived(sim?.ok && fighting > 0 ? sim.ability.damage / fighting : 0);
   const procDps = $derived(sim?.ok && fighting > 0 ? sim.procs.damage / fighting : 0);
   const totalDps = $derived(sim?.ok && fighting > 0 ? sim.targets.reduce((n, t) => n + t.damage, 0) / fighting : 0);
+  // Buffs on the player and debuffs on the aim target, measured so far.
+  const uptimes = $derived.by(() => {
+    if (!sim?.ok || seconds <= 0) return [];
+    const rows = (up: Record<string, number>, on: "player" | "target") =>
+      Object.entries(up).map(([effect, ms]) => ({
+        effect,
+        on,
+        share: ms / (seconds * 1000),
+        expected: expectedUptimes.find((u) => u.effect === effect && u.on === on)?.share,
+      }));
+    return [...rows(sim.uptimeMs, "player"), ...rows(sim.targets[sim.aim]?.uptimeMs ?? {}, "target")];
+  });
+  const percent = new Intl.NumberFormat("en", { style: "percent", maximumFractionDigits: 0 });
+
   const hasProcs = $derived(expectedProcDps > 0 || (sim?.ok && sim.procs.activations > 0));
   const bucketS = 0.1;
   // DPS over the last second, and since the start.
@@ -710,6 +727,15 @@
         {/if}
       {/if}
     </dl>
+    {#if uptimes.length}
+      <p class="hint">
+        Up so far:
+        {#each uptimes as u, i (u.on + u.effect)}
+          {i ? "; " : ""}{u.effect} on {u.on === "player" ? "you" : "the aim target"}
+          {percent.format(u.share)}{u.expected !== undefined ? ` (engine ${percent.format(u.expected)})` : ""}
+        {/each}
+      </p>
+    {/if}
     <div class="controls">
       <button type="button" onclick={runMany} disabled={spreading}>
         {spreading ? "Running…" : `Run it ${manyRuns} times`}
