@@ -296,3 +296,17 @@ TEST_CASE("a target that moves dodges shots a still one takes") {
   strafing.Advance(20'000);
   CHECK(strafing.PerTarget()[0].hits < still.PerTarget()[0].hits / 2);
 }
+
+TEST_CASE("leading a moving target lands shots that aiming at it misses") {
+  // The lance's shot takes half a second to cover 5 tiles. A target moving
+  // straight across at 2 tiles a second has gone a tile by then, but keeps
+  // going the same way long enough for a led shot to meet it.
+  const rotmg::Character c{.attack = 25, .dexterity = 0};
+  rotmg::Scenario s = Moving({Kind::kStrafe, 2, 6, 0, true});
+  Simulation plain(Lance(false), c, s);
+  s.lead = true;
+  Simulation led(Lance(false), c, s);
+  plain.Advance(20'000);
+  led.Advance(20'000);
+  CHECK(led.PerTarget()[0].hits > 2 * plain.PerTarget()[0].hits);
+}

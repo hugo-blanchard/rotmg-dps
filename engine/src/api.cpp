@@ -350,6 +350,7 @@ Scenario ReadScenario(const json& req, const Request& r) {
   s.full_mp = it->value("fullMp", true);
   s.respawn = it->value("respawn", false);
   s.random_rolls = it->value("randomRolls", false);
+  s.lead = it->value("lead", false);
   if (auto p = it->find("player"); p != it->end()) {
     s.player = {p->value("x", 0.0), p->value("y", 0.0)};
     if (auto m = p->find("movement"); m != p->end()) {
@@ -593,6 +594,7 @@ std::string Api::StartSimulation(std::string_view request_json) {
 // A simulation request is an evaluate request plus, optionally,
 //   "scenario": {"player": {"x", "y", "movement"}, "aim": 0, "seed": 1,
 //                "fullMp": true, "respawn": false, "randomRolls": false,
+//                "lead": false,
 //                "targets": [{"x", "y", "radius", "defense", "armored", ...,
 //                             "movement", "hp",
 //                             "invulnerable": {"every", "for"}}]}

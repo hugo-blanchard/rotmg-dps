@@ -70,6 +70,9 @@ struct Scenario {
   /// Roll each hit's damage and each proc's chance from the seed rather than
   /// using averages, to show how runs vary.
   bool random_rolls = false;
+  /// Aim the weapon where a moving target will be when the shot gets there,
+  /// as a player leading their shots would, rather than where it is.
+  bool lead = false;
 };
 
 /// The player's speed in tiles per second: 4 + 5.6 * SPD / 75 (RealmEye:
@@ -338,6 +341,8 @@ class Simulation {
   int Roll(int low, int high);
   Point WorldAt(const Live& shot, int step) const;
   double AimAngle() const;
+  // Where to aim a shot from this group, leading the target if asked.
+  double FiringAngle(const Group& group) const;
   // The character with the boosts and statuses up now.
   Character Current() const;
   // A target with its own statuses and the debuffs on it now.
@@ -354,6 +359,8 @@ class Simulation {
   Character base_;
   double player_speed_ = 0;
   std::vector<Point> wander_to_;
+  // Each target's velocity over the last step, in tiles per second.
+  std::vector<Point> velocity_;
   unsigned long long random_ = 0;
   long steps_ = 0;
   double carry_ms_ = 0;

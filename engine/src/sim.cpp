@@ -87,6 +87,7 @@ void Simulation::Move() {
     const SimTarget& from = start_.targets[i];
     const Movement& m = from.movement;
     Point& at = world_.targets[i].position;
+    const Point was = at;
     // Away from where the player started, and its right.
     const Point out = Towards(start_.player, from.position);
     const Point side{out.y, -out.x};
@@ -125,6 +126,7 @@ void Simulation::Move() {
       default:
         break;
     }
+    velocity_[i] = {(at.x - was.x) / dt, (at.y - was.y) / dt};
   }
 
   // The player moves after the targets, relative to the one it aims at.
@@ -187,6 +189,7 @@ Simulation::Simulation(const Weapon& weapon, const Character& character, const S
       start_(scenario),
       world_(scenario),
       wander_to_(scenario.targets.size()),
+      velocity_(scenario.targets.size()),
       random_(scenario.seed),
       per_subattack_(weapon.subattacks.size()),
       per_target_(scenario.targets.size()),
@@ -310,6 +313,35 @@ double Simulation::AimAngle() const {
   const Point from = world_.player;
   const Point to = TargetCenter();
   return to.x == from.x && to.y == from.y ? 0 : std::atan2(to.x - from.x, to.y - from.y);
+}
+
+double Simulation::FiringAngle(const Group& group) const {
+  if (!start_.lead || group.paths.empty() || world_.aim >= world_.targets.size()) {
+    return AimAngle();
+  }
+  // The shot's average speed over its life, so accelerating shots count too.
+  const ProjectilePath& path = group.paths[0];
+  const double life_s = path.Steps() * kStepMs / 1000;
+  const double speed = life_s > 0 ? path.At(path.Steps()).y / life_s : 0;
+  const Point r{TargetCenter().x - world_.player.x, TargetCenter().y - world_.player.y};
+  const Point v = velocity_[world_.aim];
+  // When a shot at that speed meets the target going on as it is:
+  // |r + v t| = speed t, the earliest t > 0.
+  const double a = v.x * v.x + v.y * v.y - speed * speed;
+  const double b = 2 * (r.x * v.x + r.y * v.y);
+  const double c = r.x * r.x + r.y * r.y;
+  double t = -1;
+  if (std::abs(a) < 1e-9) {
+    t = b < 0 ? -c / b : -1;
+  } else if (const double d = b * b - 4 * a * c; d >= 0) {
+    const double t1 = (-b - std::sqrt(d)) / (2 * a);
+    const double t2 = (-b + std::sqrt(d)) / (2 * a);
+    t = t1 > 0 && (t2 <= 0 || t1 < t2) ? t1 : t2;
+  }
+  if (t <= 0) {
+    return AimAngle();
+  }
+  return std::atan2(r.x + v.x * t, r.y + v.y * t);
 }
 
 Character Simulation::Current() const {
@@ -559,7 +591,7 @@ void Simulation::Fire(std::size_t subattack) {
   ++counters.volleys;
   const long id = next_volley_++;
   open_.push_back({id, static_cast<int>(subattack), static_cast<int>(g.paths.size()), 0});
-  const double aim = AimAngle();
+  const double aim = FiringAngle(g);
   for (int i = 0; i < static_cast<int>(g.paths.size()); ++i) {
     ++totals_.projectiles;
     ++counters.projectiles;
