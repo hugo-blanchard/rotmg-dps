@@ -259,6 +259,8 @@ export interface OptimizeOptions {
   /** Which items may be tried: tiered ones, set pieces, and the rest. */
   pools: ("tiered" | "untiered" | "set")[];
   enchantments: "keep" | "none" | "best";
+  /** Whether to use enchantments only an artifact or engraving puts on an item. */
+  artifacts?: boolean;
   slots?: number;
   results?: number;
 }

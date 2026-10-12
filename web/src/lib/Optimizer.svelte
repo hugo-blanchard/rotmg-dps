@@ -31,6 +31,7 @@
   let lock = $state<Record<Slot, boolean>>({ weapon: false, ability: false, armor: false, ring: false });
   let pools = $state({ tiered: true, untiered: true, set: true });
   let enchantMode = $state<OptimizeOptions["enchantments"]>("best");
+  let artifacts = $state(true);
   let searching = $state(false);
   let found = $state<OptimizeResponse | null>(null);
   // The build before the last one taken, for undo.
@@ -49,6 +50,7 @@
         lock: usableSlots.filter((s) => lock[s]),
         pools: (["tiered", "untiered", "set"] as const).filter((p) => pools[p]),
         enchantments: enchantMode,
+        artifacts,
         results: 5,
       },
     });
@@ -107,6 +109,9 @@
           <option value="none">None</option>
         </select>
       </label>
+      {#if enchantMode !== "none"}
+        <label><input type="checkbox" bind:checked={artifacts} /> Also ones that need an artifact or engraving</label>
+      {/if}
       <button type="button" class="primary" onclick={search} disabled={searching || !engine}>
         {searching ? "Searching…" : "Find the most DPS"}
       </button>

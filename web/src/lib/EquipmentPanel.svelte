@@ -6,11 +6,12 @@
   import Sprite from "./Sprite.svelte";
   import {
     clash,
+    enchantmentSlotsOf,
     enchantmentsForItem,
     itemsFor,
     slots,
     type Dataset,
-    type DatasetEnchantment,
+    type EnchantmentOption,
     type Item,
     type Slot,
   } from "./dataset";
@@ -48,8 +49,11 @@
   const fitting = $derived(
     Object.fromEntries(slots.map((s) => [s, enchantmentsForItem(dataset, s, equipped[s])])) as Record<
       Slot,
-      DatasetEnchantment[]
+      EnchantmentOption[]
     >,
+  );
+  const slotCount = $derived(
+    Object.fromEntries(slots.map((s) => [s, enchantmentSlotsOf(dataset, equipped[s])])) as Record<Slot, number>,
   );
   const setTypes = $derived(new Set((dataset.sets ?? []).flatMap((s) => s.pieces.map((p) => p.itemType))));
   const enchantment = (id: string) => (dataset.enchantments ?? []).find((e) => e.id === id);
@@ -130,20 +134,23 @@
     }
     const index = picking.index;
     const others = enchants[slot].filter((id, i) => i !== index && id).map(enchantment);
+    // What rolls on the item comes first, effects then stats; what only an
+    // artifact or engraving puts on it comes last.
+    const groups = ["Effects", "Stats", "With an artifact or engraving"];
     return {
       title: `${items[slot]}, enchantment ${index + 1}`,
       selected: enchants[slot][index],
       options: [
         { key: "", name: "Empty" },
         ...fitting[slot]
-          .map((e) => {
+          .map(({ enchantment: e, rolls }) => {
             const blocker = others.find((o) => o && (o.id === e.id || clash(o, e)));
             return {
               key: e.id,
               name: e.name,
               icon: sprites?.index.enchantments?.[e.id],
               detail: e.description,
-              group: e.labels.includes("STAT") ? "Stats" : "Effects",
+              group: !rolls ? groups[2] : e.labels.includes("STAT") ? groups[1] : groups[0],
               disabled: !blocker
                 ? undefined
                 : blocker.id === e.id
@@ -151,7 +158,7 @@
                   : `Can't go with ${blocker.name}`,
             };
           })
-          .sort((a, b) => (a.group === b.group ? a.name.localeCompare(b.name) : a.group === "Effects" ? -1 : 1)),
+          .sort((a, b) => groups.indexOf(a.group) - groups.indexOf(b.group) || a.name.localeCompare(b.name)),
       ],
     };
   });
@@ -196,9 +203,11 @@
           {/if}
         </button>
         <span class="item-name">{item?.name ?? ""}</span>
-        {#if item}
+        {#if item && slotCount[slot] === 0}
+          <span class="hint">No enchantment slots</span>
+        {:else if item}
           <div class="enchants" role="group" aria-label="{slotNames[slot]} enchantments">
-            {#each enchants[slot] as id, index (index)}
+            {#each enchants[slot].slice(0, slotCount[slot]) as id, index (index)}
               {@const e = id ? enchantment(id) : undefined}
               <button
                 type="button"

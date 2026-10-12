@@ -43,8 +43,9 @@ export interface DatasetAbility extends ItemRules {
   statBonuses?: { stat: string; amount: number }[];
   projectiles?: { id: number; objectId: string; size?: number }[];
   createdProjectiles?: { type: number; projectile: { objectId: string; size?: number } }[];
-  // An ability has no labels in the dataset; its enchantments match on the slot.
-  labels?: undefined;
+  // Missing from older datasets, where an ability's enchantments match on
+  // the slot.
+  labels?: string[];
 }
 
 export interface DatasetWeapon extends ItemRules {
@@ -115,6 +116,8 @@ export interface Dataset {
   enchantments?: DatasetEnchantment[];
   armors?: DatasetGear[];
   rings?: DatasetGear[];
+  // The pools items roll enchantments from. Missing from older datasets.
+  enchantmentPools?: { name: string; enchantments: string[] }[];
 }
 
 // Written by the pipeline next to the dataset. Older releases don't have one.
@@ -197,49 +200,81 @@ export function itemsFor(dataset: Dataset, cls: DatasetClass, slot: Slot): Item[
   }
 }
 
-/** Enchantments that can go on an item in a slot, by the engine's rules: a
- * weapon, armor or ring by its own labels, an ability by the slot's. */
-export function enchantmentsForItem(dataset: Dataset, slot: Slot, item: Item | undefined): DatasetEnchantment[] {
+/** An enchantment an item can have, and whether it rolls from the item's
+ * pool or only an artifact or engraving puts it there. */
+export interface EnchantmentOption {
+  enchantment: DatasetEnchantment;
+  rolls: boolean;
+}
+
+const poolSets = new WeakMap<Dataset, Map<string, Set<string>>>();
+function pools(dataset: Dataset): Map<string, Set<string>> {
+  let out = poolSets.get(dataset);
+  if (!out) {
+    out = new Map((dataset.enchantmentPools ?? []).map((p) => [p.name, new Set(p.enchantments)]));
+    poolSets.set(dataset, out);
+  }
+  return out;
+}
+
+/**
+ * Enchantments that can go on an item, by the engine's rules: ones that fit
+ * its labels, except legacy ones nobody can get any more. In datasets with
+ * pools, an item without slots takes none, and ones outside its pool need
+ * an artifact. Abilities without labels in older datasets, which have no
+ * pools, take what fits the slot.
+ */
+export function enchantmentsForItem(dataset: Dataset, slot: Slot, item: Item | undefined): EnchantmentOption[] {
   if (!item) {
     return [];
   }
-  if (slot === "ability") {
-    return enchantmentsForSlot(dataset, "ABILITY");
+  const labels = item.labels ?? [];
+  const byPool = pools(dataset).size > 0;
+  const bySlot = slot === "ability" && labels.length === 0 && !byPool;
+  if (byPool && !item.enchantmentSlots) {
+    return [];
   }
-  const labels = "labels" in item ? (item.labels ?? []) : [];
-  return (dataset.enchantments ?? []).filter(
-    (e) =>
-      e.compatible.length > 0 &&
-      e.compatible.every((l) => labels.includes(l)) &&
-      !(e.incompatible ?? []).some((l) => labels.includes(l)) &&
-      !(e.incompatibleItems ?? []).includes(item.id),
-  );
+  const pool = byPool ? pools(dataset).get(item.enchantmentPool ?? "") : undefined;
+  const generic = (l: string) => l === "EQUIPMENT" || l === "ABILITY";
+  return (dataset.enchantments ?? [])
+    .filter(
+      (e) =>
+        e.compatible.length > 0 &&
+        !e.labels.includes("LEGACY") &&
+        (bySlot
+          ? e.compatible.every(generic) && !(e.incompatible ?? []).some(generic)
+          : e.compatible.every((l) => labels.includes(l)) &&
+            !(e.incompatible ?? []).some((l) => labels.includes(l)) &&
+            !(e.incompatibleItems ?? []).includes(item.id)),
+    )
+    .map((e) => ({ enchantment: e, rolls: !pool || pool.has(e.id) }));
+}
+
+/** How many enchantments an item holds: its slots, or 4 in datasets from
+ * before slots. */
+export function enchantmentSlotsOf(dataset: Dataset, item: Item | undefined): number {
+  if (!item) {
+    return 0;
+  }
+  return pools(dataset).size > 0 ? Math.min(item.enchantmentSlots ?? 0, 4) : 4;
 }
 
 /**
  * An item's enchantment slots with only what can be there together: ids
- * among `options`, no repeats or clashes with an earlier slot. Slots keep
- * their place; an empty or dropped one is "". Always 4 long.
+ * among `options`, in the item's first `count` slots, no repeats or clashes
+ * with an earlier slot. Slots keep their place; an empty or dropped one is
+ * "". Always 4 long.
  */
-export function usableSlots(ids: string[], options: DatasetEnchantment[]): string[] {
+export function usableSlots(ids: string[], options: DatasetEnchantment[], count = 4): string[] {
   const kept: DatasetEnchantment[] = [];
   return [0, 1, 2, 3].map((i) => {
     const e = options.find((x) => x.id === ids[i]);
-    if (!e || kept.some((k) => k.id === e.id || clash(k, e))) {
+    if (i >= count || !e || kept.some((k) => k.id === e.id || clash(k, e))) {
       return "";
     }
     kept.push(e);
     return e.id;
   });
-}
-
-/** Enchantments that fit any item of a slot (RING, ARMOR or ABILITY), by
- * the engine's rule: no label beyond EQUIPMENT and the slot's. */
-export function enchantmentsForSlot(dataset: Dataset, slot: string): DatasetEnchantment[] {
-  const generic = (l: string) => l === "EQUIPMENT" || l === slot;
-  return (dataset.enchantments ?? []).filter(
-    (e) => e.compatible.length > 0 && e.compatible.every(generic) && !(e.incompatible ?? []).some(generic),
-  );
 }
 
 /** Whether two enchantments can't share an item. */

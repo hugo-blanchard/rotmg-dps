@@ -6,6 +6,7 @@
   import SimulationView from "./lib/SimulationView.svelte";
   import { defaultSimOptions, simFromQuery, simToQuery, type SimOptions } from "./lib/scenario";
   import {
+    enchantmentSlotsOf,
     enchantmentsForItem,
     itemsFor,
     loadDataset,
@@ -89,7 +90,11 @@
     const fixed = { ...enchants };
     for (const slot of slots) {
       const item = itemsFor(dataset, cls, slot).find((i) => i.name === items[slot]);
-      fixed[slot] = usableSlots(enchants[slot], enchantmentsForItem(dataset, slot, item));
+      fixed[slot] = usableSlots(
+        enchants[slot],
+        enchantmentsForItem(dataset, slot, item).map((o) => o.enchantment),
+        enchantmentSlotsOf(dataset, item),
+      );
     }
     if (slots.some((s) => fixed[s].join() !== enchants[s].join())) {
       enchants = fixed;
