@@ -4,6 +4,7 @@
 #include <cmath>
 #include <map>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -200,6 +201,39 @@ std::vector<double> CastTimes(const AbilityBreakdown& a, double max_mp, double m
   return times;
 }
 
+// The chance a part goes off on each cast of a window. One with a chance
+// or a cooldown of its own rolls on each cast it's ready for, and once it
+// goes off it can't again until its cooldown is over. It's ready when the
+// window opens if its cooldown is no longer than the time between windows,
+// and otherwise on that share of windows.
+std::vector<double> TriggerOdds(const AbilityPart& p, std::span<const double> casts, double every_s) {
+  if (p.chance >= 1 && p.cooldown_s <= 0) {
+    return std::vector<double>(casts.size(), 1.0);
+  }
+  // When it's next ready, and how likely that is.
+  std::map<double, double> states = {{-1e9, 1}};
+  if (p.cooldown_s > every_s) {
+    states = {{-1e9, every_s / p.cooldown_s}, {1e9, 1 - every_s / p.cooldown_s}};
+  }
+  std::vector<double> out;
+  for (const double t : casts) {
+    double fired = 0;
+    std::map<double, double> next;
+    for (const auto& [ready, odds] : states) {
+      if (ready <= t + kEpsilon) {
+        fired += odds * p.chance;
+        next[t + p.cooldown_s] += odds * p.chance;
+        next[ready] += odds * (1 - p.chance);
+      } else {
+        next[ready] += odds;
+      }
+    }
+    out.push_back(fired);
+    states = std::move(next);
+  }
+  return out;
+}
+
 // What the weapon does with one set of buffs up: each subattack's volleys
 // per second and damage per volley, and each on-shoot effect's rate and
 // damage. Chance boosts count as often as they're up on average.
@@ -316,10 +350,11 @@ BurstBreakdown EvaluateBurst(const Weapon& weapon, const Ability* ability, const
         t += 1 / per_second;
       }
     }
-    for (std::size_t k = 0; k < count; ++k) {
-      for (const AbilityPart& p : a->parts) {
-        const double share = p.over_s > 0 ? std::clamp((length - casts[k]) / p.over_s, 0.0, 1.0) : 1.0;
-        sum.second += share * p.damage;
+    for (const AbilityPart& p : a ? a->parts : std::vector<AbilityPart>{}) {
+      const std::vector<double> odds = TriggerOdds(p, std::span(casts).first(count), window.every_s);
+      for (std::size_t k = 0; k < count; ++k) {
+        const double landed = p.over_s > 0 ? std::clamp((length - casts[k]) / p.over_s, 0.0, 1.0) : 1.0;
+        sum.second += odds[k] * landed * p.damage / p.share;
       }
     }
     return sum;

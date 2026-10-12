@@ -87,6 +87,12 @@ struct AbilityPart {
   /// Seconds after the cast the damage is spread over evenly, like a
   /// poison's; 0 when it's dealt at once.
   double over_s = 0;
+  /// For an item's effect that goes off on some casts only: its chance on a
+  /// cast, its own cooldown in seconds, and the share of casts it goes off
+  /// on in the long run, which `damage` already counts.
+  double chance = 1;
+  double cooldown_s = 0;
+  double share = 1;
 };
 
 struct AbilityBreakdown {

@@ -116,6 +116,13 @@ rotmg::Character WithMp(int mp) {
 
 }  // namespace
 
+TEST_CASE("a burst without an ability is the weapon's volleys alone") {
+  const auto b = rotmg::EvaluateBurst(Sword(), nullptr, WithMp(200), {}, {}, {0, 10});
+  CHECK(b.casts == 0);
+  CHECK(b.ability_damage == 0);
+  CHECK(b.weapon_damage == Approx(Volleys(kChar, 0).first));
+}
+
 TEST_CASE("a burst in a single moment is one volley and one cast") {
   const auto b = rotmg::EvaluateBurst(Sword(), Find("Plain Spell"), WithMp(200), {}, {}, {0, 20});
   const auto build = EvaluateBuild(Sword(), Find("Plain Spell"), WithMp(200), {}, {});
@@ -157,4 +164,23 @@ TEST_CASE("only the part of a poison that lands in the window counts") {
   const auto b = rotmg::EvaluateBurst(Sword(), Find("Toxic Vial"), WithMp(100), {}, {}, {1, 20});
   CHECK(b.casts == Approx(1));
   CHECK(b.ability_damage == Approx(380 + 1230 / 4.5));
+}
+
+TEST_CASE("an on-cast effect in a burst rolls per cast and waits out its own cooldown") {
+  // A free ability with a 60% lightning on a cooldown of 8 s: three casts
+  // in the window, at 0, 0.45 and 0.9 s. The lightning is ready at the first
+  // and, once it goes off, can't again within the window.
+  rotmg::Ability ability;
+  ability.mp_cost = 0;
+  ability.cooldown = 0.45;
+  rotmg::Activate lightning;
+  lightning.type = "Lightning";
+  lightning.params.emplace("totalDamage", 1000.0);
+  lightning.params.emplace("proc", 0.6);
+  lightning.params.emplace("cooldown", 8.0);
+  lightning.params.emplace("maxTargets", 1.0);
+  ability.on_ability.push_back(lightning);
+  const auto b = rotmg::EvaluateBurst(Sword(), &ability, WithMp(200), {}, {}, {0.9, 10});
+  CHECK(b.casts == Approx(3));
+  CHECK(b.ability_damage == Approx(1000 * (1 - 0.4 * 0.4 * 0.4)));
 }

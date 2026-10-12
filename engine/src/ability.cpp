@@ -186,10 +186,15 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   // the casts deals that share of its damage, and its buff is up for that
   // share of the time as if it started with every cast but ran shorter.
   double share = 1;
+  double chance = 1;
+  double cooldown = 0;
   std::string prefix;
   const auto add_part = [&](AbilityPart p) {
     p.name = prefix + p.name;
     p.damage *= share;
+    p.share = share;
+    p.chance = chance;
+    p.cooldown_s = cooldown;
     out.parts.push_back(std::move(p));
   };
   const auto add_buff = [&](Buff b) {
@@ -349,6 +354,8 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
       continue;
     }
     share = CastShare(a, out.casts_per_second);
+    chance = std::clamp(a.Number("proc").value_or(1), 0.0, 1.0);
+    cooldown = a.Number("cooldown").value_or(0);
     if (share <= 0) {
       continue;
     }
