@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <map>
 #include <memory>
 #include <stdexcept>
 
@@ -316,6 +317,25 @@ json ToJson(Point p) {
   return {{"x", p.x}, {"y", p.y}};
 }
 
+Movement ReadMovement(const json& j) {
+  static const std::map<std::string, Movement::Kind, std::less<>> kinds = {
+      {"still", Movement::Kind::kStill},
+      {"strafe", Movement::Kind::kStrafe},
+      {"circle", Movement::Kind::kCircle},
+      {"chargeRetreat", Movement::Kind::kChargeRetreat},
+      {"wander", Movement::Kind::kWander},
+      {"keepDistance", Movement::Kind::kKeepDistance},
+      {"orbit", Movement::Kind::kOrbit},
+      {"kite", Movement::Kind::kKite},
+  };
+  const std::string kind = j.value("kind", std::string("still"));
+  const auto it = kinds.find(kind);
+  if (it == kinds.end()) {
+    throw std::runtime_error("unknown movement \"" + kind + "\"");
+  }
+  return {it->second, j.value("speed", 0.0), j.value("range", 0.0), j.value("far", 0.0), j.value("clockwise", true)};
+}
+
 // The simulation's scene. Without "scenario" it's one target straight ahead
 // at the hit model's distance. Targets take the request's target statuses
 // and DEF unless they set their own.
@@ -328,7 +348,11 @@ Scenario ReadScenario(const json& req, const Request& r) {
   Scenario s;
   if (auto p = it->find("player"); p != it->end()) {
     s.player = {p->value("x", 0.0), p->value("y", 0.0)};
+    if (auto m = p->find("movement"); m != p->end()) {
+      s.player_movement = ReadMovement(*m);
+    }
   }
+  s.seed = it->value("seed", 1ULL);
   for (const json& t : it->at("targets")) {
     SimTarget target{{t.at("x").get<double>(), t.at("y").get<double>()}, t.value("radius", radius), r.target};
     target.target.defense = t.value("defense", r.target.defense);
@@ -336,6 +360,9 @@ Scenario ReadScenario(const json& req, const Request& r) {
     target.target.armor_broken = t.value("armorBroken", r.target.armor_broken);
     target.target.exposed = t.value("exposed", r.target.exposed);
     target.target.cursed = t.value("cursed", r.target.cursed);
+    if (auto m = t.find("movement"); m != t.end()) {
+      target.movement = ReadMovement(*m);
+    }
     s.targets.push_back(target);
   }
   if (s.targets.empty()) {
@@ -459,12 +486,16 @@ std::string Api::StartSimulation(std::string_view request_json) {
 }
 
 // A simulation request is an evaluate request plus, optionally,
-//   "scenario": {"player": {"x", "y"}, "aim": 0,
-//                "targets": [{"x", "y", "radius", "defense", "armored", ...}]}
-// in tiles, with +y the way the player faces at the start.
+//   "scenario": {"player": {"x", "y", "movement"}, "aim": 0, "seed": 1,
+//                "targets": [{"x", "y", "radius", "defense", "armored", ...,
+//                             "movement"}]}
+// in tiles, with +y the way the player faces at the start. A movement is
+// {"kind", "speed", "range", "far", "clockwise"}, kind one of still, strafe,
+// circle, chargeRetreat, wander (targets), keepDistance, orbit, kite and
+// strafe (the player); see Movement in sim.hpp.
 //
 // State:
-//   {"ok": true, "timeMs", "player": {"x", "y"}, "aim",
+//   {"ok": true, "timeMs", "player": {"x", "y"}, "playerSpeed", "aim",
 //    "target": {"x", "y", "radius"} (the aim target),
 //    "targets": [{"x", "y", "radius", "defense", "hits", "damage"}],
 //    "shots": [{"subattack", "projectileId", "x", "y", "heading", "ageMs", "hit"}],
@@ -502,6 +533,7 @@ std::string Api::AdvanceSimulation(double ms) {
   return json{{"ok", true},
               {"timeMs", simulation_->TimeMs()},
               {"player", ToJson(world.player)},
+              {"playerSpeed", simulation_->PlayerSpeed()},
               {"target", {{"x", target.x}, {"y", target.y}, {"radius", simulation_->Radius()}}},
               {"aim", world.aim},
               {"targets", targets},

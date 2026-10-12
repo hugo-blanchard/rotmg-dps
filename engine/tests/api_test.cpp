@@ -366,3 +366,20 @@ TEST_CASE("a simulation can have several targets") {
   CHECK(state["targets"][1]["hits"] == 0);
   CHECK_FALSE(api.StartSimulation(R"({"weapon": "Plain Sword", "scenario": {"targets": []}})").empty());
 }
+
+TEST_CASE("simulation targets and the player can move") {
+  rotmg::Api api = LoadedApi();
+  REQUIRE(api.StartSimulation(R"({"weapon": "Plain Sword", "attack": 50, "dexterity": 50, "speed": 75,
+      "scenario": {"player": {"movement": {"kind": "keepDistance", "range": 2}}, "seed": 3,
+                   "targets": [{"x": 0, "y": 4, "movement": {"kind": "strafe", "speed": 2, "range": 1}}]}})")
+              .empty());
+  const json state = json::parse(api.AdvanceSimulation(500));
+  REQUIRE(state["ok"] == true);
+  CHECK(state["playerSpeed"].get<double>() == Catch::Approx(9.6));
+  // Half a second at 2 tiles/s: a tile right of where it started.
+  CHECK(state["targets"][0]["x"].get<double>() == Catch::Approx(1).margin(0.01));
+  CHECK(state["player"]["y"].get<double>() > 1);
+  CHECK_FALSE(api.StartSimulation(R"({"weapon": "Plain Sword",
+      "scenario": {"targets": [{"x": 0, "y": 4, "movement": {"kind": "teleport"}}]}})")
+                  .empty());
+}

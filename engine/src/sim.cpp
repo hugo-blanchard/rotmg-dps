@@ -15,7 +15,40 @@ namespace rotmg {
 namespace {
 
 Scenario OneTarget(const Target& target, double distance, double radius) {
-  return {{0, 0}, {{{0, distance}, radius, target}}, 0};
+  return {{0, 0}, {{{0, distance}, radius, target, {}}}, 0, {}, 1};
+}
+
+// Goes from 0 up to `span` and back down as `travelled` grows.
+double Bounce(double travelled, double span) {
+  if (span <= 0) {
+    return 0;
+  }
+  const double phase = std::fmod(std::max(0.0, travelled), 2 * span);
+  return phase < span ? phase : 2 * span - phase;
+}
+
+Point Add(Point a, Point v, double k = 1) {
+  return {a.x + v.x * k, a.y + v.y * k};
+}
+
+double Distance(Point a, Point b) {
+  return std::hypot(b.x - a.x, b.y - a.y);
+}
+
+// The unit vector from a to b, or straight up when they're the same point.
+Point Towards(Point a, Point b) {
+  const double d = Distance(a, b);
+  return d > 0 ? Point{(b.x - a.x) / d, (b.y - a.y) / d} : Point{0, 1};
+}
+
+// splitmix64: small, fast and the same everywhere, so seeded runs repeat.
+// Returns a value in [0, 1).
+double NextRandom(unsigned long long& state) {
+  unsigned long long z = (state += 0x9E3779B97F4A7C15ULL);
+  z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+  z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+  z ^= z >> 31;
+  return static_cast<double>(z >> 11) / static_cast<double>(1ULL << 53);
 }
 
 // How far along the segment from a to b, from 0 to 1, a shot first touches a
@@ -40,16 +73,27 @@ std::optional<double> Entry(Point a, Point b, Point centre, double radius) {
 
 }  // namespace
 
+double MovementSpeed(int speed) {
+  return 4 + 5.6 * speed / 75.0;
+}
+
 Simulation::Simulation(const Weapon& weapon, const Character& character, const Target& target, double distance,
                        double radius)
     : Simulation(weapon, character, OneTarget(target, distance, radius)) {}
 
 Simulation::Simulation(const Weapon& weapon, const Character& character, const Scenario& scenario)
     : weapon_(weapon),
+      start_(scenario),
       world_(scenario),
+      wander_to_(scenario.targets.size()),
+      random_(scenario.seed),
       per_subattack_(weapon.subattacks.size()),
       per_target_(scenario.targets.size()) {
   const Character geared = character.With(weapon_.stat_bonuses).With(WhileShooting(weapon_));
+  player_speed_ = MovementSpeed(geared.speed);
+  for (std::size_t i = 0; i < start_.targets.size(); ++i) {
+    wander_to_[i] = start_.targets[i].position;
+  }
   const int attack = geared.attack;
   const int dexterity = geared.dexterity;
   const Multiplier multiplier = WithDamageBonus(DamageMultiplier(attack, character.status), weapon_.damage_bonus);
@@ -115,9 +159,105 @@ Point Simulation::WorldAt(const Live& shot, int step) const {
   return {shot.origin.x + local.x * c + local.y * s, shot.origin.y - local.x * s + local.y * c};
 }
 
+void Simulation::Move() {
+  const double t = TimeMs() / 1000;
+  const double dt = kStepMs / 1000;
+  for (std::size_t i = 0; i < world_.targets.size(); ++i) {
+    const SimTarget& from = start_.targets[i];
+    const Movement& m = from.movement;
+    Point& at = world_.targets[i].position;
+    // Away from where the player started, and its right.
+    const Point out = Towards(start_.player, from.position);
+    const Point side{out.y, -out.x};
+    const double travelled = m.speed * t;
+    switch (m.kind) {
+      case Movement::Kind::kStrafe:
+        // From the middle, right first.
+        at = Add(from.position, side, Bounce(travelled + m.range, 2 * m.range) - m.range);
+        break;
+      case Movement::Kind::kCircle: {
+        // Round a centre `range` tiles further out, so it starts where it
+        // was placed and sets off to the right (or left).
+        const double a = m.range > 0 ? travelled / m.range * (m.clockwise ? 1 : -1) : 0;
+        const Point centre = Add(from.position, out, m.range);
+        at = Add(Add(centre, out, -m.range * std::cos(a)), side, m.range * std::sin(a));
+        break;
+      }
+      case Movement::Kind::kChargeRetreat: {
+        // In towards `range` tiles from the player, out to `far`, and so on.
+        const double far = std::max(m.far, m.range);
+        const double start = std::clamp(Distance(start_.player, from.position), m.range, far);
+        at = Add(start_.player, out, far - Bounce(travelled + (far - start), far - m.range));
+        break;
+      }
+      case Movement::Kind::kWander: {
+        Point& goal = wander_to_[i];
+        const double left = Distance(at, goal);
+        if (left <= m.speed * dt) {
+          at = goal;
+          goal = Add(from.position, {(NextRandom(random_) * 2 - 1), (NextRandom(random_) * 2 - 1)}, m.range);
+        } else {
+          at = Add(at, Towards(at, goal), m.speed * dt);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  // The player moves after the targets, relative to the one it aims at.
+  const Movement& m = start_.player_movement;
+  if (m.kind == Movement::Kind::kStill || world_.targets.empty()) {
+    return;
+  }
+  Point& me = world_.player;
+  const Point target = TargetCenter();
+  const double step = player_speed_ * dt;
+  const Point away = Towards(target, me);
+  const double distance = Distance(target, me);
+  const auto walk_to = [&](Point goal) {
+    const double d = Distance(me, goal);
+    me = d <= step ? goal : Add(me, Towards(me, goal), step);
+  };
+  const Point start_away = Towards(start_.targets[start_.aim].position, start_.player);
+  const double start_distance = Distance(start_.targets[start_.aim].position, start_.player);
+  switch (m.kind) {
+    case Movement::Kind::kKeepDistance:
+      walk_to(Add(target, away, m.range));
+      break;
+    case Movement::Kind::kOrbit: {
+      // A step along the circle, then back towards its radius.
+      const Point along = m.clockwise ? Point{-away.y, away.x} : Point{away.y, -away.x};
+      const Point moved = Add(me, along, step);
+      const double radius = distance + std::clamp(m.range - distance, -step, step);
+      me = Add(target, Towards(target, moved), radius);
+      break;
+    }
+    case Movement::Kind::kKite: {
+      // Out to `far`, in to `range`, and so on, timed from the start so it
+      // keeps its rhythm when the target moves.
+      const double far = std::max(m.far, m.range);
+      const double start = std::clamp(start_distance, m.range, far);
+      walk_to(Add(target, away, m.range + Bounce(player_speed_ * t + (start - m.range), far - m.range)));
+      break;
+    }
+    case Movement::Kind::kStrafe: {
+      // Across the line it started on, keeping its distance.
+      const Point side{start_away.y, -start_away.x};
+      const Point middle = Add(target, start_away, start_distance);
+      walk_to(Add(middle, side, Bounce(player_speed_ * t + m.range, 2 * m.range) - m.range));
+      break;
+    }
+    default:
+      break;
+  }
+}
+
 void Simulation::Step() {
   ++steps_;
   const double now = TimeMs();
+  Move();
 
   // Shots already in flight move first, then new volleys spawn, so a shot
   // fired this step is checked at its spawn point and nothing else.

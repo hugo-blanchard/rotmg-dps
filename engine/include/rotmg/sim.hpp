@@ -9,21 +9,52 @@
 
 namespace rotmg {
 
-/// A target in the simulation: where its centre is, how big it is, and its
-/// DEF and statuses.
+/// How something moves, in tiles and tiles per second.
+///
+/// Targets move around where they start, `speed` tiles per second: kStrafe
+/// goes side to side across the line to the player, `range` tiles each way;
+/// kCircle goes round a circle of radius `range` that passes through its
+/// start; kChargeRetreat walks towards the player and back, between `range`
+/// and `far` tiles from it; kWander walks to random points within `range`
+/// tiles of its start, seeded so a run can be repeated.
+///
+/// The player moves relative to the target it aims at, at the speed its SPD
+/// gives: kKeepDistance holds `range` tiles away; kOrbit circles it at
+/// `range` tiles; kKite walks between `range` and `far` tiles away; kStrafe
+/// goes side to side across the line to it, `range` tiles each way.
+struct Movement {
+  enum class Kind { kStill, kStrafe, kCircle, kChargeRetreat, kWander, kKeepDistance, kOrbit, kKite };
+  Kind kind = Kind::kStill;
+  /// Targets only; the player's comes from SPD.
+  double speed = 0;
+  double range = 0;
+  double far = 0;
+  bool clockwise = true;
+};
+
+/// A target in the simulation: where its centre starts, how big it is, its
+/// DEF and statuses, and how it moves.
 struct SimTarget {
   Point position;
   double radius = kDefaultTargetRadius;
   Target target;
+  Movement movement{};
 };
 
-/// Where everything stands, in tiles. The player aims at the centre of
+/// Where everything starts, in tiles. The player aims at the centre of
 /// `targets[aim]` each time it fires.
 struct Scenario {
   Point player;
   std::vector<SimTarget> targets;
   std::size_t aim = 0;
+  Movement player_movement{};
+  /// Seeds anything random, like wandering targets.
+  unsigned long long seed = 1;
 };
+
+/// The player's speed in tiles per second: 4 + 5.6 * SPD / 75 (RealmEye:
+/// Character Stats).
+double MovementSpeed(int speed);
 
 /// A deterministic, fixed-step simulation of a character firing a weapon at
 /// one or more round targets. Projectiles move with ProjectilePath, in its
@@ -80,6 +111,8 @@ class Simulation {
   const std::vector<TargetCounters>& PerTarget() const { return per_target_; }
   /// Where everything is now.
   const Scenario& World() const { return world_; }
+  /// The player's speed, from SPD, in tiles per second.
+  double PlayerSpeed() const { return player_speed_; }
   /// The aim target's centre and radius.
   Point TargetCenter() const;
   double Radius() const;
@@ -115,6 +148,7 @@ class Simulation {
   };
 
   void Step();
+  void Move();
   void Fire(int subattack);
   void Land(Live& shot);
   void Retire(const Live& shot);
@@ -122,7 +156,13 @@ class Simulation {
   Point WorldAt(const Live& shot, int step) const;
 
   const Weapon weapon_;
+  // Where things started, and where they are now.
+  const Scenario start_;
   Scenario world_;
+  double player_speed_ = 0;
+  // Wandering targets: where each is heading, and the random state.
+  std::vector<Point> wander_to_;
+  unsigned long long random_ = 0;
   long steps_ = 0;
   double carry_ms_ = 0;
   long next_volley_ = 0;
