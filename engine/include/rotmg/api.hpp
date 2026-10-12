@@ -31,6 +31,8 @@ class Api {
  private:
   std::optional<Dataset> dataset_;
   std::unique_ptr<Simulation> simulation_;
+  // History buckets already sent, so each state carries only new ones.
+  std::size_t history_sent_ = 0;
 };
 
 }  // namespace rotmg

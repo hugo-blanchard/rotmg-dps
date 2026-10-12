@@ -38,12 +38,14 @@ struct Movement {
 };
 
 /// A target in the simulation: where its centre starts, how big it is, its
-/// DEF and statuses, and how it moves.
+/// DEF and statuses, how it moves, and its hit points (0 for a dummy that
+/// can't die).
 struct SimTarget {
   Point position;
   double radius = kDefaultTargetRadius;
   Target target;
   Movement movement{};
+  double hp = 0;
 };
 
 /// Where everything starts, in tiles. The player aims at the centre of
@@ -58,6 +60,12 @@ struct Scenario {
   unsigned long long seed = 1;
   /// Whether the MP bar starts full, or empty for the steady state.
   bool full_mp = true;
+  /// Whether a target that dies comes straight back with full HP, for
+  /// steady-state numbers, or stays dead.
+  bool respawn = false;
+  /// Roll each hit's damage and each proc's chance from the seed rather than
+  /// using averages, to show how runs vary.
+  bool random_rolls = false;
 };
 
 /// The player's speed in tiles per second: 4 + 5.6 * SPD / 75 (RealmEye:
@@ -113,10 +121,26 @@ class Simulation {
 
   struct TargetCounters {
     long hits = 0;
-    /// All damage taken, the ability's included.
+    /// All damage taken, the ability's included. Damage past a target's
+    /// last hit point doesn't count.
     double damage = 0;
     double ability_damage = 0;
+    /// Hit points left, for a target that can die.
+    double hp = 0;
+    long kills = 0;
+    /// When it first died, or -1.
+    double killed_ms = -1;
   };
+
+  /// Damage done to one target, for showing as a number.
+  struct HitEvent {
+    std::size_t target = 0;
+    double damage = 0;
+    From from = From::kWeapon;
+  };
+
+  /// The history's resolution.
+  static constexpr double kHistoryMs = 100;
 
   struct AbilityCounters {
     long casts = 0;
@@ -161,6 +185,13 @@ class Simulation {
   const AbilityCounters& AbilityTotals() const { return ability_totals_; }
   /// The weapon's on-shoot procs, with how often they went off in `casts`.
   const AbilityCounters& ProcTotals() const { return proc_totals_; }
+  /// Hits and blasts since the last Advance, at most 256; poison's steady
+  /// damage isn't in them.
+  const std::vector<HitEvent>& RecentHits() const { return recent_hits_; }
+  /// Damage done in each kHistoryMs since the start, and MP at the end of
+  /// each.
+  const std::vector<double>& DamageHistory() const { return damage_history_; }
+  const std::vector<double>& MpHistory() const { return mp_history_; }
   const std::vector<Effect>& Effects() const { return effects_; }
   /// Where everything is now.
   const Scenario& World() const { return world_; }
@@ -281,7 +312,14 @@ class Simulation {
   void CheckTraps();
   void Explode(const Trap& trap);
   void Debuff(std::size_t target, const std::string& effect, double duration_s, double delay_ms = 0);
-  void Damage(std::size_t target, double amount, From from);
+  // Deals damage, at most what the target has left, and returns what was
+  // dealt. `shown` puts it in RecentHits.
+  double Damage(std::size_t target, double amount, From from, bool shown = true);
+  bool Alive(std::size_t target) const;
+  // Aims at the closest target alive when the one aimed at has died.
+  void Retarget();
+  // A whole number from low to high, both included.
+  int Roll(int low, int high);
   Point WorldAt(const Live& shot, int step) const;
   double AimAngle() const;
   // The character with the boosts and statuses up now.
@@ -289,7 +327,7 @@ class Simulation {
   // A target with its own statuses and the debuffs on it now.
   Target TargetNow(std::size_t target) const;
   double HitDamage(const Group& group, Multiplier multiplier, std::size_t target);
-  double AbilityHit(int low, int high, double bonus, std::size_t target, bool armor_piercing) const;
+  double AbilityHit(int low, int high, double bonus, std::size_t target, bool armor_piercing);
 
   const Weapon weapon_;
   const std::optional<Ability> ability_;
@@ -317,6 +355,13 @@ class Simulation {
   std::vector<TargetCounters> per_target_;
   AbilityCounters ability_totals_;
   AbilityCounters proc_totals_;
+  // Damage rolls and proc chances, apart from movement's randomness so
+  // turning rolls on doesn't change where things go.
+  unsigned long long rolls_ = 0;
+  std::vector<HitEvent> recent_hits_;
+  std::vector<double> damage_history_;
+  std::vector<double> mp_history_;
+  double bucket_damage_ = 0;
   std::vector<Proc> procs_;
   // The subattack whose shots set off procs.
   std::size_t proc_subattack_ = 0;

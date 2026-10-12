@@ -347,6 +347,8 @@ Scenario ReadScenario(const json& req, const Request& r) {
   }
   Scenario s;
   s.full_mp = it->value("fullMp", true);
+  s.respawn = it->value("respawn", false);
+  s.random_rolls = it->value("randomRolls", false);
   if (auto p = it->find("player"); p != it->end()) {
     s.player = {p->value("x", 0.0), p->value("y", 0.0)};
     if (auto m = p->find("movement"); m != p->end()) {
@@ -361,6 +363,7 @@ Scenario ReadScenario(const json& req, const Request& r) {
     target.target.armor_broken = t.value("armorBroken", r.target.armor_broken);
     target.target.exposed = t.value("exposed", r.target.exposed);
     target.target.cursed = t.value("cursed", r.target.cursed);
+    target.hp = t.value("hp", 0.0);
     if (auto m = t.find("movement"); m != t.end()) {
       target.movement = ReadMovement(*m);
     }
@@ -468,6 +471,7 @@ std::string Api::Evaluate(std::string_view request_json) const {
 
 std::string Api::StartSimulation(std::string_view request_json) {
   simulation_.reset();
+  history_sent_ = 0;
   if (!dataset_) {
     return "no dataset loaded";
   }
@@ -487,9 +491,9 @@ std::string Api::StartSimulation(std::string_view request_json) {
 
 // A simulation request is an evaluate request plus, optionally,
 //   "scenario": {"player": {"x", "y", "movement"}, "aim": 0, "seed": 1,
-//                "fullMp": true,
+//                "fullMp": true, "respawn": false, "randomRolls": false,
 //                "targets": [{"x", "y", "radius", "defense", "armored", ...,
-//                             "movement"}]}
+//                             "movement", "hp"}]}
 // in tiles, with +y the way the player faces at the start. A movement is
 // {"kind", "speed", "range", "far", "clockwise"}, kind one of still, strafe,
 // circle, chargeRetreat, wander (targets), keepDistance, orbit, kite and
@@ -500,7 +504,10 @@ std::string Api::StartSimulation(std::string_view request_json) {
 //   {"ok": true, "timeMs", "player": {"x", "y"}, "playerSpeed", "aim",
 //    "target": {"x", "y", "radius"} (the aim target),
 //    "targets": [{"x", "y", "radius", "defense", "hits", "damage",
-//                 "abilityDamage", "statuses"}],
+//                 "abilityDamage", "statuses", "hp", "kills", "killedMs"}],
+//    "hits": [{"target", "damage", "from"}] since the last state,
+//    "history": {"bucketMs", "from", "damage": [...], "mp": [...]} with the
+//               buckets since the last state, "from" the first one's index,
 //    "shots": [{"subattack", "from", "projectileId", "objectId", "x", "y",
 //               "heading", "ageMs", "hit"}],
 //    "totals": {...}, "perSubattack": [{...}],
@@ -518,8 +525,8 @@ std::string Api::AdvanceSimulation(double ms) {
   }
   simulation_->Advance(std::max(0.0, ms));
   json shots = json::array();
+  static constexpr const char* kFrom[] = {"weapon", "ability", "proc"};
   for (const Simulation::Shot& s : simulation_->Shots()) {
-    static constexpr const char* kFrom[] = {"weapon", "ability", "proc"};
     shots.push_back({{"subattack", s.subattack},
                      {"from", kFrom[static_cast<int>(s.from)]},
                      {"projectileId", s.projectile_id},
@@ -542,8 +549,22 @@ std::string Api::AdvanceSimulation(double ms) {
     const Simulation::TargetCounters& c = simulation_->PerTarget()[i];
     targets.push_back({{"x", t.position.x}, {"y", t.position.y}, {"radius", t.radius},
                        {"defense", t.target.defense}, {"hits", c.hits}, {"damage", c.damage},
-                       {"abilityDamage", c.ability_damage}, {"statuses", simulation_->TargetStatuses(i)}});
+                       {"abilityDamage", c.ability_damage}, {"statuses", simulation_->TargetStatuses(i)},
+                       {"hp", c.hp}, {"kills", c.kills},
+                       {"killedMs", c.killed_ms < 0 ? json(nullptr) : json(c.killed_ms)}});
   }
+  json hits = json::array();
+  for (const Simulation::HitEvent& h : simulation_->RecentHits()) {
+    hits.push_back({{"target", h.target}, {"damage", h.damage}, {"from", kFrom[static_cast<int>(h.from)]}});
+  }
+  const auto& damage_history = simulation_->DamageHistory();
+  const auto& mp_history = simulation_->MpHistory();
+  const auto since = static_cast<std::ptrdiff_t>(history_sent_);
+  const json history = {{"bucketMs", Simulation::kHistoryMs},
+                        {"from", history_sent_},
+                        {"damage", std::vector<double>(damage_history.begin() + since, damage_history.end())},
+                        {"mp", std::vector<double>(mp_history.begin() + since, mp_history.end())}};
+  history_sent_ = damage_history.size();
   json effects = json::array();
   for (const Simulation::Effect& e : simulation_->Effects()) {
     static constexpr const char* kKinds[] = {"poison", "trap", "blast", "bolt"};
@@ -575,7 +596,9 @@ std::string Api::AdvanceSimulation(double ms) {
               {"statuses", simulation_->PlayerStatuses()},
               {"ability", {{"casts", ability.casts}, {"hits", ability.hits}, {"damage", ability.damage}}},
               {"procs", {{"activations", procs.casts}, {"hits", procs.hits}, {"damage", procs.damage}}},
-              {"effects", effects}}
+              {"effects", effects},
+              {"hits", hits},
+              {"history", history}}
       .dump();
 }
 

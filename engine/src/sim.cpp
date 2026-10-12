@@ -191,6 +191,10 @@ Simulation::Simulation(const Weapon& weapon, const Character& character, const S
       per_target_(scenario.targets.size()),
       target_debuffs_(scenario.targets.size()) {
   base_ = character.With(weapon_.stat_bonuses).With(WhileShooting(weapon_));
+  rolls_ = scenario.seed ^ 0x9E3779B97F4A7C15ULL;
+  for (std::size_t i = 0; i < start_.targets.size(); ++i) {
+    per_target_[i].hp = start_.targets[i].hp;
+  }
   player_speed_ = MovementSpeed(base_.speed);
   for (std::size_t i = 0; i < start_.targets.size(); ++i) {
     wander_to_[i] = start_.targets[i].position;
@@ -354,13 +358,20 @@ std::vector<std::string> Simulation::TargetStatuses(std::size_t i) const {
 
 double Simulation::HitDamage(const Group& group, Multiplier multiplier, std::size_t target) {
   const Target t = TargetNow(target);
+  const Projectile& p = *group.projectile;
+  if (start_.random_rolls) {
+    // The listed max is never rolled (RealmEye: Weapon Attributes).
+    const int roll = Roll(p.min_damage, p.max_damage - 1);
+    return group.subattack >= 0
+               ? DamageAfterDefense(rotmg::HitDamage(roll, multiplier), EffectiveDefense(t, p.armor_piercing), t.cursed)
+               : ExpectedAbilityDamage(roll, roll, group.bonus, t, p.armor_piercing);
+  }
   const int flags = (t.armored ? 1 : 0) | (t.armor_broken ? 2 : 0) | (t.exposed ? 4 : 0) | (t.cursed ? 8 : 0) |
                     (group.subattack >= 0 ? 16 : 0);
   const auto key = std::tuple{group.projectile, multiplier.num, multiplier.den, t.defense, flags, group.bonus};
   if (const auto it = damage_cache_.find(key); it != damage_cache_.end()) {
     return it->second;
   }
-  const Projectile& p = *group.projectile;
   // The weapon's damage goes through ATT; an ability's or a proc's doesn't,
   // but takes its StatMod bonus (RealmEye: Character Stats).
   const double damage = group.subattack >= 0
@@ -370,11 +381,38 @@ double Simulation::HitDamage(const Group& group, Multiplier multiplier, std::siz
   return damage;
 }
 
-double Simulation::AbilityHit(int low, int high, double bonus, std::size_t target, bool armor_piercing) const {
+double Simulation::AbilityHit(int low, int high, double bonus, std::size_t target, bool armor_piercing) {
+  if (start_.random_rolls) {
+    low = high = Roll(low, std::max(low, high));
+  }
   return ExpectedAbilityDamage(low, high, bonus, TargetNow(target), armor_piercing);
 }
 
+int Simulation::Roll(int low, int high) {
+  high = std::max(low, high);
+  return std::min(high, low + static_cast<int>(NextRandom(rolls_) * (high - low + 1)));
+}
+
+bool Simulation::Alive(std::size_t target) const {
+  return world_.targets[target].hp <= 0 || per_target_[target].hp > 0;
+}
+
+void Simulation::Retarget() {
+  if (world_.targets.empty() || Alive(world_.aim)) {
+    return;
+  }
+  double best = 1e18;
+  for (std::size_t t = 0; t < world_.targets.size(); ++t) {
+    const double d = Distance(world_.player, world_.targets[t].position);
+    if (Alive(t) && d < best) {
+      best = d;
+      world_.aim = t;
+    }
+  }
+}
+
 void Simulation::Advance(double ms) {
+  recent_hits_.clear();
   carry_ms_ += ms;
   while (carry_ms_ >= kStepMs) {
     carry_ms_ -= kStepMs;
@@ -402,6 +440,8 @@ void Simulation::Step() {
   ++steps_;
   const double now = TimeMs();
   Move();
+  Retarget();
+  const bool anyone = !world_.targets.empty() && Alive(world_.aim);
 
   // Buffs and debuffs that have run out go first.
   const auto expired = [now](const Timed& t) { return t.until_ms <= now; };
@@ -425,7 +465,7 @@ void Simulation::Step() {
 
   if (ability_) {
     mp_ = std::min(max_mp_, mp_ + MpPerSecond(Current().wisdom) * kStepMs / 1000);
-    if (now >= next_cast_ms_ && mp_ >= mp_cost_ && !world_.targets.empty()) {
+    if (now >= next_cast_ms_ && mp_ >= mp_cost_ && anyone) {
       mp_ -= mp_cost_;
       next_cast_ms_ = now + cooldown_ms_;
       Cast();
@@ -434,7 +474,7 @@ void Simulation::Step() {
 
   for (Clock& c : clocks_) {
     const Subattack& s = weapon_.subattacks[c.subattack];
-    while (c.next_ms <= now) {
+    while (anyone && c.next_ms <= now) {
       // Fire rate follows DEX, Berserk and Dazed as they are at each shot.
       const Character me = Current();
       const double interval = 1000 / (AttacksPerSecond(me.dexterity, me.status) * s.rate_of_fire);
@@ -465,6 +505,12 @@ void Simulation::Step() {
     }
     return false;
   });
+
+  if (steps_ % static_cast<long>(kHistoryMs / kStepMs) == 0) {
+    damage_history_.push_back(bucket_damage_);
+    mp_history_.push_back(mp_);
+    bucket_damage_ = 0;
+  }
 }
 
 void Simulation::Spawn(std::size_t group, int index, Point origin, double aim, long volley) {
@@ -511,7 +557,7 @@ void Simulation::Cast() {
         // EffectBlast reaches every target within its radius of the cursor.
         const double radius = act.Number("radius").value_or(0);
         for (std::size_t t = 0; t < world_.targets.size(); ++t) {
-          if (Distance(world_.targets[t].position, cursor) <= radius + world_.targets[t].radius) {
+          if (Alive(t) && Distance(world_.targets[t].position, cursor) <= radius + world_.targets[t].radius) {
             Debuff(t, buff->effect, buff->duration_s);
           }
         }
@@ -556,6 +602,9 @@ void Simulation::Cast() {
       std::optional<std::size_t> at;
       double best = 1e18;
       for (std::size_t t = 0; t < world_.targets.size(); ++t) {
+        if (!Alive(t)) {
+          continue;
+        }
         const Point p = world_.targets[t].position;
         const double angle = std::atan2(p.x - world_.player.x, p.y - world_.player.y);
         const double off = std::abs(std::remainder(angle - aim, 2 * std::numbers::pi));
@@ -576,7 +625,7 @@ void Simulation::Cast() {
         double nearest = 8;
         for (std::size_t t = 0; t < world_.targets.size(); ++t) {
           const double d = Distance(world_.targets[*at].position, world_.targets[t].position);
-          if (!struck[t] && d <= nearest) {
+          if (!struck[t] && Alive(t) && d <= nearest) {
             nearest = d;
             next = t;
           }
@@ -659,12 +708,20 @@ void Simulation::OnShoot() {
     }
     if (proc.model == OnShootModel::kChanceBoost) {
       // Each shot adds its chance; the boost goes off when they add up to
-      // one, so it comes as often as the chance says on average.
-      proc.chance += act.Number("proc").value_or(1);
-      if (proc.chance < 1) {
-        continue;
+      // one, so it comes as often as the chance says on average. With random
+      // rolls each shot rolls instead.
+      const double chance = act.Number("proc").value_or(1);
+      if (start_.random_rolls) {
+        if (NextRandom(rolls_) >= chance) {
+          continue;
+        }
+      } else {
+        proc.chance += chance;
+        if (proc.chance < 1) {
+          continue;
+        }
+        proc.chance = 0;
       }
-      proc.chance = 0;
       // Boosts of one stat on a noStack channel don't stack (RealmEye:
       // Enchantments); any others stack.
       const std::string channel = act.Text("channel");
@@ -695,7 +752,7 @@ void Simulation::RunPending() {
   for (const Pending& p : due) {
     const Activate& act = *p.activate;
     const auto inside = [&](std::size_t t) {
-      return Distance(world_.targets[t].position, p.centre) <= p.radius + world_.targets[t].radius;
+      return Alive(t) && Distance(world_.targets[t].position, p.centre) <= p.radius + world_.targets[t].radius;
     };
     if (p.kind == Pending::Kind::kNovaBlast) {
       const double bonus = StatModBonus(act, "statModDamage", base_);
@@ -737,7 +794,7 @@ void Simulation::TickPoisons() {
     const double tick = std::min(p.per_step, p.left);
     p.left -= tick;
     for (std::size_t t : p.targets) {
-      Damage(t, tick * (TargetNow(t).cursed ? 1.25 : 1), p.from);
+      Damage(t, tick * (TargetNow(t).cursed ? 1.25 : 1), p.from, false);
     }
   }
   std::erase_if(poisons_, [](const Poison& p) { return p.left <= 1e-9; });
@@ -752,8 +809,9 @@ void Simulation::CheckTraps() {
     }
     const bool landing = now - kStepMs < trap.lands_ms;
     bool near = false;
-    for (const SimTarget& t : world_.targets) {
-      near |= Distance(t.position, trap.at) <= trap.trigger + t.radius;
+    for (std::size_t t = 0; t < world_.targets.size(); ++t) {
+      const SimTarget& target = world_.targets[t];
+      near |= Alive(t) && Distance(target.position, trap.at) <= trap.trigger + target.radius;
     }
     if ((near && (landing || now >= trap.armed_ms)) || now >= trap.expires_ms) {
       boom.push_back(trap);
@@ -780,7 +838,7 @@ void Simulation::Explode(const Trap& trap) {
   const double bonus = StatModBonus(act, "statModTrapDamage", base_);
   const std::string effect = act.Text("condEffect");
   for (std::size_t t = 0; t < world_.targets.size(); ++t) {
-    if (Distance(world_.targets[t].position, trap.at) <= trap.radius + world_.targets[t].radius) {
+    if (Alive(t) && Distance(world_.targets[t].position, trap.at) <= trap.radius + world_.targets[t].radius) {
       Damage(t, AbilityHit(damage, damage, bonus, t, act.Flag("armorPierce")), From::kAbility);
       if (!effect.empty()) {
         Debuff(t, effect, act.Number("condDuration").value_or(0) + StatModBonus(act, "statModTrapCondDuration", base_));
@@ -807,14 +865,38 @@ void Simulation::Debuff(std::size_t target, const std::string& raw, double durat
   }
 }
 
-void Simulation::Damage(std::size_t target, double amount, From from) {
-  per_target_[target].damage += amount;
+double Simulation::Damage(std::size_t target, double amount, From from, bool shown) {
+  TargetCounters& c = per_target_[target];
+  const double max_hp = world_.targets[target].hp;
+  if (max_hp > 0) {
+    if (c.hp <= 0) {
+      return 0;
+    }
+    amount = std::min(amount, c.hp);
+    c.hp -= amount;
+  }
+  c.damage += amount;
+  bucket_damage_ += amount;
   if (from == From::kAbility) {
-    per_target_[target].ability_damage += amount;
+    c.ability_damage += amount;
     ability_totals_.damage += amount;
   } else if (from == From::kProc) {
     proc_totals_.damage += amount;
   }
+  if (shown && recent_hits_.size() < 256) {
+    recent_hits_.push_back({target, amount, from});
+  }
+  if (max_hp > 0 && c.hp <= 0) {
+    ++c.kills;
+    if (c.killed_ms < 0) {
+      c.killed_ms = TimeMs();
+    }
+    if (start_.respawn) {
+      c.hp = max_hp;
+      target_debuffs_[target].clear();
+    }
+  }
+  return amount;
 }
 
 void Simulation::Land(Live& shot) {
@@ -833,7 +915,7 @@ void Simulation::Land(Live& shot) {
   // step; one that pierces hits every target it passes through.
   std::vector<std::pair<double, std::size_t>> touched;
   for (std::size_t i = 0; i < world_.targets.size(); ++i) {
-    if (shot.hit[i]) {
+    if (shot.hit[i] || !Alive(i)) {
       continue;
     }
     const SimTarget& t = world_.targets[i];
@@ -852,18 +934,16 @@ void Simulation::Land(Live& shot) {
 
   for (const auto& [entry, i] : touched) {
     shot.hit[i] = true;
-    const double damage = HitDamage(g, shot.multiplier, i);
     ++per_target_[i].hits;
+    const double damage = Damage(i, HitDamage(g, shot.multiplier, i), g.from);
     if (g.subattack < 0) {
       ++(g.from == From::kProc ? proc_totals_ : ability_totals_).hits;
-      Damage(i, damage, g.from);
     } else {
       Counters& counters = per_subattack_[static_cast<std::size_t>(g.subattack)];
       ++totals_.hits;
       ++counters.hits;
       totals_.damage += damage;
       counters.damage += damage;
-      Damage(i, damage, From::kWeapon);
       for (OpenVolley& v : open_) {
         if (v.id == shot.volley) {
           ++v.hits;

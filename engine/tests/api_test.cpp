@@ -406,3 +406,19 @@ TEST_CASE("a simulation casts the ability and reports what it leaves behind") {
   CHECK(state["ability"]["casts"] == 0);
   CHECK(state["effects"].empty());
 }
+
+TEST_CASE("a simulation state carries only the history since the last one") {
+  rotmg::Api api = LoadedApi();
+  REQUIRE(api.StartSimulation(R"({"weapon": "Plain Sword", "attack": 50, "dexterity": 50,
+      "scenario": {"respawn": true, "randomRolls": true, "targets": [{"x": 0, "y": 2, "hp": 500}]}})")
+              .empty());
+  json state = json::parse(api.AdvanceSimulation(1000));
+  CHECK(state["history"]["from"] == 0);
+  CHECK(state["history"]["damage"].size() == 10);
+  CHECK(state["targets"][0]["kills"].get<int>() >= 1);
+  CHECK(state["targets"][0]["killedMs"].is_number());
+  CHECK_FALSE(state["hits"].empty());
+  state = json::parse(api.AdvanceSimulation(500));
+  CHECK(state["history"]["from"] == 10);
+  CHECK(state["history"]["mp"].size() == 5);
+}
