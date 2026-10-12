@@ -2,7 +2,7 @@
 
 A DPS calculator for Realm of the Mad God (Exalt). It works out how much damage a build does to a given target, using item data from the game client and formulas sourced from the RealmEye wiki. A simulation plays the fight out step by step, so the numbers are easy to check and you can see what they leave out: groups of targets, targets and a player that move, the opening burst of a full MP bar, and how long a boss takes to die.
 
-Live at https://hugo-blanchard.github.io/rotmg-dps/. You build a maxed character as in game: a weapon, an ability, an armor and a ring, each with up to four enchantments. It covers weapons, including an estimate of how many shots land at a given distance and the effects they trigger on shoot; abilities, with their own damage and the buffs and debuffs they keep up; what armor, rings, set bonuses and enchantments add. An optimizer can fill in the slots you don't keep with the items and enchantments that give the most DPS, or the most damage in short burst windows, like a boss you can only hurt for a moment every few seconds. Targets can be any DEF or one of the game's bosses. In the simulation you place one or more dummies, make them and yourself move, give them HP, and pin a build to compare with another in the same scene. Effects it can't model yet, like summons and hexes, are named on the page.
+Live at https://rotmg-dps.com. You build a maxed character as in game: a weapon, an ability, an armor and a ring, each with up to four enchantments. It covers weapons, including an estimate of how many shots land at a given distance and the effects they trigger on shoot; abilities, with their own damage and the buffs and debuffs they keep up; what armor, rings, set bonuses and enchantments add. An optimizer can fill in the slots you don't keep with the items and enchantments that give the most DPS, or the most damage in short burst windows, like a boss you can only hurt for a moment every few seconds. Targets can be any DEF or one of the game's bosses. In the simulation you place one or more dummies, make them and yourself move, give them HP, and pin a build to compare with another in the same scene. Effects it can't model yet, like summons and hexes, are named on the page.
 
 ## Notice
 
@@ -256,7 +256,13 @@ Projectile sprites point right. When a shot is drawn along its heading, `angleCo
 
 ## Deploying
 
-Pushing to `main`, or publishing a new `data-*` release, runs `.github/workflows/pages.yml`. It builds the engine and the site, downloads the newest dataset, checks that every weapon and ability in it evaluates, that the hit estimate matches what the wiki says about tiered bows, longbows and the Torrential Staff, that the simulation lands exactly the estimated hits and can cast every ability, then deploys to GitHub Pages.
+Pushing to `main`, or publishing a new `data-*` release, runs `.github/workflows/pages.yml`. It builds the engine and the site, downloads the newest dataset, checks that every weapon and ability in it evaluates, that the hit estimate matches what the wiki says about tiered bows, longbows and the Torrential Staff, that the simulation lands exactly the estimated hits and can cast every ability, then deploys to Cloudflare as a Worker that serves the built site (`web/wrangler.jsonc`).
+
+The site is on Cloudflare rather than GitHub Pages because the optimizer runs on several threads, which needs shared memory, which browsers only allow when the server sends the headers in `web/public/_headers`. GitHub Pages can't send headers. To deploy your own copy:
+
+1. In Cloudflare, create an API token from the "Edit Cloudflare Workers" template.
+2. Add the token to the repository's Actions secrets as `CLOUDFLARE_API_TOKEN`. The first deploy creates the Worker, named as in `web/wrangler.jsonc`.
+3. To serve it from your own domain, add the domain under the Worker's Settings, Domains & Routes.
 
 To roll the data back, run the workflow by hand with an older release:
 
