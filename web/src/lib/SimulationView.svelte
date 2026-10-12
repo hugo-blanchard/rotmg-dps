@@ -69,6 +69,9 @@
   let speed = $state(1);
   let showHitbox = $state(true);
   let showTrails = $state(false);
+  // Fit everything seen so far, or keep the player in the middle at a fixed
+  // scale, which reads better when things move far.
+  let follow = $state(false);
   let sim = $state<SimState | null>(null);
   let error = $state("");
 
@@ -266,18 +269,27 @@
     }
     bounds = [minX, maxX, minY, maxY];
     const margin = 1.5;
-    const tile = Math.max(8, Math.min(64, width / (maxX - minX + 2 * margin), height / (maxY - minY + 2 * margin)));
-    const sx = (x: number) => width / 2 + (x - (minX + maxX) / 2) * tile;
-    const sy = (y: number) => height / 2 - (y - (minY + maxY) / 2) * tile;
+    const fit = Math.max(8, Math.min(64, width / (maxX - minX + 2 * margin), height / (maxY - minY + 2 * margin)));
+    const tile = follow ? 32 : fit;
+    const [cx, cy] = follow ? [player.x, player.y] : [(minX + maxX) / 2, (minY + maxY) / 2];
+    const sx = (x: number) => width / 2 + (x - cx) * tile;
+    const sy = (y: number) => height / 2 - (y - cy) * tile;
 
     ctx.fillStyle = color("--surface");
     ctx.fillRect(0, 0, width, height);
     ctx.strokeStyle = color("--grid");
     ctx.lineWidth = 1;
-    for (let y = Math.floor(minY - margin * 2); sy(y) > 0; y++) {
+    for (let y = Math.floor(cy - height / (2 * tile)); sy(y) > 0; y++) {
       ctx.beginPath();
       ctx.moveTo(0, Math.round(sy(y)) + 0.5);
       ctx.lineTo(width, Math.round(sy(y)) + 0.5);
+      ctx.stroke();
+    }
+    // Following, the view moves with you; columns show it moving sideways.
+    for (let x = Math.floor(cx - width / (2 * tile)); follow && sx(x) < width; x++) {
+      ctx.beginPath();
+      ctx.moveTo(Math.round(sx(x)) + 0.5, 0);
+      ctx.lineTo(Math.round(sx(x)) + 0.5, height);
       ctx.stroke();
     }
 
@@ -453,6 +465,7 @@
     void width;
     void showHitbox;
     void showTrails;
+    void follow;
     draw();
   });
 
@@ -610,6 +623,7 @@
     </label>
     <label><input type="checkbox" bind:checked={showHitbox} /> Hitbox</label>
     <label><input type="checkbox" bind:checked={showTrails} /> Trails</label>
+    <label><input type="checkbox" bind:checked={follow} /> Follow you</label>
     {#if ability}
       <label><input type="checkbox" bind:checked={options.fullMp} /> Start with full MP</label>
     {/if}
