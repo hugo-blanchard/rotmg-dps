@@ -98,9 +98,22 @@ std::vector<ChanceBoost> ChanceBoosts(const Weapon& weapon, const std::vector<in
     }
     const double duration = *a.Number("duration");
     const double cycle = a.Number("cooldown").value_or(0) + 1 / (*a.Number("proc") * shots_per_second);
-    out.push_back({{a.Text("stat"), static_cast<int>(a.Number("amount").value_or(0))},
-                   duration,
-                   std::min(1.0, duration / cycle)});
+    const ChanceBoost boost{{a.Text("stat"), static_cast<int>(a.Number("amount").value_or(0))},
+                            duration,
+                            std::min(1.0, duration / cycle)};
+    // The enchantments "don't stack with other Enchantment procs of the same
+    // stat" (channel noStack): two on different items count as one that's
+    // up whenever either is, at the larger amount.
+    const auto same = std::ranges::find_if(out, [&](const ChanceBoost& b) {
+      return b.bonus.stat == boost.bonus.stat && a.Text("channel").starts_with("noStack");
+    });
+    if (same == out.end()) {
+      out.push_back(boost);
+    } else {
+      same->share = 1 - (1 - same->share) * (1 - boost.share);
+      same->bonus.amount = std::max(same->bonus.amount, boost.bonus.amount);
+      same->duration_s = std::max(same->duration_s, boost.duration_s);
+    }
   }
   return out;
 }

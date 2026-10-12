@@ -68,7 +68,8 @@ BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const
   }
   if (!boosts.empty()) {
     out.assumptions.push_back(
-        "an on-shoot boost's cooldown starts when it goes off, and boosts go off independently of each other");
+        "an on-shoot boost's cooldown starts when it goes off, and boosts go off independently of each other, with "
+        "ones of the same stat counting once");
   }
   out.weapon_dps =
       boosts.empty() ? out.weapon.dps : MixedDps(weapon, with_ability_gear, target, assumptions, {}, boosts);

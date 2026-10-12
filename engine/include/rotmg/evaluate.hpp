@@ -111,7 +111,8 @@ struct ChanceBoost {
 /// The weapon's chance boosts at `shots_per_second`. After a boost goes off
 /// its cooldown runs; then each shot has the chance, so the next one comes
 /// 1 / (chance x shots per second) seconds later on average. A boost is up
-/// for its duration out of that cycle.
+/// for its duration out of that cycle. Boosts of one stat that don't stack
+/// come back as one.
 std::vector<ChanceBoost> ChanceBoosts(const Weapon& weapon, const std::vector<int>& worn, double shots_per_second);
 
 /// Single-target DPS of a weapon. Each subattack fires on its own at its own

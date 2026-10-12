@@ -294,3 +294,19 @@ TEST_CASE("enchantments on the other gear add stats and cut MP costs") {
   REQUIRE(wrong["ok"] == false);
   CHECK(wrong["error"].get<std::string>().find("doesn't go on your ring") != std::string::npos);
 }
+
+TEST_CASE("same-stat on-shoot boosts on two items count once") {
+  // The enchantment "does not stack with other Enchantment procs of the
+  // same stat": on the weapon and the ring it's one +8 ATT, up whenever
+  // either is.
+  const rotmg::Api api = LoadedApi();
+  const std::string weapon = R"({"weapon": "Plain Sword", "attack": 50, "dexterity": 0, "enchantments": ["OnShoot_Attack_Bonus_4"])";
+  const json one = json::parse(api.Evaluate(weapon + "}"));
+  const json two = json::parse(api.Evaluate(weapon + R"(, "gearEnchantments": {"ring": ["OnShoot_Attack_Bonus_4"]}})"));
+  REQUIRE(two["ok"] == true);
+  REQUIRE(two["build"]["uptimes"].size() == 1);
+  const double share = one["build"]["uptimes"][0]["share"].get<double>();
+  CHECK(two["build"]["uptimes"][0]["amount"] == 8);
+  CHECK(two["build"]["uptimes"][0]["share"].get<double>() == Catch::Approx(1 - (1 - share) * (1 - share)));
+}
+
