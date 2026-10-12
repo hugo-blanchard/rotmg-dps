@@ -248,3 +248,29 @@ TEST_CASE("the search starts again only from the stats asked for") {
   CHECK(c->builds[0].first == Catch::Approx(best));
   CHECK(c->evaluated <= a->evaluated);
 }
+
+TEST_CASE("the search leaves a slot empty rather than fill it with what adds nothing") {
+  // Arcane looks like an ATT proc but the score ignores it, like a second
+  // copy of a proc that doesn't stack. It sorts before every other
+  // enchantment, so a tie between holding it and an empty slot would keep it.
+  Dataset d = World();
+  Enchantment& arcane = d.enchantments.emplace_back(Stat("Arcane", {{"ATT", 8}}, {"PROC"}));
+  arcane.mutators[0].tag = "AddOnPlayerShootActivate";
+  arcane.mutators[0].text = "StatBoostSelf";
+  d.enchantment_pools["Pool"].insert("Arcane");
+  OptimizerProblem p = Problem(d, 4);
+  p.score = [&d](const OptimizerBuild& b, const std::array<int, 8>& extra) {
+    OptimizerBuild without = b;
+    for (auto& list : without.enchants) {
+      std::erase(list, "Arcane");
+    }
+    return Dps(d, without, extra);
+  };
+  const auto found = rotmg::SearchBuilds(d, p);
+  REQUIRE(found.has_value());
+  for (const auto& [dps, build] : found->builds) {
+    for (const auto& list : build.enchants) {
+      CHECK(std::ranges::find(list, "Arcane") == list.end());
+    }
+  }
+}

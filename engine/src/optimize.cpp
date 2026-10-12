@@ -260,14 +260,24 @@ std::optional<double> BuildSearch::Score(const Build& b, const Stats& extra) {
     return dps;
   }
   // One entry per set of items, with its best enchantments. Of two that
-  // score the same, the first by key stays, whichever thread got there
-  // first, so the result doesn't depend on the order.
+  // score the same, the one with fewer enchantments stays, so a slot where
+  // nothing adds anything is left empty rather than holding one that does
+  // nothing, like a second copy of a proc that doesn't stack. Then the
+  // first by key, whichever thread got there first, so the result doesn't
+  // depend on the order.
   std::string items_key;
   for (const std::string& item : b.items) {
     items_key += item + "\n";
   }
+  const auto count = [](const Build& x) {
+    std::size_t n = 0;
+    for (const auto& list : x.enchants) n += list.size();
+    return n;
+  };
   auto it = seen_.find(items_key);
-  if (it == seen_.end() || it->second.first < *dps || (it->second.first == *dps && key < Key(it->second.second))) {
+  if (it == seen_.end() || it->second.first < *dps ||
+      (it->second.first == *dps &&
+       std::pair{count(b), key} < std::pair{count(it->second.second), Key(it->second.second)})) {
     seen_[items_key] = {*dps, b};
   }
   return dps;
