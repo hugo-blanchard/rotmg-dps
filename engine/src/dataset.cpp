@@ -172,6 +172,19 @@ Enchantment ReadEnchantment(const json& j) {
       e.mutators.push_back(std::move(out));
     }
   }
+  if (auto it = j.find("containers"); it != j.end()) {
+    for (const json& c : *it) {
+      Enchantment::Container container;
+      for (const json& p : c.at("projectiles")) {
+        container.projectiles.push_back(ReadProjectile(p));
+      }
+      for (const json& s : c.at("subattacks")) {
+        container.subattacks.push_back(ReadSubattack(s));
+      }
+      ReadDefault(c, "unsupported", container.unsupported);
+      e.containers.emplace(c.at("id").get<std::string>(), std::move(container));
+    }
+  }
   return e;
 }
 

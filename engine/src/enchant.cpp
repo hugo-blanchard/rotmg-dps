@@ -17,6 +17,43 @@ bool Targets(const Mutator& m, const char* key, int index) {
   return !n || *n < 0 || static_cast<int>(*n) == index;
 }
 
+// Awakened enchantments: the container's subattack `subAttackIndex` goes
+// into the weapon's subattack slot given by the element's text, replacing
+// it (Set) or pushing the rest along (Add). Spellsword Mastery shows the
+// order: its container has only subattack 0 and the text says 1. The
+// container's projectile joins the weapon under a fresh id.
+bool TakeSubattack(Weapon& w, const Enchantment& e, const Mutator& m) {
+  const auto c = e.containers.find(m.attributes.Text("subAttackObject"));
+  const auto from = static_cast<std::size_t>(m.attributes.Number("subAttackIndex").value_or(0));
+  if (c == e.containers.end() || from >= c->second.subattacks.size()) {
+    return false;
+  }
+  Subattack s = c->second.subattacks[from];
+  const auto p = std::ranges::find(c->second.projectiles, s.projectile_id, &Projectile::id);
+  if (p == c->second.projectiles.end()) {
+    return false;
+  }
+  Projectile copy = *p;
+  copy.id = 0;
+  for (const Projectile& existing : w.projectiles) {
+    copy.id = std::max(copy.id, existing.id + 1);
+  }
+  s.projectile_id = copy.id;
+  w.projectiles.push_back(std::move(copy));
+  const auto to = std::min(static_cast<std::size_t>(m.number.value_or(0)), w.subattacks.size());
+  if (m.tag == "SetSubAttack" && to < w.subattacks.size()) {
+    w.subattacks[to] = s;
+  } else {
+    w.subattacks.insert(w.subattacks.begin() + static_cast<std::ptrdiff_t>(to), s);
+  }
+  for (const std::string& tag : c->second.unsupported) {
+    if (!Has(w.unsupported, tag)) {
+      w.unsupported.push_back(tag);
+    }
+  }
+  return true;
+}
+
 int ClassMax(const Class& c, const std::string& stat) {
   if (stat == "ATT") return c.attack.max;
   if (stat == "DEX") return c.dexterity.max;
@@ -88,6 +125,8 @@ Enchanted Enchant(const Weapon& weapon, const std::vector<const Enchantment*>& e
             (m.tag == "MultiplySpeed" ? p.speed : p.lifetime_ms) *= n;
           }
         }
+      } else if (m.tag == "SetSubAttack" || m.tag == "AddSubAttack") {
+        modelled = TakeSubattack(w, *e, m) && modelled;
       } else if (m.tag == "AddOnPlayerShootActivate") {
         Activate effect = m.attributes;
         effect.type = m.text;

@@ -362,6 +362,24 @@
       "labels": ["CONVERSIONBONUS"],
       "mutators": [ { "tag": "ActivateOnEquip", "value": "BonusStatRelative",
                       "params": { "amount": 13, "stat": "ATT", "statRelativeTo": "DEX" } } ] },
+    { "type": 273, "id": "Awakened_Test", "name": "Awakened Test", "compatible": ["WEAPON", "SWORD"], "labels": ["AWAKENED"],
+      "mutators": [
+        { "tag": "SetSubAttack", "value": 0, "params": { "subAttackIndex": 0, "subAttackObject": "Test Container" } },
+        { "tag": "AddSubAttack", "value": 1, "params": { "subAttackIndex": 1, "subAttackObject": "Test Container" } }
+      ],
+      "containers": [
+        { "id": "Test Container",
+          "projectiles": [
+            { "id": 0, "objectId": "Example Thorn", "speed": 150, "minDamage": 30, "maxDamage": 45, "lifetimeMs": 500,
+              "armorPiercing": true },
+            { "id": 1, "objectId": "Example Spark", "speed": 150, "minDamage": 10, "maxDamage": 10, "lifetimeMs": 500 }
+          ],
+          "subattacks": [
+            { "projectileId": 0, "numProjectiles": 3, "rateOfFire": 1.7, "arcGap": 10 },
+            { "projectileId": 1, "numProjectiles": 1, "rateOfFire": 0.5 }
+          ],
+          "unsupported": ["CollisionMult"] }
+      ] },
     { "type": 269, "id": "Odd_Enchant", "name": "Odd Enchant", "compatible": ["WEAPON"], "labels": ["ODD"],
       "mutators": [ { "tag": "AddOnPlayerHitActivate", "value": "Heal", "params": { "amount": 20 } } ] }
   ],

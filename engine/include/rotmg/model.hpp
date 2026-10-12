@@ -167,6 +167,13 @@ struct Enchantment {
   std::vector<std::string> labels;
   std::vector<std::string> incompatible_labels;
   std::vector<Mutator> mutators;
+  /// Items that only hold subattacks for SetSubAttack and AddSubAttack, by id.
+  struct Container {
+    std::vector<Projectile> projectiles;
+    std::vector<Subattack> subattacks;
+    std::vector<std::string> unsupported;
+  };
+  std::map<std::string, Container> containers;
 };
 
 /// An equipment set. Slots are 0 weapon, 1 ability, 2 armor, 3 ring; a slot

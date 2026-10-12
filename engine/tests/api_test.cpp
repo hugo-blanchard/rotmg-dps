@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 
@@ -246,4 +247,25 @@ TEST_CASE("relative enchantments add a share of the bonus stats, all at once") {
   REQUIRE(classless["ok"] == true);
   CHECK(classless["enchantmentStats"].empty());
   CHECK(classless["breakdown"]["unsupported"].back() == "relative stat bonuses, which need the class");
+}
+
+TEST_CASE("an awakened enchantment swaps in and adds subattacks") {
+  // The container's first subattack replaces the sword's attack; its second
+  // is added after it. Both bring their own projectiles.
+  const rotmg::Api api = LoadedApi();
+  const json plain = json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "attack": 25, "dexterity": 0})"));
+  const json res = json::parse(
+      api.Evaluate(R"({"weapon": "Plain Sword", "attack": 25, "dexterity": 0, "enchantments": ["Awakened_Test"]})"));
+  REQUIRE(res["ok"] == true);
+  const json& subs = res["breakdown"]["subattacks"];
+  REQUIRE(subs.size() == 2);
+  CHECK(subs[0]["projectilesPerVolley"] == 3);
+  const double volleys = plain["breakdown"]["subattacks"][0]["volleysPerSecond"].get<double>();
+  CHECK(subs[0]["volleysPerSecond"].get<double>() == Catch::Approx(volleys * 1.7));
+  CHECK(subs[0]["damagePerHit"].get<double>() == Catch::Approx(37));  // rolls 30-44 at 1x
+  CHECK(subs[1]["volleysPerSecond"].get<double>() == Catch::Approx(volleys * 0.5));
+  CHECK(subs[1]["damagePerHit"].get<double>() == Catch::Approx(10));
+  // The container's CollisionMult isn't modelled, and says so.
+  const json& unsupported = res["breakdown"]["unsupported"];
+  CHECK(std::ranges::find(unsupported, "CollisionMult") != unsupported.end());
 }
