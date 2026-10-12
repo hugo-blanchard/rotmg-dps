@@ -269,7 +269,9 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
     if (!en.stats.empty()) {
       r.notes.emplace_back("fractional stat bonuses from enchantments add up and the total rounds down");
     }
-    const auto cls = std::ranges::find(dataset.classes, req.value("class", std::string()), &Class::id);
+    const auto class_id = req.find("class");
+    const auto cls = std::ranges::find(
+        dataset.classes, class_id != req.end() && class_id->is_string() ? class_id->get<std::string>() : "", &Class::id);
     if (!en.relative.empty() && cls == dataset.classes.end()) {
       en.unsupported.emplace_back("relative stat bonuses, which need the class");
     } else if (!en.relative.empty()) {

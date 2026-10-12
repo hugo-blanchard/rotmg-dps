@@ -339,3 +339,12 @@ TEST_CASE("enchantments give the same result in any order") {
         Catch::Approx(awakened["breakdown"]["subattacks"][1]["volleysPerSecond"].get<double>() * 1.05));
 }
 
+
+TEST_CASE("a class that isn't a string is the same as none") {
+  const rotmg::Api api = LoadedApi();
+  const json res = json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "class": null,
+      "enchantments": ["Relative_Attack_Bonus_4"]})"));
+  REQUIRE(res["ok"] == true);
+  CHECK(res["breakdown"]["unsupported"].back() == "relative stat bonuses, which need the class");
+}
+
