@@ -252,6 +252,30 @@ export interface Spread {
 
 export type SpreadResponse = (Spread & { ok: true; compare?: Spread }) | { ok: false; error: string };
 
+/** What the optimizer may change; see Api::Optimize in engine/src/api.cpp. */
+export interface OptimizeOptions {
+  /** Slots whose items stay as they are. */
+  lock: ("weapon" | "ability" | "armor" | "ring")[];
+  /** Which items may be tried: tiered ones, set pieces, and the rest. */
+  pools: ("tiered" | "untiered" | "set")[];
+  enchantments: "keep" | "none" | "best";
+  slots?: number;
+  results?: number;
+}
+
+export interface OptimizedBuild {
+  dps: number;
+  weapon: string;
+  ability: string;
+  armor: string;
+  ring: string;
+  enchantments: Record<"weapon" | "ability" | "armor" | "ring", string[]>;
+}
+
+export type OptimizeResponse =
+  | { ok: true; baseline: number; evaluated: number; builds: OptimizedBuild[] }
+  | { ok: false; error: string };
+
 export type SimState =
   | (SimRun & {
       ok: true;
@@ -265,7 +289,8 @@ type Message =
   | { kind: "evaluate"; request: string }
   | { kind: "simStart"; request: string }
   | { kind: "simAdvance"; ms: number }
-  | { kind: "simMany"; request: string };
+  | { kind: "simMany"; request: string }
+  | { kind: "optimize"; request: string };
 
 export type WorkerRequest = Message & { id: number };
 
@@ -318,6 +343,15 @@ export class Engine {
       return { ok: false, error: res.error };
     }
     return JSON.parse(res.result!) as SimState;
+  }
+
+  /** Looks for the build with the most DPS; see Api::Optimize. */
+  async optimize(request: EvaluateRequest & { optimize: OptimizeOptions }): Promise<OptimizeResponse> {
+    const res = await this.send({ kind: "optimize", request: JSON.stringify(request) });
+    if (res.error) {
+      return { ok: false, error: res.error };
+    }
+    return JSON.parse(res.result!) as OptimizeResponse;
   }
 
   /** Runs the request many times with random rolls; see Api::SimulateMany. */

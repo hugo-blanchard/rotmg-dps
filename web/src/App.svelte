@@ -223,6 +223,8 @@
       {dataset}
       {sprites}
       {advanced}
+      {engine}
+      {request}
       wornSets={result?.sets ?? []}
       enchantmentStats={result?.enchantmentStats ?? []}
       bind:classId

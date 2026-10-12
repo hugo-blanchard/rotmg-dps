@@ -1,13 +1,16 @@
 <script lang="ts">
   import EquipmentPanel from "./EquipmentPanel.svelte";
+  import Optimizer from "./Optimizer.svelte";
   import { itemsFor, maxStats, slots, type Dataset, type Slot } from "./dataset";
-  import type { PlayerStatus, Target, WornSet } from "./engine";
+  import type { Engine, EvaluateRequest, PlayerStatus, Target, WornSet } from "./engine";
   import type { Sprites } from "./sprites";
 
   let {
     dataset,
     sprites,
     advanced,
+    engine,
+    request,
     classId = $bindable(),
     items = $bindable(),
     enchants = $bindable(),
@@ -21,6 +24,9 @@
     dataset: Dataset;
     sprites: Sprites | null;
     advanced: boolean;
+    engine: Engine | null;
+    /** The build as the engine sees it, for the optimizer to start from. */
+    request: EvaluateRequest;
     classId: string;
     items: Record<Slot, string>;
     enchants: Record<Slot, string[]>;
@@ -100,6 +106,7 @@
   <fieldset>
     <legend>Build</legend>
     <EquipmentPanel {dataset} {sprites} bind:classId bind:items bind:enchants />
+    <Optimizer {engine} {request} {dataset} {cls} {sprites} bind:items bind:enchants />
   </fieldset>
 
   <fieldset>
