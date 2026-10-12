@@ -147,17 +147,49 @@ TEST_CASE("a poison burst on shoot adds its damage once per cooldown") {
   // 17.5 shots, so a burst goes off every 18th shot, for 1000 ignoring DEF.
   const auto b = EvaluateWeapon(Weapon("Venom Katana"), {.attack = 50, .dexterity = 50}, {.defense = 60});
   const double shots = 1.5 + 6.5 * 50 / 75.0;
-  REQUIRE(b.procs.size() == 1);
+  REQUIRE(!b.procs.empty());
+  CHECK(b.procs[0].name == "Poison burst");
   CHECK(b.procs[0].per_second == Approx(shots / 18));
   CHECK(b.procs[0].damage == Approx(1000));
-  CHECK(b.dps == Approx(b.subattacks[0].dps + shots / 18 * 1000));
+  double total = b.subattacks[0].dps;
+  for (const rotmg::ProcResult& p : b.procs) {
+    total += p.dps;
+  }
+  CHECK(b.dps == Approx(total));
 
   const auto cursed = EvaluateWeapon(Weapon("Venom Katana"), {.attack = 50, .dexterity = 50}, {.cursed = true});
   CHECK(cursed.procs[0].damage == Approx(1250));
 }
 
+TEST_CASE("extra shots at the cursor count at their listed damage, without ATT") {
+  // One shot of 100-199 every 2 s: at 5.83 shots a second that's every 12th
+  // shot. ATT doesn't change it, since the data gives it no scaling.
+  const double shots = 1.5 + 6.5 * 50 / 75.0;
+  const auto find = [](const rotmg::Breakdown& b, const std::string& name) {
+    return std::ranges::find(b.procs, name, &rotmg::ProcResult::name);
+  };
+  const auto b = EvaluateWeapon(Weapon("Venom Katana"), {.attack = 50, .dexterity = 50}, {});
+  const auto low = find(b, "Extra shots (Example Proc Bolt)");
+  REQUIRE(low != b.procs.end());
+  CHECK(low->per_second == Approx(shots / 12));
+  CHECK(low->damage == Approx(149.5));
+  const auto strong = EvaluateWeapon(Weapon("Venom Katana"), {.attack = 100, .dexterity = 50}, {});
+  CHECK(find(strong, "Extra shots (Example Proc Bolt)")->damage == Approx(149.5));
+
+  // The ring's shots fire on every shot, but only with the ring worn. They
+  // pierce armor, so DEF doesn't touch them.
+  CHECK(find(b, "Extra shots (Example Ring Bolt)") == b.procs.end());
+  const auto ringed =
+      EvaluateWeapon(Weapon("Venom Katana"), {.attack = 50, .dexterity = 50, .worn = {0x7002}}, {.defense = 80});
+  const auto ring = find(ringed, "Extra shots (Example Ring Bolt)");
+  REQUIRE(ring != ringed.procs.end());
+  CHECK(ring->per_second == Approx(shots));
+  CHECK(ring->damage == Approx(2 * 54.5));
+}
+
 TEST_CASE("on-shoot effects that aren't modelled are flagged, harmless ones aren't") {
-  // The katana's set-bonus shot isn't modelled; slowing yourself is harmless.
+  // The katana's nova around the player isn't modelled; slowing yourself is
+  // harmless.
   const auto b = EvaluateWeapon(Weapon("Venom Katana"), {.attack = 50, .dexterity = 50}, {});
   CHECK(b.unsupported == std::vector<std::string>{"OnPlayerShootActivate"});
 }

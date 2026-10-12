@@ -22,11 +22,11 @@
 //    "hitModel": {"distance": 4, "radius": 0.5},
 //    "curve": {"from": 0, "to": 150, "step": 5},
 //    "hitCurve": {"from": 0.5, "to": 10, "step": 0.25}}
-// Only "weapon" is required. "wearing" lists the item types of other set
-// pieces worn, like armor and a ring. "curve" adds the build's DPS at each
-// DEF in the range, with everything else in the request unchanged.
-// "hitCurve" adds the geometric estimate's total hits per volley at each
-// distance.
+// Only "weapon" is required. "wearing" lists the item types of other gear
+// worn, like a set's armor or a ring a weapon's procs need. "curve" adds
+// the build's DPS at each DEF in the range, with everything else in the
+// request unchanged. "hitCurve" adds the geometric estimate's total hits
+// per volley at each distance.
 //
 // Response:
 //   {"ok": true, "breakdown": {...the weapon on its own...},
@@ -200,6 +200,7 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
     worn.push_back(r.ability->type);
   }
   r.sets = WornSets(dataset, worn);
+  r.character.worn = worn;
   for (const WornSet& s : r.sets) {
     r.character = r.character.With(s.stats);
   }

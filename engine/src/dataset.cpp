@@ -132,6 +132,16 @@ std::vector<Activate> ReadActivates(const json& j, std::string_view key) {
   return out;
 }
 
+std::map<int, Projectile> ReadCreatedProjectiles(const json& j) {
+  std::map<int, Projectile> out;
+  if (auto it = j.find("createdProjectiles"); it != j.end()) {
+    for (const json& c : *it) {
+      out.emplace(c.at("type").get<int>(), ReadProjectile(c.at("projectile")));
+    }
+  }
+  return out;
+}
+
 Ability ReadAbility(const json& j) {
   Ability a;
   j.at("type").get_to(a.type);
@@ -153,11 +163,7 @@ Ability ReadAbility(const json& j) {
     }
   }
   a.activates = ReadActivates(j, "activates");
-  if (auto it = j.find("createdProjectiles"); it != j.end()) {
-    for (const json& c : *it) {
-      a.created_projectiles.emplace(c.at("type").get<int>(), ReadProjectile(c.at("projectile")));
-    }
-  }
+  a.created_projectiles = ReadCreatedProjectiles(j);
   ReadDefault(j, "unsupported", a.unsupported);
   return a;
 }
@@ -196,6 +202,7 @@ Weapon ReadWeapon(const json& j) {
     w.subattacks.push_back(ReadSubattack(s));
   }
   w.on_shoot = ReadActivates(j, "onShoot");
+  w.created_projectiles = ReadCreatedProjectiles(j);
   ReadDefault(j, "unsupported", w.unsupported);
   return w;
 }

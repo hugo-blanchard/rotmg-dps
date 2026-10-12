@@ -271,13 +271,45 @@
           "type": "BulletCreate",
           "params": {
             "proc": 1,
-            "cooldown": 0.4,
+            "cooldown": 2,
             "numShots": 1,
-            "type": "0x3001",
-            "mustWear": "0x3002"
+            "targetMouse": true,
+            "type": "0x3010"
+          }
+        },
+        {
+          "type": "BulletCreate",
+          "params": {
+            "proc": 1,
+            "cooldown": 0,
+            "numShots": 2,
+            "targetMouse": true,
+            "type": "0x3011",
+            "mustWear": "0x7002"
+          }
+        },
+        {
+          "type": "BulletCreate",
+          "params": {
+            "proc": 1,
+            "cooldown": 5,
+            "numShots": 16,
+            "type": "0x3010"
           }
         }
-      ]
+      ],
+      "createdProjectiles": [
+        {
+          "type": 12304,
+          "projectile": { "id": 0, "objectId": "Example Proc Bolt", "speed": 160, "minDamage": 100, "maxDamage": 200, "lifetimeMs": 400 }
+        },
+        {
+          "type": 12305,
+          "projectile": { "id": 0, "objectId": "Example Ring Bolt", "speed": 160, "minDamage": 50, "maxDamage": 60,
+                          "lifetimeMs": 400, "armorPiercing": true }
+        }
+      ],
+      "gear": [ { "itemType": 28674, "name": "Plain Band", "slotType": 9 } ]
     }
   ],
   "sets": [

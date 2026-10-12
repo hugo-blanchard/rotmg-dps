@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 
+#include "rotmg/ability.hpp"
 #include "rotmg/fire_rate.hpp"
 
 namespace rotmg {
@@ -40,6 +41,41 @@ bool IsWhileShooting(const Activate& a) {
 bool IsPoisonBurst(const Activate& a) {
   return a.type == "PoisonGrenade" && a.Number("proc").value_or(1) == 1 && a.Text("requiredConditions").empty() &&
          a.Text("mustWear").empty() && !a.Flag("targetMouse") && !a.Number("damageBoost") && a.Number("cooldown");
+}
+
+std::vector<int> TypeList(const std::string& list) {
+  std::vector<int> out;
+  std::size_t start = 0;
+  while (start < list.size()) {
+    const std::size_t end = std::min(list.find(';', start), list.size());
+    out.push_back(static_cast<int>(std::strtol(list.substr(start, end - start).c_str(), nullptr, 0)));
+    start = end + 1;
+  }
+  return out;
+}
+
+// Whether the gear an on-shoot effect asks for is on: every mustWear item,
+// none of the mustNotWear ones. Wand of Geb's needs all four set pieces,
+// matching its tooltip's "With Full Set".
+bool GearWorn(const Activate& a, const std::vector<int>& worn) {
+  const auto wearing = [&](int type) { return std::ranges::find(worn, type) != worn.end(); };
+  return std::ranges::all_of(TypeList(a.Text("mustWear")), wearing) &&
+         std::ranges::none_of(TypeList(a.Text("mustNotWear")), wearing) &&
+         std::ranges::none_of(TypeList(a.Text("mustNotWearOR")), wearing);
+}
+
+// Extra shots made at the cursor on every shot past a cooldown, like
+// Marionette Ravager's or a Syndicate Gear ring's. Novas around the player
+// (Wand of Geb), meter-gated ones (Staff of Esben) and ones that need a
+// status on you (Lethal Strike, Curse) aren't modelled.
+bool IsProcShot(const Weapon& w, const Activate& a) {
+  if (a.type != "BulletCreate" || a.Number("proc").value_or(1) != 1 || !a.Flag("targetMouse") ||
+      !a.Text("requiredConditions").empty() || a.Number("idMeter") || a.Number("meterCost")) {
+    return false;
+  }
+  const std::string type = a.Text("type");
+  return type.empty() ? !w.projectiles.empty()
+                      : w.created_projectiles.contains(static_cast<int>(std::strtol(type.c_str(), nullptr, 0)));
 }
 
 }  // namespace
@@ -88,9 +124,13 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
 
   const std::vector<StatBonus> while_shooting = WhileShooting(weapon);
   bool unmodelled_on_shoot = false;
+  std::vector<int> worn = character.worn;
+  worn.push_back(weapon.type);
   for (const Activate& a : weapon.on_shoot) {
     const bool harmless = a.type == "ConditionEffectSelf" && kHarmlessSelfEffects.contains(a.Text("effect"));
-    if (!harmless && !IsWhileShooting(a) && !IsPoisonBurst(a)) {
+    // An effect for gear that isn't worn doesn't go off, so it can't be missing.
+    const bool off = !GearWorn(a, worn);
+    if (!harmless && !off && !IsWhileShooting(a) && !IsPoisonBurst(a) && !IsProcShot(weapon, a)) {
       unmodelled_on_shoot = true;
     }
   }
@@ -184,6 +224,41 @@ Breakdown EvaluateWeapon(const Weapon& weapon, const Character& character, const
     if (target.cursed) {
       out.assumptions.push_back("Curse adds 25% to poison damage too");
     }
+  }
+
+  // Extra shots at the cursor, one row per projectile and cooldown. Like
+  // abilities, they don't scale with ATT; only a scalingStat in the data
+  // scales them, and procs without one don't scale at all (Divinity's is
+  // known not to).
+  bool any_shots = false;
+  for (const Activate& a : weapon.on_shoot) {
+    if (!IsProcShot(weapon, a) || !GearWorn(a, worn) || shots_per_second <= 0) {
+      continue;
+    }
+    const std::string type = a.Text("type");
+    const Projectile& p =
+        type.empty() ? weapon.projectiles[0]
+                     : weapon.created_projectiles.at(static_cast<int>(std::strtol(type.c_str(), nullptr, 0)));
+    const double cooldown = a.Number("cooldown").value_or(0);
+    const double shots_between = std::max(1.0, std::ceil(cooldown * shots_per_second - 1e-9));
+    const int count = static_cast<int>(a.Number("numShots").value_or(1)) + StatModCount(a, "statModNumShots", geared);
+    const double each = ExpectedAbilityDamage(p.min_damage, p.max_damage - 1, StatModBonus(a, "statModDamage", geared),
+                                              target, p.armor_piercing);
+    const std::string name = "Extra shots (" + p.object_id + ")";
+    auto row = std::ranges::find_if(out.procs, [&](const ProcResult& r) {
+      return r.name == name && r.per_second == shots_per_second / shots_between;
+    });
+    if (row == out.procs.end()) {
+      out.procs.push_back({name, shots_per_second / shots_between, 0, 0, ""});
+      row = out.procs.end() - 1;
+    }
+    row->damage += count * each;
+    row->dps = row->per_second * row->damage;
+    out.dps += row->per_second * count * each;
+    any_shots = true;
+  }
+  if (any_shots) {
+    out.assumptions.push_back("extra shots made at the cursor pass through the target, so every one hits");
   }
 
   // Most burst weapons share one delay across subattacks; list it once then.

@@ -23,6 +23,9 @@ struct Character {
   int max_hit_points = 0;
   int max_magic_points = 0;
   PlayerStatus status{};
+  /// Items worn besides the one being evaluated, by type: the ability,
+  /// armor and ring. Some on-shoot effects need them.
+  std::vector<int> worn{};
 
   /// A stat by the client's name: ATT, DEX, WIS, VIT, DEF, SPD, MAXHP or
   /// MAXMP. 0 for anything else.

@@ -108,6 +108,8 @@ struct Weapon {
   std::vector<Subattack> subattacks;
   /// OnPlayerShootActivate effects, with the client's parameters.
   std::vector<Activate> on_shoot;
+  /// Projectiles of other items, by type, that on-shoot effects create.
+  std::map<int, Projectile> created_projectiles;
   std::vector<std::string> unsupported;
 
   /// Null if the weapon has no projectile with that id.
