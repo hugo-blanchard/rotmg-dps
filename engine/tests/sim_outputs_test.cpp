@@ -128,3 +128,16 @@ TEST_CASE("a target that respawns is a new enemy, without the old one's poison")
   CHECK(sim.PerTarget()[0].damage == Approx(300));
   CHECK(sim.TargetStatuses(0).empty());
 }
+
+TEST_CASE("poison put on before a target turns invulnerable keeps working") {
+  // The vial lands 0.8 s in, before the target turns invulnerable at 2 s for
+  // 3 s. All 1610 of its damage still lands, out of the sword's reach.
+  static const rotmg::Dataset dataset = LoadSmallDataset();
+  Scenario s;
+  s.targets.push_back({{0, 8}, 0.5, {}});
+  s.targets[0].invulnerable_every_s = 2;
+  s.targets[0].invulnerable_s = 3;
+  Simulation sim(Sword(), {.attack = 50, .dexterity = 50, .wisdom = 60}, s, rotmg::FindAbility(dataset, "Toxic Vial"));
+  sim.Advance(6000);
+  CHECK(sim.PerTarget()[0].damage == Approx(1610).margin(1));
+}

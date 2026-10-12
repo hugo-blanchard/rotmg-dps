@@ -853,7 +853,8 @@ void Simulation::RunPending() {
       const double duration_ms = std::max(kStepMs, act.Number("duration").value_or(0) * 1000);
       Poison poison{{}, total * kStepMs / duration_ms, total, p.from};
       for (std::size_t t = 0; t < world_.targets.size(); ++t) {
-        if (!inside(t)) {
+        // A poison landing on an invulnerable enemy doesn't take.
+        if (!inside(t) || Invulnerable(t)) {
           continue;
         }
         const long kills = per_target_[t].kills;
@@ -881,7 +882,9 @@ void Simulation::TickPoisons() {
     const double tick = std::min(p.per_step, p.left);
     p.left -= tick;
     for (std::size_t t : p.targets) {
-      Damage(t, tick * (TargetNow(t).cursed ? 1.25 : 1), p.from, false);
+      // RealmEye, Poisons: poison "can affect invincible enemies, provided
+      // that you hit them before they turn invincible".
+      Damage(t, tick * (TargetNow(t).cursed ? 1.25 : 1), p.from, false, true);
     }
   }
   std::erase_if(poisons_, [](const Poison& p) { return p.left <= 1e-9; });
@@ -983,11 +986,11 @@ void Simulation::Debuff(std::size_t target, const std::string& raw, double durat
   }
 }
 
-double Simulation::Damage(std::size_t target, double amount, From from, bool shown) {
+double Simulation::Damage(std::size_t target, double amount, From from, bool shown, bool always) {
   TargetCounters& c = per_target_[target];
   // Shots still hit an invulnerable target and stop on it; they just do
   // nothing. That's an assumption.
-  if (Invulnerable(target)) {
+  if (Invulnerable(target) && !always) {
     return 0;
   }
   const double max_hp = world_.targets[target].hp;

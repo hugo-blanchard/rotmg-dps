@@ -328,8 +328,9 @@ class Simulation {
   void Debuff(std::size_t target, const std::string& effect, double duration_s, double delay_ms = 0,
               double factor = 1);
   // Deals damage, at most what the target has left, and returns what was
-  // dealt. `shown` puts it in RecentHits.
-  double Damage(std::size_t target, double amount, From from, bool shown = true);
+  // dealt. `shown` puts it in RecentHits; `always` deals it even while the
+  // target is invulnerable.
+  double Damage(std::size_t target, double amount, From from, bool shown = true, bool always = false);
   bool Alive(std::size_t target) const;
   // Aims at the closest target alive when the one aimed at has died.
   void Retarget();
