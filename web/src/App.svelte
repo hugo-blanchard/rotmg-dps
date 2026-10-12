@@ -6,6 +6,7 @@
   import SimulationView from "./lib/SimulationView.svelte";
   import { abilitiesFor, loadDataset, loadStatus, maxStats, weaponsFor, type Dataset, type DatasetStatus } from "./lib/dataset";
   import { Engine, type EvaluateRequest, type EvaluateResponse, type PlayerStatus, type Target } from "./lib/engine";
+  import { fromQuery, toQuery } from "./lib/link";
   import { loadSprites, type Sprites } from "./lib/sprites";
 
   let dataset = $state<Dataset | null>(null);
@@ -83,17 +84,31 @@
       const loaded = await loadDataset();
       engine = await Engine.start(loaded.text);
       const d = loaded.dataset;
-      const start = d.classes.find((c) => c.id === "Wizard") ?? d.classes[0];
-      classId = start.id;
-      weaponName = weaponsFor(d, start)[0]?.name ?? "";
-      abilityName = abilitiesFor(d, start)[0]?.name ?? "";
-      attack = start.attack.max;
-      dexterity = start.dexterity.max;
-      wisdom = start.wisdom?.max ?? 0;
+      const linked = fromQuery(location.search, d);
+      if (linked) {
+        ({ classId, weaponName, abilityName, attack, dexterity, wisdom, status, target, distance, radius } = linked);
+      } else {
+        const start = d.classes.find((c) => c.id === "Wizard") ?? d.classes[0];
+        classId = start.id;
+        weaponName = weaponsFor(d, start)[0]?.name ?? "";
+        abilityName = abilitiesFor(d, start)[0]?.name ?? "";
+        attack = start.attack.max;
+        dexterity = start.dexterity.max;
+        wisdom = start.wisdom?.max ?? 0;
+      }
       dataset = d;
     } catch (e) {
       loadError = e instanceof Error ? e.message : String(e);
     }
+  });
+
+  // Keep the URL on the current build, so it can be shared.
+  $effect(() => {
+    if (!dataset || !weaponName) {
+      return;
+    }
+    const query = toQuery({ classId, weaponName, abilityName, attack, dexterity, wisdom, status, target, distance, radius });
+    history.replaceState(null, "", `${location.pathname}?${query}`);
   });
 
   $effect(() => {
