@@ -181,6 +181,7 @@ An enchantment fits an item that has every label in `compatible` and none in `in
 | `compatible`, `incompatible`, `incompatibleItems` | `<CompatibleWithItemLabels>`, `<IncompatibleWithItemLabels>`, `<IncompatibleWithItemIds>`, split on commas |
 | `labels`, `incompatibleLabels` | `<EnchantmentLabels>`, `<IncompatibleWithEnchantmentLabels>` |
 | `mutators` | `{"tag", "value", "params"}` per element under `<Mutators>`: its name, its text (a number like `1.05` or a kind like `IncrementStat`) and its attributes, read like an activate's `params` |
+| `containers` | `{"id", "projectiles", "subattacks", "unsupported"}` for each item a `<SetSubAttack>` or `<AddSubAttack>` names in `subAttackObject`, read like a weapon. Its subattack `subAttackIndex` goes into the weapon's subattack slot given by the element's text |
 
 ### Example
 
