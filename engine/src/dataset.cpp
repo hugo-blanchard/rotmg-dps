@@ -219,6 +219,7 @@ Gear ReadGear(const json& j) {
   g.created_projectiles = ReadCreatedProjectiles(j);
   g.enchanting = ReadEnchanting(j);
   ReadDefault(j, "reskinOf", g.reskin_of);
+  ReadDefault(j, "unobtainable", g.unobtainable);
   ReadDefault(j, "unsupported", g.unsupported);
   return g;
 }
@@ -251,6 +252,7 @@ Ability ReadAbility(const json& j) {
   ReadDefault(j, "labels", a.labels);
   a.enchanting = ReadEnchanting(j);
   ReadDefault(j, "reskinOf", a.reskin_of);
+  ReadDefault(j, "unobtainable", a.unobtainable);
   ReadDefault(j, "unsupported", a.unsupported);
   return a;
 }
@@ -295,6 +297,7 @@ Weapon ReadWeapon(const json& j) {
   ReadDefault(j, "labels", w.labels);
   w.enchanting = ReadEnchanting(j);
   ReadDefault(j, "reskinOf", w.reskin_of);
+  ReadDefault(j, "unobtainable", w.unobtainable);
   ReadDefault(j, "unsupported", w.unsupported);
   return w;
 }

@@ -130,6 +130,8 @@ struct Weapon {
   Enchanting enchanting;
   /// The item this one plays exactly like, when it's a reskin of it.
   std::string reskin_of;
+  /// No player can get it any more, like the Tier 8 abilities.
+  bool unobtainable = false;
   /// Multiplies every roll, on top of ATT. Enchantments set it.
   double damage_bonus = 1;
   std::vector<std::string> unsupported;
@@ -165,6 +167,7 @@ struct Ability {
   std::vector<std::string> labels;
   Enchanting enchanting;
   std::string reskin_of;
+  bool unobtainable = false;
   std::vector<std::string> unsupported;
 
   /// The ability's projectiles and subattacks as a weapon, for the hit
@@ -244,6 +247,7 @@ struct Gear {
   std::map<int, Projectile> created_projectiles;
   Enchanting enchanting;
   std::string reskin_of;
+  bool unobtainable = false;
   std::vector<std::string> unsupported;
 };
 

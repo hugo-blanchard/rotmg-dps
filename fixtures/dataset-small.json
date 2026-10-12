@@ -483,6 +483,21 @@
       ]
     },
     {
+      "type": 20488,
+      "id": "Relic Helm",
+      "name": "Relic Helm",
+      "slotType": 10,
+      "tier": 8,
+      "unobtainable": true,
+      "labels": ["EQUIPMENT", "ABILITY", "TIERED"],
+      "texture": { "file": "exampleSheet", "index": 72 },
+      "mpCost": 30,
+      "activates": [
+        { "type": "ConditionEffectAura", "params": { "effect": "Berserk", "duration": 8, "range": 4.5 } },
+        { "type": "StatBoostAura", "params": { "stat": "ATT", "amount": 20, "duration": 8, "range": 4.5 } }
+      ]
+    },
+    {
       "type": 20483,
       "id": "Battle Seal",
       "name": "Battle Seal",

@@ -890,6 +890,8 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 //                "results": 5}
 // "lock" keeps the request's items in those slots. "pools" says which other
 // items may be tried: tiered ones, set pieces, and the rest (untiered).
+// Reskins and unobtainable items are never tried, but the request's own
+// stay unless something beats them.
 // "enchantments" keeps the request's where they still fit, removes them, or
 // fills up to "slots" per item, and no more than the item has, with the best
 // ones. "artifacts" lets it use enchantments only an artifact or engraving
@@ -934,9 +936,11 @@ std::string Api::Optimize(std::string_view request_json) const {
       return tier ? "tiered" : in_sets.contains(type) ? "set" : "untiered";
     };
     std::array<std::vector<std::string>, 4> candidates;
-    // A reskin plays exactly like its base, so only the base is tried.
+    // A reskin plays exactly like its base, so only the base is tried, and
+    // no one can get an unobtainable item. Either stays when it's the
+    // request's own.
     const auto offer = [&](std::size_t slot, const auto& item) {
-      if (item.reskin_of.empty() && pools.contains(pool(item.type, item.tier))) {
+      if (item.reskin_of.empty() && !item.unobtainable && pools.contains(pool(item.type, item.tier))) {
         candidates[slot].push_back(item.name);
       }
     };

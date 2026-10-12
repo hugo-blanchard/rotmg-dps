@@ -51,7 +51,7 @@ TEST_CASE("loads abilities and the rest of the class stats") {
   const rotmg::Dataset d = LoadSmallDataset();
   CHECK(d.classes[0].ability_slot_type == 10);
   CHECK(d.classes[0].wisdom.max == 60);
-  REQUIRE(d.abilities.size() == 11);
+  REQUIRE(d.abilities.size() == 12);
 
   const rotmg::Ability* spell = rotmg::FindAbility(d, "Plain Spell");
   REQUIRE(spell != nullptr);
@@ -95,6 +95,8 @@ TEST_CASE("loads how items take enchantments and which are reskins") {
   CHECK(rotmg::FindGear(d.rings, "Plain Amulet")->enchanting.pool.empty());
   CHECK(rotmg::FindGear(d.rings, "Festive Ring")->reskin_of == "Plain Ring");
   CHECK(rotmg::FindGear(d.rings, "Plain Ring")->reskin_of.empty());
+  CHECK(rotmg::FindAbility(d, "Relic Helm")->unobtainable);
+  CHECK_FALSE(rotmg::FindAbility(d, "War Helm")->unobtainable);
   REQUIRE(d.enchantment_pools.size() == 1);
   CHECK(d.enchantment_pools.at("Default Enchantment Pool").contains("Damage_Bonus_4"));
 }

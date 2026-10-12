@@ -619,10 +619,38 @@ TEST_CASE("the optimizer finds the build with the most DPS") {
   // The ring with ATT, which also makes 4 pieces of the Swordsman Set with
   // the helm, beats the amulet's DEX.
   CHECK(best["ring"] == "Plain Ring");
-  // Festive Ring is a reskin of it, so it's never tried.
+  // Festive Ring is a reskin of it, and no one can get Relic Helm, so
+  // neither is tried.
   for (const json& b : res["builds"]) {
     CHECK(b["ring"] != "Festive Ring");
+    CHECK(b["ability"] != "Relic Helm");
   }
+}
+
+TEST_CASE("the optimizer works from a reskin or an unobtainable item you chose") {
+  rotmg::Api api = LoadedApi();
+  const auto optimize = [&](const std::string& extra) {
+    const json res = json::parse(api.Optimize(R"({"class": "Swordsman", "weapon": "Plain Sword",
+        "ability": "Relic Helm", "armor": "Plain Mail", "ring": "Festive Ring",
+        "attack": 75, "dexterity": 50, "wisdom": 60,
+        "optimize": {"enchantments": "best")" + extra + "}}"));
+    REQUIRE(res["ok"] == true);
+    return res;
+  };
+  // Locked, they stay, and the reskin gets its enchantments.
+  const json locked = optimize(R"(, "lock": ["ability", "ring"])");
+  const json& best = locked["builds"][0];
+  CHECK(best["ability"] == "Relic Helm");
+  CHECK(best["ring"] == "Festive Ring");
+  CHECK_FALSE(best["enchantments"]["ring"].empty());
+  CHECK(best["enchantments"]["ability"].empty());
+  // Unlocked, the search starts from them and returns nothing worse.
+  const json open = optimize("");
+  const json own = json::parse(api.Evaluate(R"({"class": "Swordsman", "weapon": "Plain Sword",
+      "ability": "Relic Helm", "armor": "Plain Mail", "ring": "Festive Ring",
+      "attack": 75, "dexterity": 50, "wisdom": 60})"));
+  CHECK(open["baseline"].get<double>() == Catch::Approx(own["build"]["dps"].get<double>()));
+  CHECK(open["builds"][0]["dps"].get<double>() >= open["baseline"].get<double>());
 }
 
 TEST_CASE("the optimizer keeps locked slots and fills enchantments legally") {
