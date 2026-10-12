@@ -8,6 +8,7 @@
     abilitiesFor,
     loadDataset,
     loadStatus,
+    gearFor,
     maxStats,
     otherPieces,
     setsFor,
@@ -56,8 +57,9 @@
     if (!dataset) {
       return [];
     }
-    const offered = setsFor(dataset, [weapon, ability]).flatMap((s) => otherPieces(s).flatMap((p) => p.itemTypes));
-    return wearing.filter((t) => offered.includes(t));
+    const pieces = setsFor(dataset, [weapon, ability]).flatMap((s) => otherPieces(s).flatMap((p) => p.itemTypes));
+    const gear = cls ? gearFor(weapon, cls, pieces).flatMap((g) => g.items.map((i) => i.itemType)) : [];
+    return wearing.filter((t) => pieces.includes(t) || gear.includes(t));
   });
 
   // What evaluating and simulating share; evaluating adds the two charts.

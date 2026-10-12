@@ -39,6 +39,8 @@ export interface DatasetWeapon {
   tier?: number;
   statBonuses?: { stat: string; amount: number }[];
   projectiles?: { id: number; objectId: string; size?: number }[];
+  // Items the weapon's on-shoot effects need worn, like a ring.
+  gear?: { itemType: number; name: string; slotType: number }[];
   unsupported?: string[];
 }
 
@@ -136,6 +138,26 @@ export function otherPieces(set: DatasetSet): { slot: number; itemTypes: number[
     slots.set(p.slot, entry);
   }
   return [...slots.values()].sort((a, b) => a.slot - b.slot);
+}
+
+/**
+ * Items a weapon's procs need that the editor should ask about, by slot
+ * type: not the weapon or ability themselves, and not pieces a set box
+ * already offers.
+ */
+export function gearFor(
+  weapon: DatasetWeapon | undefined,
+  cls: DatasetClass,
+  offered: number[],
+): { slotType: number; items: { itemType: number; name: string }[] }[] {
+  const slots = new Map<number, { itemType: number; name: string }[]>();
+  for (const g of weapon?.gear ?? []) {
+    if (g.slotType === cls.weaponSlotType || g.slotType === cls.abilitySlotType || offered.includes(g.itemType)) {
+      continue;
+    }
+    slots.set(g.slotType, [...(slots.get(g.slotType) ?? []), { itemType: g.itemType, name: g.name }]);
+  }
+  return [...slots].map(([slotType, items]) => ({ slotType, items }));
 }
 
 /** Class stats at their max, for the ones the editor doesn't show. */

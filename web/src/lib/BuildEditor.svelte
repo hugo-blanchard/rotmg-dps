@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     abilitiesFor,
+    gearFor,
     otherPieces,
     setsFor,
     weaponsFor,
@@ -51,6 +52,18 @@
   const ability = $derived(abilities.find((a) => a.name === abilityName));
 
   const sets = $derived(setsFor(dataset, [weapon, ability]));
+  const gear = $derived(
+    gearFor(
+      weapon,
+      cls,
+      sets.flatMap((s) => otherPieces(s).flatMap((p) => p.itemTypes)),
+    ),
+  );
+  // Ring is the only slot weapons' procs ask for today.
+  const slotNames: Record<number, string> = { 9: "Ring" };
+  function wearOne(choices: number[], picked: number) {
+    wearing = [...wearing.filter((t) => !choices.includes(t)), ...(picked ? [picked] : [])];
+  }
   const statNames: Record<string, string> = { MAXHP: "HP", MAXMP: "MP" };
   function setSummary(type: number): string {
     const worn = wornSets.find((s) => s.type === type);
@@ -162,6 +175,27 @@
       </label>
     {/if}
   </fieldset>
+
+  {#if gear.length}
+    <fieldset>
+      <legend>Gear this weapon works with</legend>
+      {#each gear as g (g.slotType)}
+        <label>
+          {slotNames[g.slotType] ?? "Item"}
+          <select
+            value={g.items.find((i) => wearing.includes(i.itemType))?.itemType ?? 0}
+            onchange={(e) => wearOne(g.items.map((i) => i.itemType), Number(e.currentTarget.value))}
+          >
+            <option value={0}>None</option>
+            {#each g.items as i (i.itemType)}
+              <option value={i.itemType}>{i.name}</option>
+            {/each}
+          </select>
+        </label>
+      {/each}
+      <p class="hint">Some of the weapon's extra shots only fire with one of these worn.</p>
+    </fieldset>
+  {/if}
 
   {#each sets as s (s.type)}
     <fieldset>
