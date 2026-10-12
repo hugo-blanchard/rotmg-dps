@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -35,6 +36,15 @@ struct Buff {
   int amount = 0;
   double duration_s = 0;
 };
+
+/// The buff or debuff one effect gives at these stats, if it changes weapon
+/// DPS: Damaging, Berserk, Weak or Dazed, ATT or DEX boosts on the player,
+/// Curse, Exposed or Armor Broken on targets.
+std::optional<Buff> BuffOf(const Activate& effect, const Character& character);
+
+/// The ability's default cooldown when it doesn't set one, in seconds. The
+/// client's default isn't documented.
+inline constexpr double kDefaultCooldownS = 0.5;
 
 /// Damage one kind of effect deals per cast.
 struct AbilityPart {

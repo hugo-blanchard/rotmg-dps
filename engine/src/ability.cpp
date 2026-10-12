@@ -12,9 +12,6 @@
 namespace rotmg {
 namespace {
 
-// When an ability sets no cooldown. The client's default isn't documented.
-constexpr double kDefaultCooldownS = 0.5;
-
 // Effects that can't change single-target DPS: healing, movement, stealth,
 // pets and the like. DamageMultAura is the shields' "you receive 75% damage"
 // (wiki, Golden Shield): every use in the client lowers damage taken.
@@ -41,6 +38,34 @@ double Param(const Activate& a, std::string_view key) { return a.Number(key).val
 }  // namespace
 
 double MpPerSecond(int wisdom) { return 0.5 + 0.12 * wisdom; }
+
+std::optional<Buff> BuffOf(const Activate& a, const Character& c) {
+  if (a.type == "ConditionEffectSelf" || a.type == "ConditionEffectAura") {
+    const std::string effect = a.Text("effect");
+    if (kPlayerStatuses.contains(effect)) {
+      return Buff{Buff::On::kPlayer, effect, 0, Param(a, "duration") + StatModBonus(a, "statModDuration", c)};
+    }
+  } else if (a.type == "StatBoostSelf" || a.type == "StatBoostAura") {
+    const std::string stat = a.Text("stat");
+    if (stat == "ATT" || stat == "DEX") {
+      return Buff{Buff::On::kPlayer, stat, static_cast<int>(Param(a, "amount")), Param(a, "duration")};
+    }
+  } else if (a.type == "EffectBlast") {
+    // Duration grows by a second for every wisPerDuration WIS over wisMin
+    // (RealmEye: Orbs gives "10 WIS -> +1 second" for wisPerDuration 10).
+    const std::string effect = a.Text("condEffect");
+    if (kTargetStatuses.contains(effect)) {
+      double duration = Param(a, "condDuration");
+      const double per = Param(a, "wisPerDuration");
+      const double over = c.wisdom - Param(a, "wisMin");
+      if (per > 0 && over > 0) {
+        duration += over / per;
+      }
+      return Buff{Buff::On::kTarget, NormalizeStatus(effect), 0, duration};
+    }
+  }
+  return std::nullopt;
+}
 
 double StatModBonus(const Activate& effect, std::string_view per_point_key, const Character& character) {
   const std::string stat = effect.Text("scalingStat");
@@ -179,32 +204,13 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
         unsupported("trap bombs");
       }
       out.parts.push_back({"Trap", hit, "RealmEye: Traps"});
-    } else if (a.type == "ConditionEffectSelf" || a.type == "ConditionEffectAura") {
-      const std::string effect = a.Text("effect");
-      if (kPlayerStatuses.contains(effect)) {
-        out.buffs.push_back(
-            {Buff::On::kPlayer, effect, 0, Param(a, "duration") + StatModBonus(a, "statModDuration", c)});
-      }
-    } else if (a.type == "StatBoostSelf" || a.type == "StatBoostAura") {
-      const std::string stat = a.Text("stat");
-      if (stat == "ATT" || stat == "DEX") {
-        if (a.Number("wisMin")) {
+    } else if (a.type == "ConditionEffectSelf" || a.type == "ConditionEffectAura" || a.type == "StatBoostSelf" ||
+               a.type == "StatBoostAura" || a.type == "EffectBlast") {
+      if (const auto buff = BuffOf(a, c)) {
+        out.buffs.push_back(*buff);
+        if (buff->amount != 0 && a.Number("wisMin")) {
           unsupported("WIS scaling of stat boosts");
         }
-        out.buffs.push_back({Buff::On::kPlayer, stat, static_cast<int>(Param(a, "amount")), Param(a, "duration")});
-      }
-    } else if (a.type == "EffectBlast") {
-      // Duration grows by a second for every wisPerDuration WIS over wisMin
-      // (RealmEye: Orbs gives "10 WIS -> +1 second" for wisPerDuration 10).
-      const std::string effect = a.Text("condEffect");
-      if (kTargetStatuses.contains(effect)) {
-        double duration = Param(a, "condDuration");
-        const double per = Param(a, "wisPerDuration");
-        const double over = c.wisdom - Param(a, "wisMin");
-        if (per > 0 && over > 0) {
-          duration += over / per;
-        }
-        out.buffs.push_back({Buff::On::kTarget, NormalizeStatus(effect), 0, duration});
       }
     } else if (!kNoDamageEffects.contains(a.type)) {
       unsupported(a.type);
