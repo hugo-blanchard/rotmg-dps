@@ -265,6 +265,11 @@ export interface OptimizeOptions {
   artifacts?: boolean;
   /** How many enchantments to fill on each item, 2 unless set. */
   slots?: number;
+  /**
+   * Which stats the search starts again from the ability that scales best
+   * with: every one (the default), none, or one, like "DEF".
+   */
+  around?: string;
   results?: number;
 }
 

@@ -40,6 +40,7 @@
   let enchantMode = $state<OptimizeOptions["enchantments"]>("best");
   let artifacts = $state(true);
   let perItem = $state(2);
+  let around = $state("every stat");
   let searching = $state(false);
   let found = $state<OptimizeResponse | null>(null);
   // The running search's last report, and whether the builds shown are
@@ -53,6 +54,16 @@
 
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
   const usableSlots = $derived(slots.filter((s) => itemsFor(dataset, cls, s).length > 0));
+  const stats: [string, string][] = [
+    ["ATT", "Attack"],
+    ["DEX", "Dexterity"],
+    ["SPD", "Speed"],
+    ["WIS", "Wisdom"],
+    ["VIT", "Vitality"],
+    ["DEF", "Defense"],
+    ["MAXHP", "Max HP"],
+    ["MAXMP", "Max MP"],
+  ];
 
   const asResponse = (p: OptimizeProgress | null): OptimizeResponse | null =>
     p && { ok: true, baseline: p.baseline, evaluated: p.evaluated, builds: p.builds };
@@ -71,6 +82,7 @@
       enchantments: enchantMode,
       artifacts,
       slots: perItem,
+      around,
       results: 5,
     };
     const res = await engine.optimize({ ...$state.snapshot(request), optimize: options }, (p) => (progress = p));
@@ -157,6 +169,16 @@
       {#if enchantMode !== "none"}
         <label><input type="checkbox" bind:checked={artifacts} /> Also ones that need an artifact or engraving</label>
       {/if}
+      <label class="mode">
+        Build around
+        <select bind:value={around}>
+          <option value="every stat">Every stat</option>
+          <option value="nothing">Nothing, just improve yours (quicker)</option>
+          {#each stats as [id, name] (id)}
+            <option value={id}>{name}</option>
+          {/each}
+        </select>
+      </label>
       {#if searching}
         <div class="progress">
           <progress max="1" value={progress?.done ?? 0}></progress>
@@ -172,8 +194,9 @@
       {/if}
       <p class="hint">
         Against the target and distance below, using the calculated DPS. It tries items one or two slots at a time
-        and whole sets, refits every item's enchantments around each change, and builds around each ability that
-        scales with a stat. It can still miss a better build, but never returns one worse than yours.
+        and whole sets, and refits every item's enchantments around each change. Then it starts again from the
+        ability that scales best with each stat you build around, since some builds only work when everything feeds
+        that ability. It can still miss a better build, but never returns one worse than yours.
       </p>
       {#if shown && !shown.ok}
         <p role="alert">{shown.error}</p>
