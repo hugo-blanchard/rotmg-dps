@@ -761,6 +761,62 @@ std::string Api::Evaluate(std::string_view request_json) const {
   }
 }
 
+// A choices request is an evaluate request plus
+//   "choices": {"slot": "weapon" | "ability" | "armor" | "ring",
+//               "options": [{"item": "...", "enchantments": [...]}, ...]}
+// where each option puts that item, or none for "", in the slot with those
+// enchantments on it. Returns
+//   {"ok": true, "dps": <the request's own>, "options": [<dps or null>, ...]}
+// in the same order, null for an option the engine rejects, like an
+// enchantment the item can't hold.
+std::string Api::EvaluateChoices(std::string_view request_json) const {
+  if (!dataset_) {
+    return Error("no dataset loaded").dump();
+  }
+  try {
+    json base = json::parse(request_json);
+    const json choices = base.value("choices", json::object());
+    for (const char* key : {"choices", "curve", "hitCurve", "burst"}) {
+      base.erase(key);
+    }
+    const std::string slot = choices.value("slot", std::string());
+    if (slot != "weapon" && slot != "ability" && slot != "armor" && slot != "ring") {
+      return Error("no slot named \"" + slot + "\"").dump();
+    }
+    const auto dps = [&](const json& r) -> json {
+      try {
+        const Request p = ParseRequest(r, *dataset_);
+        if (p.weapon != nullptr && !p.unknown_ability) {
+          return EvaluateBuild(*p.weapon, p.ability, p.character, p.target, p.assumptions).dps;
+        }
+      } catch (const std::exception&) {
+        // Rejected, like an enchantment the item can't hold.
+      }
+      return nullptr;
+    };
+    json out = json::array();
+    for (const json& option : choices.value("options", json::array())) {
+      json r = base;
+      const std::string item = option.value("item", std::string());
+      if (item.empty()) {
+        r.erase(slot);
+      } else {
+        r[slot] = item;
+      }
+      const json enchantments = option.value("enchantments", json::array());
+      if (slot == "weapon") {
+        r["enchantments"] = enchantments;
+      } else {
+        r["gearEnchantments"][slot] = enchantments;
+      }
+      out.push_back(dps(r));
+    }
+    return json{{"ok", true}, {"dps", dps(base)}, {"options", out}}.dump();
+  } catch (const std::exception& e) {
+    return Error(std::string("bad request: ") + e.what()).dump();
+  }
+}
+
 std::string Api::StartSimulation(std::string_view request_json) {
   simulation_.reset();
   comparison_.reset();

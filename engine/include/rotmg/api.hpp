@@ -21,6 +21,10 @@ class Api {
   /// Never throws: errors come back as {"ok": false, "error": "..."}.
   std::string Evaluate(std::string_view request_json) const;
 
+  /// The DPS of the request's build with one slot changed in each of
+  /// several ways, for choosing what goes in it. Shapes are in api.cpp.
+  std::string EvaluateChoices(std::string_view request_json) const;
+
   /// Starts a simulation for the same kind of request as Evaluate, replacing
   /// any running one. The target sits at the hit model's distance. Returns an
   /// empty string on success, otherwise the error.

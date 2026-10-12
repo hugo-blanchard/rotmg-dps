@@ -589,6 +589,24 @@ TEST_CASE("an armor adds a share of one stat to another and cuts MP costs") {
   CHECK(coat["breakdown"]["unsupported"].back() == "ActivateOnEquip LootBonus");
 }
 
+TEST_CASE("choices give each option's DPS in the slot, null for one the engine rejects") {
+  rotmg::Api api = LoadedApi();
+  const std::string build = R"({"class": "Swordsman", "weapon": "Plain Sword", "ability": "Plain Spell",
+      "ring": "Plain Amulet", "attack": 75, "dexterity": 50, "wisdom": 60)";
+  const json res = json::parse(api.EvaluateChoices(build + R"(, "choices": {"slot": "ring", "options": [
+      {"item": "Plain Ring"}, {"item": ""}, {"item": "Plain Ring", "enchantments": ["Nonexistent"]}]}})"));
+  REQUIRE(res["ok"] == true);
+  const auto dps = [&](const std::string& extra) {
+    return json::parse(api.Evaluate(build + extra + "}"))["build"]["dps"].get<double>();
+  };
+  CHECK(res["dps"].get<double>() == Catch::Approx(dps("")));
+  REQUIRE(res["options"].size() == 3);
+  CHECK(res["options"][0].get<double>() == Catch::Approx(dps(R"(, "ring": "Plain Ring")")));
+  CHECK(res["options"][1].get<double>() == Catch::Approx(dps(R"(, "ring": null)")));
+  CHECK(res["options"][2].is_null());
+  CHECK(json::parse(api.EvaluateChoices(build + R"(, "choices": {"slot": "hat"}})"))["ok"] == false);
+}
+
 TEST_CASE("the optimizer finds the build with the most DPS") {
   rotmg::Api api = LoadedApi();
   const std::string start = R"({"class": "Swordsman", "weapon": "Plain Sword", "ability": "Plain Spell",
