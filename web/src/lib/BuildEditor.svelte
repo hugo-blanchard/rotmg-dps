@@ -19,7 +19,7 @@
     distance = $bindable(),
     radius = $bindable(),
     wornSets,
-    enchantmentStats,
+    addedStats,
   }: {
     dataset: Dataset;
     sprites: Sprites | null;
@@ -36,8 +36,9 @@
     radius: number;
     /** The engine's view of the sets worn, for the bonus each one adds. */
     wornSets: WornSet[];
-    /** Stats the engine added from the enchantments, after rounding. */
-    enchantmentStats: { stat: string; amount: number }[];
+    /** Stats the engine added from enchantments and the items' relative
+     * effects, after rounding. */
+    addedStats: { stat: string; amount: number }[];
   } = $props();
 
   const cls = $derived(dataset.classes.find((c) => c.id === classId)!);
@@ -65,7 +66,7 @@
       add(itemsFor(dataset, cls, slot).find((i) => i.name === items[slot])?.statBonuses);
     }
     for (const s of wornSets) add(s.stats);
-    add(enchantmentStats);
+    add(addedStats);
     const shown = advanced ? Object.keys(base) : ["ATT", "DEX", "SPD", "WIS"];
     return shown.map((stat) => ({ stat, base: base[stat], added: added[stat] ?? 0 }));
   });

@@ -152,6 +152,8 @@ export type EvaluateResponse =
       ability?: AbilityBreakdown;
       sets?: WornSet[];
       enchantmentStats?: { stat: string; amount: number }[];
+      /** Stats the items' relative on-equip effects add, like a share of one stat as another. */
+      itemStats?: { stat: string; amount: number }[];
       curve?: CurvePoint[];
       hitCurve?: HitCurvePoint[];
       hitModelGaps?: string[];

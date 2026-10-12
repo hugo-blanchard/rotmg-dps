@@ -231,7 +231,7 @@
       {engine}
       {request}
       wornSets={result?.sets ?? []}
-      enchantmentStats={result?.enchantmentStats ?? []}
+      addedStats={[...(result?.enchantmentStats ?? []), ...(result?.itemStats ?? [])]}
       bind:classId
       bind:items
       bind:enchants
