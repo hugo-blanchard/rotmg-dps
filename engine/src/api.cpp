@@ -18,6 +18,7 @@
 #include "rotmg/evaluate.hpp"
 #include "rotmg/enchant.hpp"
 #include "rotmg/hits.hpp"
+#include "rotmg/optimize.hpp"
 #include "rotmg/sets.hpp"
 
 // Request:
@@ -957,15 +958,13 @@ std::string Api::Optimize(std::string_view request_json) const {
       if (g.slot_type == cls->ring_slot_type) offer(3, g);
     }
 
-    struct Build {
-      std::array<std::string, 4> items;
-      std::array<std::vector<std::string>, 4> enchants;
-    };
-    Build start;
+    OptimizerProblem problem;
+    problem.candidates = candidates;
+    OptimizerBuild& start = problem.start;
     for (std::size_t i = 0; i < kSlots.size(); ++i) {
       start.items[i] = base.value(kSlots[i], std::string());
       if (locked.contains(kSlots[i]) || candidates[i].empty()) {
-        candidates[i] = {start.items[i]};
+        problem.candidates[i] = {start.items[i]};
       } else if (start.items[i].empty()) {
         start.items[i] = candidates[i].front();
       }
@@ -977,72 +976,13 @@ std::string Api::Optimize(std::string_view request_json) const {
         start.enchants[i] = gear.value(kSlots[i], std::vector<std::string>{});
       }
     }
-
-    // What can go on the item in a slot, by the game's rules, and how many,
-    // once per item.
-    struct Fitting {
-      std::vector<const Enchantment*> options;
-      int slots = 0;
-    };
-    std::map<std::pair<std::size_t, std::string>, Fitting> fitting_cache;
-    const auto fitting = [&](std::size_t slot, const std::string& item) -> const Fitting& {
-      const auto key = std::pair{slot, item};
-      if (auto it = fitting_cache.find(key); it != fitting_cache.end()) {
-        return it->second;
-      }
-      const Weapon* w = slot == 0 ? FindWeapon(d, item) : nullptr;
-      const Ability* a = slot == 1 ? FindAbility(d, item) : nullptr;
-      const Gear* g = slot == 2 ? FindGear(d.armors, item) : slot == 3 ? FindGear(d.rings, item) : nullptr;
-      Fitting out;
-      out.slots = w   ? EnchantmentSlots(w->enchanting, d)
-                  : a ? EnchantmentSlots(a->enchanting, d)
-                  : g ? EnchantmentSlots(g->enchanting, d)
-                      : slot == 1 ? 4 : 0;
-      for (const Enchantment& e : d.enchantments) {
-        const Obtained how = w   ? HowObtained(e, *w, d)
-                             : a ? HowObtained(e, *a, d)
-                             : g ? HowObtained(e, *g, d)
-                                 : slot == 1 ? HowObtainedOnSlot(e, "ABILITY") : Obtained::kNever;
-        if (how == Obtained::kRolls || (artifacts && how == Obtained::kArtifact)) {
-          out.options.push_back(&e);
-        }
-      }
-      return fitting_cache.emplace(key, std::move(out)).first->second;
-    };
-    // Keeps the enchantments that still fit the slot's item, in order, as
-    // many as it holds.
-    const auto adapt = [&](Build& b, std::size_t slot) {
-      if (mode == "none") {
-        b.enchants[slot].clear();
-        return;
-      }
-      const Fitting& fits = fitting(slot, b.items[slot]);
-      std::erase_if(b.enchants[slot], [&](const std::string& id) {
-        return std::ranges::none_of(fits.options, [&](const Enchantment* e) { return e->id == id; });
-      });
-      if (std::cmp_greater(b.enchants[slot].size(), fits.slots)) {
-        b.enchants[slot].resize(static_cast<std::size_t>(fits.slots));
-      }
-    };
-
-    long evaluated = 0;
-    std::map<std::string, std::optional<double>> scores;
-    std::map<std::string, std::pair<double, Build>> seen;
-    const auto score = [&](const Build& b) -> std::optional<double> {
-      std::string items_key;
-      for (const std::string& item : b.items) {
-        items_key += item + "\n";
-      }
-      std::string key = items_key;
-      for (const auto& list : b.enchants) {
-        for (const std::string& id : list) {
-          key += id + ",";
-        }
-        key += "\n";
-      }
-      if (auto it = scores.find(key); it != scores.end()) {
-        return it->second;
-      }
+    problem.enchantments = mode == "best"   ? OptimizerProblem::Enchantments::kBest
+                           : mode == "none" ? OptimizerProblem::Enchantments::kNone
+                                            : OptimizerProblem::Enchantments::kKeep;
+    problem.per_item = max_slots;
+    problem.artifacts = artifacts;
+    problem.results = results;
+    problem.score = [&](const OptimizerBuild& b) -> std::optional<double> {
       json r = base;
       for (std::size_t i = 0; i < kSlots.size(); ++i) {
         if (b.items[i].empty()) {
@@ -1053,221 +993,26 @@ std::string Api::Optimize(std::string_view request_json) const {
       }
       r["enchantments"] = b.enchants[0];
       r["gearEnchantments"] = {{"ability", b.enchants[1]}, {"armor", b.enchants[2]}, {"ring", b.enchants[3]}};
-      ++evaluated;
-      std::optional<double> dps;
       try {
         const Request p = ParseRequest(r, d);
         if (p.weapon != nullptr && !p.unknown_ability) {
-          dps = EvaluateBuild(*p.weapon, p.ability, p.character, p.target, p.assumptions).dps;
+          return EvaluateBuild(*p.weapon, p.ability, p.character, p.target, p.assumptions).dps;
         }
       } catch (const std::exception&) {
         // A combination the engine rejects, like an enchantment that no
         // longer fits, just doesn't count.
       }
-      scores.emplace(key, dps);
-      // One entry per set of items, with its best enchantments.
-      if (auto it = seen.find(items_key); dps && (it == seen.end() || it->second.first < *dps)) {
-        seen[items_key] = {*dps, b};
-      }
-      return dps;
+      return std::nullopt;
     };
 
-    // The enchantments worth trying on an item: ones that change the DPS
-    // on their own. Defense, HP and loot never do. One that any item of the
-    // slot takes (a generic stat bonus) is tested once per slot; one made
-    // for certain items, like an awakening, once per item.
-    constexpr std::array<const char*, 4> kSlotLabels = {"WEAPON", "ABILITY", "ARMOR", "RING"};
-    std::map<std::pair<std::size_t, std::string>, bool> generic_cache;
-    std::map<std::pair<std::size_t, std::string>, std::vector<const Enchantment*>> relevant_cache;
-    const auto relevant = [&](const Build& b, std::size_t slot) -> const std::vector<const Enchantment*>& {
-      const auto key = std::pair{slot, b.items[slot]};
-      if (auto it = relevant_cache.find(key); it != relevant_cache.end()) {
-        return it->second;
-      }
-      Build bare = b;
-      bare.enchants[slot].clear();
-      const double without = score(bare).value_or(0);
-      const auto changes = [&](const Enchantment* e) {
-        bare.enchants[slot] = {e->id};
-        const auto s = score(bare);
-        return s && std::abs(*s - without) > without * 1e-9;
-      };
-      std::vector<const Enchantment*> out;
-      for (const Enchantment* e : fitting(slot, b.items[slot]).options) {
-        if (!FitsSlot(*e, kSlotLabels[slot])) {
-          if (changes(e)) out.push_back(e);
-          continue;
-        }
-        const auto generic = std::pair{slot, e->id};
-        auto it = generic_cache.find(generic);
-        if (it == generic_cache.end()) {
-          it = generic_cache.emplace(generic, changes(e)).first;
-        }
-        if (it->second) out.push_back(e);
-      }
-      return relevant_cache.emplace(key, std::move(out)).first->second;
-    };
-
-    // Fills the slot's item with the enchantments that add the most, one
-    // at a time, while one still adds something.
-    const auto fill = [&](Build& b, std::size_t slot) {
-      b.enchants[slot].clear();
-      double current = score(b).value_or(0);
-      if (mode != "best" || b.items[slot].empty()) {
-        return current;
-      }
-      const auto& options = relevant(b, slot);
-      for (int k = 0; k < std::min(max_slots, fitting(slot, b.items[slot]).slots); ++k) {
-        const Enchantment* best = nullptr;
-        double best_dps = current;
-        for (const Enchantment* e : options) {
-          const bool taken = std::ranges::any_of(b.enchants[slot], [&](const std::string& id) {
-            const auto other = std::ranges::find(d.enchantments, id, &Enchantment::id);
-            return other->id == e->id || Conflict(*other, *e);
-          });
-          if (taken) {
-            continue;
-          }
-          b.enchants[slot].push_back(e->id);
-          if (const auto s = score(b); s && *s > best_dps * (1 + 1e-9)) {
-            best_dps = *s;
-            best = e;
-          }
-          b.enchants[slot].pop_back();
-        }
-        if (best == nullptr) {
-          break;
-        }
-        b.enchants[slot].push_back(best->id);
-        current = best_dps;
-      }
-      return current;
-    };
-
-    const auto baseline = score(start);
-    if (!baseline) {
+    const std::optional<OptimizerResult> found = SearchBuilds(d, problem);
+    if (!found) {
       return Error("the build to start from doesn't evaluate").dump();
     }
-    Build current = start;
-    double current_dps = *baseline;
-    const auto fill_all = [&] {
-      if (mode != "best") {
-        return;
-      }
-      for (std::size_t i = 0; i < kSlots.size(); ++i) {
-        current_dps = fill(current, i);
-      }
-    };
-
-    // Coordinate descent: the best item for one slot with the others as
-    // they are, slot by slot, then whole sets at once so set bonuses count,
-    // until nothing improves. Items are ranked with the enchantments they
-    // keep, then the best few are filled; everything is filled again between
-    // rounds.
-    fill_all();
-    for (int round = 0; round < 6; ++round) {
-      bool improved = false;
-      const auto take = [&](const Build& next, double dps) {
-        if (dps > current_dps * (1 + 1e-9)) {
-          current = next;
-          current_dps = dps;
-          improved = true;
-        }
-      };
-      for (std::size_t slot = 0; slot < kSlots.size(); ++slot) {
-        std::vector<std::pair<double, Build>> tried;
-        for (const std::string& name : candidates[slot]) {
-          if (name == current.items[slot]) {
-            continue;
-          }
-          Build next = current;
-          next.items[slot] = name;
-          adapt(next, slot);
-          if (const auto s = score(next)) {
-            tried.emplace_back(*s, std::move(next));
-          }
-        }
-        std::ranges::sort(tried, [](const auto& a, const auto& b) { return a.first > b.first; });
-        if (mode == "best") {
-          // The best few items with their own enchantments filled in, since
-          // some take enchantments others can't, like awakenings.
-          for (std::size_t i = 0; i < tried.size() && i < 8; ++i) {
-            tried[i].first = fill(tried[i].second, slot);
-          }
-          std::ranges::sort(tried, [](const auto& a, const auto& b) { return a.first > b.first; });
-        }
-        if (!tried.empty()) {
-          take(tried.front().second, tried.front().first);
-        }
-      }
-      for (const EquipmentSet& set : d.sets) {
-        Build next = current;
-        int changed = 0;
-        for (const EquipmentSet::Piece& p : set.pieces) {
-          const auto slot = static_cast<std::size_t>(p.slot);
-          const bool usable =
-              slot < kSlots.size() && std::ranges::find(candidates[slot], p.name) != candidates[slot].end();
-          if (usable && next.items[slot] != p.name) {
-            next.items[slot] = p.name;
-            adapt(next, slot);
-            ++changed;
-          }
-        }
-        if (const auto s = changed >= 2 ? score(next) : std::nullopt) {
-          take(next, *s);
-        }
-      }
-      const double before = current_dps;
-      fill_all();
-      if (!improved && current_dps <= before * (1 + 1e-9)) {
-        break;
-      }
-    }
-
-    // Greedy filling can settle on a worse set; swapping one enchantment at
-    // a time for another that fits fixes most of that.
-    for (int pass = 0; mode == "best" && pass < 3; ++pass) {
-      bool swapped = false;
-      for (std::size_t slot = 0; slot < kSlots.size(); ++slot) {
-        if (current.items[slot].empty()) {
-          continue;
-        }
-        const auto& options = relevant(current, slot);
-        for (std::size_t k = 0; k < current.enchants[slot].size(); ++k) {
-          for (const Enchantment* e : options) {
-            Build next = current;
-            next.enchants[slot][k] = e->id;
-            const bool clashes = std::ranges::any_of(next.enchants[slot], [&](const std::string& id) {
-              const auto other = std::ranges::find(d.enchantments, id, &Enchantment::id);
-              return other->id != e->id && Conflict(*other, *e);
-            });
-            const bool twice = std::ranges::count(next.enchants[slot], e->id) > 1;
-            if (clashes || twice) {
-              continue;
-            }
-            if (const auto s = score(next); s && *s > current_dps * (1 + 1e-9)) {
-              current = std::move(next);
-              current_dps = *s;
-              swapped = true;
-            }
-          }
-        }
-      }
-      if (!swapped) {
-        break;
-      }
-    }
-
-    std::vector<std::pair<double, Build>> ranked;
-    for (auto& [key, entry] : seen) {
-      ranked.push_back(entry);
-    }
-    std::ranges::sort(ranked, [](const auto& a, const auto& b) { return a.first > b.first; });
     json builds = json::array();
-    for (std::size_t i = 0; i < ranked.size() && i < results; ++i) {
-      const Build& b = ranked[i].second;
+    for (const auto& [dps, b] : found->builds) {
       json enchants = json::object();
-      json entry = {{"dps", ranked[i].first}};
+      json entry = {{"dps", dps}};
       for (std::size_t slot = 0; slot < kSlots.size(); ++slot) {
         entry[kSlots[slot]] = b.items[slot];
         enchants[kSlots[slot]] = b.enchants[slot];
@@ -1275,7 +1020,8 @@ std::string Api::Optimize(std::string_view request_json) const {
       entry["enchantments"] = enchants;
       builds.push_back(entry);
     }
-    return json{{"ok", true}, {"baseline", *baseline}, {"evaluated", evaluated}, {"builds", builds}}.dump();
+    return json{{"ok", true}, {"baseline", found->baseline}, {"evaluated", found->evaluated}, {"builds", builds}}
+        .dump();
   } catch (const std::exception& e) {
     return Error(std::string("bad request: ") + e.what()).dump();
   }
