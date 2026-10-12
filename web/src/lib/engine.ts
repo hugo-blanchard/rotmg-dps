@@ -55,6 +55,8 @@ export interface EvaluateRequest {
   hitModel?: { distance: number; radius: number };
   curve?: { from: number; to: number; step: number };
   hitCurve?: { from: number; to: number; step: number };
+  /** Adds the damage in a burst window like this one. */
+  burst?: BurstWindow;
 }
 
 export type Source = "wiki" | "client-data" | "geometric-estimate" | "curated" | "user" | "assumed";
@@ -155,6 +157,7 @@ export type EvaluateResponse =
       /** Stats the items' relative on-equip effects add, like a share of one stat as another. */
       itemStats?: { stat: string; amount: number }[];
       curve?: CurvePoint[];
+      burst?: Burst;
       hitCurve?: HitCurvePoint[];
       hitModelGaps?: string[];
     }
@@ -277,9 +280,22 @@ export interface OptimizeOptions {
   results?: number;
 }
 
+/** A window this many seconds long (0 for a single moment) every so many seconds. */
 export interface BurstWindow {
   window: number;
   every: number;
+}
+
+/** Whether the engine takes this window; an emptied number box reads as null. */
+export function isBurstWindow(b: BurstWindow): boolean {
+  return (
+    Number.isFinite(b.window) &&
+    Number.isFinite(b.every) &&
+    b.window >= 0 &&
+    b.window <= 60 &&
+    b.every > b.window &&
+    b.every <= 600
+  );
 }
 
 /** Damage in each burst window; see EvaluateBurst in engine/include/rotmg/build.hpp. */

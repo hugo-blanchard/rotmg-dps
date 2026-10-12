@@ -12,7 +12,9 @@
     OptimizeProgress,
     OptimizeResponse,
     OptimizedBuild,
+    BurstWindow,
   } from "./engine";
+  import { isBurstWindow } from "./engine";
   import { itemIcon, type Sprites } from "./sprites";
 
   let {
@@ -23,6 +25,7 @@
     sprites,
     items = $bindable(),
     enchants = $bindable(),
+    burst = $bindable(),
   }: {
     engine: Engine | null;
     /** The current build, which the search starts from. */
@@ -32,6 +35,8 @@
     sprites: Sprites | null;
     items: Record<Slot, string>;
     enchants: Record<Slot, string[]>;
+    /** The burst window, shared with the numbers. */
+    burst: BurstWindow;
   } = $props();
 
   const slotNames: Record<Slot, string> = { weapon: "Weapon", ability: "Ability", armor: "Armor", ring: "Ring" };
@@ -45,8 +50,6 @@
   // From 0, the weapon only, through 0.5, both in full, to 1, the ability only.
   let balance = $state(0.5);
   let goal = $state<"sustained" | "burst">("sustained");
-  let burstWindow = $state(1);
-  let burstEvery = $state(10);
   // How the search whose builds are shown ranked them.
   let rankedBy = $state({ balance: 0.5, burst: false });
   let searching = $state(false);
@@ -88,15 +91,7 @@
     const units: Record<number, string> = { 0: ` weapon ${what}`, 0.5: rankedBy.burst ? " damage" : "", 1: ` ability ${what}` };
     return units[rankedBy.balance] ?? " weighted";
   });
-  // An emptied number box reads as null.
-  const burstValid = $derived(
-    Number.isFinite(burstWindow) &&
-      Number.isFinite(burstEvery) &&
-      burstWindow >= 0 &&
-      burstWindow <= 60 &&
-      burstEvery > burstWindow &&
-      burstEvery <= 600,
-  );
+  const burstValid = $derived(isBurstWindow(burst));
 
   const asResponse = (p: OptimizeProgress | null): OptimizeResponse | null =>
     p && { ok: true, baseline: p.baseline, evaluated: p.evaluated, builds: p.builds };
@@ -110,7 +105,7 @@
       slots: perItem,
       around,
       weights: weights(balance),
-      burst: goal === "burst" ? { window: burstWindow, every: burstEvery } : undefined,
+      burst: goal === "burst" ? { ...burst } : undefined,
       results: 5,
     };
   }
@@ -256,8 +251,8 @@
       </label>
       {#if goal === "burst"}
         <div class="burst">
-          <label>A window of <input type="number" min="0" max="60" step="0.1" bind:value={burstWindow} /> s</label>
-          <label>every <input type="number" min="1" max="600" step="1" bind:value={burstEvery} /> s</label>
+          <label>A window of <input type="number" min="0" max="60" step="0.1" bind:value={burst.window} /> s</label>
+          <label>every <input type="number" min="1" max="600" step="1" bind:value={burst.every} /> s</label>
         </div>
         {#if !burstValid}
           <p role="alert">The window has to be 0 to 60 seconds, and shorter than the time between windows.</p>

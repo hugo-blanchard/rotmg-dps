@@ -2,7 +2,7 @@
   import EquipmentPanel from "./EquipmentPanel.svelte";
   import Optimizer from "./Optimizer.svelte";
   import { itemsFor, maxStats, slots, type Dataset, type Slot } from "./dataset";
-  import type { Engine, EvaluateRequest, PlayerStatus, Target, WornSet } from "./engine";
+  import type { BurstWindow, Engine, EvaluateRequest, PlayerStatus, Target, WornSet } from "./engine";
   import type { Sprites } from "./sprites";
 
   let {
@@ -18,6 +18,7 @@
     target = $bindable(),
     distance = $bindable(),
     radius = $bindable(),
+    burst = $bindable(),
     wornSets,
     addedStats,
   }: {
@@ -34,6 +35,7 @@
     target: Target;
     distance: number;
     radius: number;
+    burst: BurstWindow;
     /** The engine's view of the sets worn, for the bonus each one adds. */
     wornSets: WornSet[];
     /** Stats the engine added from enchantments and the items' relative
@@ -107,7 +109,7 @@
   <fieldset>
     <legend>Build</legend>
     <EquipmentPanel {dataset} {sprites} bind:classId bind:items bind:enchants />
-    <Optimizer {engine} {request} {dataset} {cls} {sprites} bind:items bind:enchants />
+    <Optimizer {engine} {request} {dataset} {cls} {sprites} bind:items bind:enchants bind:burst />
   </fieldset>
 
   <fieldset>

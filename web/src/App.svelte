@@ -19,7 +19,15 @@
     type DatasetStatus,
     type Slot,
   } from "./lib/dataset";
-  import { Engine, type EvaluateRequest, type EvaluateResponse, type PlayerStatus, type Target } from "./lib/engine";
+  import {
+    Engine,
+    isBurstWindow,
+    type BurstWindow,
+    type EvaluateRequest,
+    type EvaluateResponse,
+    type PlayerStatus,
+    type Target,
+  } from "./lib/engine";
   import { fromQuery, toQuery } from "./lib/link";
   import { loadSprites, type Sprites } from "./lib/sprites";
 
@@ -48,6 +56,9 @@
   let distance = $state(4);
   let radius = $state(0.5);
   let hitOverrides = $state<(number | null)[]>([]);
+  // The burst window the numbers show and the optimizer starts from.
+  const defaultBurst: BurstWindow = { window: 1, every: 10 };
+  let burst = $state<BurstWindow>({ ...defaultBurst });
 
   let simOptions = $state<SimOptions>({ ...defaultSimOptions });
   // A build pinned to compare with in the simulation.
@@ -183,6 +194,10 @@
       const query = new URLSearchParams(location.search);
       advanced = query.get("view") === "advanced";
       tab = query.get("tab") === "simulation" ? "simulation" : "numbers";
+      const [length, every] = (query.get("burst") ?? "").split(",").map(Number);
+      if (isBurstWindow({ window: length, every })) {
+        burst = { window: length, every };
+      }
       simOptions = simFromQuery(location.search);
       const linked = fromQuery(location.search, d);
       if (linked) {
@@ -210,6 +225,9 @@
     }
     const q = new URLSearchParams(toQuery({ classId, items, enchants, status, target, distance, radius }));
     simToQuery(simOptions, q);
+    if (burst.window !== defaultBurst.window || burst.every !== defaultBurst.every) {
+      q.set("burst", `${burst.window},${burst.every}`);
+    }
     if (advanced) q.set("view", "advanced");
     if (tab === "simulation") q.set("tab", "simulation");
     history.replaceState(null, "", `${location.pathname}?${q}`);
@@ -224,6 +242,7 @@
       hitCurve: { from: 0.5, to: Math.max(10, Math.ceil(hitDistance)), step: 0.25 },
       // The chart covers 0-150 DEF, or further if the target's DEF is higher.
       curve: { from: 0, to: Math.max(150, Math.ceil(defense / 10) * 10), step: 1 },
+      burst: isBurstWindow(burst) ? { ...burst } : undefined,
     };
     // Only the newest answer is shown, however the worker's replies interleave.
     const id = ++latest;
@@ -273,6 +292,7 @@
       bind:target
       bind:distance
       bind:radius
+      bind:burst
     />
     <div class="results" bind:this={resultsEl}>
       <div class="tabs" role="tablist" aria-label="Results">
@@ -303,6 +323,8 @@
             breakdown={result.breakdown}
             build={result.build}
             ability={result.ability}
+            burstResult={result.burst}
+            bind:burst
             {advanced}
             {defense}
             distance={hitDistance}

@@ -1,11 +1,13 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import type { AbilityBreakdown, Breakdown, BuildBreakdown, Source } from "./engine";
+  import type { AbilityBreakdown, Breakdown, Burst, BuildBreakdown, BurstWindow, Source } from "./engine";
 
   let {
     breakdown,
     build,
     ability,
+    burstResult,
+    burst = $bindable(),
     advanced,
     defense,
     distance,
@@ -16,6 +18,9 @@
     breakdown: Breakdown;
     build: BuildBreakdown;
     ability?: AbilityBreakdown;
+    /** The damage in the burst window, when the window is one the engine takes. */
+    burstResult?: Burst;
+    burst: BurstWindow;
     /** Show the breakdown tables and the sources too. */
     advanced: boolean;
     defense: number;
@@ -28,6 +33,8 @@
 
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
   const fine = new Intl.NumberFormat("en", { maximumFractionDigits: 2 });
+  const tenths = new Intl.NumberFormat("en", { maximumFractionDigits: 1 });
+  const casts = (n: number) => `${tenths.format(n)} ${n === 1 ? "cast" : "casts"}`;
 
   // Plain-language names for the client tags the engine can't model yet.
   const mechanicNames: Record<string, string> = {
@@ -114,6 +121,25 @@
       DPS against {defense} DEF, {distance} tiles away{#if ability && ability.dps > 0}: {whole.format(build.weaponDps)}
         from the weapon and {whole.format(ability.dps)} from the ability{/if}
     </span>
+  </div>
+
+  <div class="burst">
+    <span>
+      Burst: {#if burstResult}<strong>{whole.format(burstResult.damage)}</strong>{:else}<strong>?</strong>{/if}
+      damage in a window of
+      <input type="number" min="0" max="60" step="0.1" aria-label="Burst window in seconds" bind:value={burst.window} />
+      s every
+      <input type="number" min="1" max="600" step="1" aria-label="Seconds between windows" bind:value={burst.every} /> s
+    </span>
+    {#if burstResult}
+      <span class="burst-detail">
+        {whole.format(burstResult.weaponDamage)} from the weapon{#if burstResult.casts > 0}, {whole.format(
+            burstResult.abilityDamage,
+          )} from {casts(burstResult.casts)}{/if}. A window of 0 s is a single moment.
+      </span>
+    {:else}
+      <span class="burst-detail">The window has to be 0 to 60 seconds, and shorter than the time between windows.</span>
+    {/if}
   </div>
 
   {#if unsupported.length}
@@ -387,6 +413,28 @@
     margin: 0;
     padding-left: 1.2rem;
     font-size: 0.9rem;
+  }
+  .burst {
+    display: grid;
+    gap: 0.2rem;
+    font-size: 0.9rem;
+    color: var(--text-2);
+  }
+  .burst strong {
+    color: var(--text);
+    font-size: 1.05rem;
+  }
+  .burst input {
+    width: 3.6rem;
+    font: inherit;
+    color: var(--text);
+    background: var(--page);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.1rem 0.3rem;
+  }
+  .burst-detail {
+    font-size: 0.8rem;
   }
   .buffs {
     margin: 0;
