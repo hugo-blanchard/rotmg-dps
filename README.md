@@ -1,8 +1,8 @@
 # rotmg-dps
 
-A DPS calculator for Realm of the Mad God (Exalt). It works out how much damage a build does to a given target, using item data from the game client and formulas sourced from the RealmEye wiki. A small simulation shows the character firing at a dummy so the numbers are easy to check.
+A DPS calculator for Realm of the Mad God (Exalt). It works out how much damage a build does to a given target, using item data from the game client and formulas sourced from the RealmEye wiki. A simulation plays the fight out step by step, so the numbers are easy to check and you can see what they leave out: groups of targets, targets and a player that move, the opening burst of a full MP bar, and how long a boss takes to die.
 
-Live at https://hugo-blanchard.github.io/rotmg-dps/. It covers weapons, including an estimate of how many shots land at a given distance, the effects they trigger on shoot and a simulation of the weapon firing at a target; abilities, with their own damage and the buffs and debuffs they keep up; set bonuses; and enchantments on the weapon. Targets can be any DEF or one of the game's bosses. Effects it can't model yet, like summons and hexes, are named on the page.
+Live at https://hugo-blanchard.github.io/rotmg-dps/. It covers weapons, including an estimate of how many shots land at a given distance and the effects they trigger on shoot; abilities, with their own damage and the buffs and debuffs they keep up; set bonuses; and enchantments on the weapon. Targets can be any DEF or one of the game's bosses. In the simulation you place one or more dummies, make them and yourself move, give them HP, and pin a build to compare with another in the same scene. Effects it can't model yet, like summons and hexes, are named on the page.
 
 ## Notice
 
@@ -10,7 +10,7 @@ Unofficial fan tool, not affiliated with DECA. Game assets © DECA Live Operatio
 
 ## How it works
 
-- `engine/` (C++20) does all the math: damage per hit, fire rate, how many shots of a volley land on a round target, on-shoot effects, ability damage, MP and buff uptime, set bonuses, enchantments and DPS, with the source of every rule it applies. It also runs the step-by-step simulation the site animates, moving projectiles with the same code as the hit estimate. It builds natively for the tests and to WebAssembly for the site.
+- `engine/` (C++20) does all the math: damage per hit, fire rate, how many shots of a volley land on a round target, on-shoot effects, ability damage, MP and buff uptime, set bonuses, enchantments and DPS, with the source of every rule it applies. It also runs the step-by-step simulation the site animates: projectiles move with the same code as the hit estimate, against any number of round targets that can move and die, while the ability is cast whenever MP allows and the weapon's on-shoot effects go off. With one still target it agrees with the calculated numbers. It builds natively for the tests and to WebAssembly for the site.
 - `web/` (Svelte and TypeScript) is the site. It runs the WebAssembly engine in a Web Worker.
 - Item data and sprites come from the game client. An extractor that isn't part of this repo turns them into the files described below and publishes them as a `data-*` release, and the site deploys the newest one.
 
@@ -227,7 +227,7 @@ Projectile sprites point right. When a shot is drawn along its heading, `angleCo
 
 ## Deploying
 
-Pushing to `main`, or publishing a new `data-*` release, runs `.github/workflows/pages.yml`. It builds the engine and the site, downloads the newest dataset, checks that every weapon in it evaluates, that the hit estimate matches what the wiki says about tiered bows, longbows and the Torrential Staff, and that the simulation lands exactly the estimated hits, then deploys to GitHub Pages.
+Pushing to `main`, or publishing a new `data-*` release, runs `.github/workflows/pages.yml`. It builds the engine and the site, downloads the newest dataset, checks that every weapon and ability in it evaluates, that the hit estimate matches what the wiki says about tiered bows, longbows and the Torrential Staff, that the simulation lands exactly the estimated hits and can cast every ability, then deploys to GitHub Pages.
 
 To roll the data back, run the workflow by hand with an older release:
 
