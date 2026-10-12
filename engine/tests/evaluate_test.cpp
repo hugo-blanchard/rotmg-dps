@@ -144,7 +144,8 @@ TEST_CASE("an on-shoot stat penalty stays up while firing") {
 
 TEST_CASE("a poison burst on shoot adds its damage once per cooldown") {
   // 50 DEX: 1.5 + 6.5 * 50 / 75 = 5.83 shots a second. A 3 s cooldown is
-  // 17.5 shots, so a burst goes off every 18th shot, for 1000 ignoring DEF.
+  // 17.5 shots, and the next shot comes half a shot later on average, so a
+  // burst goes off every 18 shots, for 1000 ignoring DEF.
   const auto b = EvaluateWeapon(Weapon("Venom Katana"), {.attack = 50, .dexterity = 50}, {.defense = 60});
   const double shots = 1.5 + 6.5 * 50 / 75.0;
   REQUIRE(!b.procs.empty());
@@ -162,8 +163,9 @@ TEST_CASE("a poison burst on shoot adds its damage once per cooldown") {
 }
 
 TEST_CASE("extra shots at the cursor count at their listed damage, without ATT") {
-  // One shot of 100-199 every 2 s: at 5.83 shots a second that's every 12th
-  // shot. ATT doesn't change it, since the data gives it no scaling.
+  // One shot of 100-199 every 2 s: at 5.83 shots a second that's every 11.67
+  // shots and half a shot more on average. ATT doesn't change it, since the
+  // data gives it no scaling.
   const double shots = 1.5 + 6.5 * 50 / 75.0;
   const auto find = [](const rotmg::Breakdown& b, const std::string& name) {
     return std::ranges::find(b.procs, name, &rotmg::ProcResult::name);
@@ -171,7 +173,7 @@ TEST_CASE("extra shots at the cursor count at their listed damage, without ATT")
   const auto b = EvaluateWeapon(Weapon("Venom Katana"), {.attack = 50, .dexterity = 50}, {});
   const auto low = find(b, "Extra shots (Example Proc Bolt)");
   REQUIRE(low != b.procs.end());
-  CHECK(low->per_second == Approx(shots / 12));
+  CHECK(low->per_second == Approx(shots / (2 * shots + 0.5)));
   CHECK(low->damage == Approx(149.5));
   const auto strong = EvaluateWeapon(Weapon("Venom Katana"), {.attack = 100, .dexterity = 50}, {});
   CHECK(find(strong, "Extra shots (Example Proc Bolt)")->damage == Approx(149.5));
@@ -185,6 +187,17 @@ TEST_CASE("extra shots at the cursor count at their listed damage, without ATT")
   REQUIRE(ring != ringed.procs.end());
   CHECK(ring->per_second == Approx(shots));
   CHECK(ring->damage == Approx(2 * 54.5));
+}
+
+TEST_CASE("more DEX never makes an on-shoot proc with a cooldown go off less often") {
+  double last = 0;
+  for (int dex = 0; dex <= 100; ++dex) {
+    const auto b = EvaluateWeapon(Weapon("Venom Katana"), {.attack = 50, .dexterity = dex}, {});
+    REQUIRE(!b.procs.empty());
+    INFO("DEX " << dex);
+    CHECK(b.procs[0].per_second >= last);
+    last = b.procs[0].per_second;
+  }
 }
 
 TEST_CASE("on-shoot effects that aren't modelled are flagged, harmless ones aren't") {

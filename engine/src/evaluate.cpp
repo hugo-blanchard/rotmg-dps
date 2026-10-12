@@ -44,6 +44,14 @@ bool IsPoisonBurst(const Activate& a) {
          a.Text("mustWear").empty() && !a.Flag("targetMouse") && !a.Number("damageBoost") && a.Number("cooldown");
 }
 
+// Shots from one on-shoot proc going off to the next, for a proc with a
+// cooldown. The shot after the cooldown ends comes half a shot later on
+// average: weapons fire fast enough that their shots don't line up with a
+// cooldown on purpose, unlike an ability's casts (Hugo, 2026-10-12).
+double ShotsPerCycle(double cooldown_s, double shots_per_second) {
+  return std::max(1.0, cooldown_s * shots_per_second + 0.5);
+}
+
 std::vector<int> TypeList(const std::string& list) {
   std::vector<int> out;
   std::size_t start = 0;
@@ -284,8 +292,8 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
     out.subattacks.push_back(r);
   }
 
-  // A burst goes off on the first shot after its cooldown, so the cooldown
-  // rounds up to a whole number of shots at the weapon's fastest rate.
+  // A burst goes off on the first shot after its cooldown, at the weapon's
+  // fastest rate (see ShotsPerCycle).
   double shots_per_second = 0;
   for (const SubattackResult& r : out.subattacks) {
     shots_per_second = std::max(shots_per_second, r.volleys_per_second);
@@ -294,10 +302,9 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
     if (!IsPoisonBurst(a) || shots_per_second <= 0) {
       continue;
     }
-    const double shots_between = std::max(1.0, std::ceil(*a.Number("cooldown") * shots_per_second - 1e-9));
     ProcResult p;
     p.name = "Poison burst";
-    p.per_second = shots_per_second / shots_between;
+    p.per_second = shots_per_second / ShotsPerCycle(*a.Number("cooldown"), shots_per_second);
     // Poison ignores DEF, and every poison stacks (RealmEye: Poisons).
     p.damage = (a.Number("impactDamage").value_or(0) + a.Number("totalDamage").value_or(0)) * (target.cursed ? 1.25 : 1);
     p.dps = p.per_second * p.damage;
@@ -326,7 +333,7 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
         type.empty() ? weapon.projectiles[0]
                      : weapon.created_projectiles.at(static_cast<int>(std::strtol(type.c_str(), nullptr, 0)));
     const double cooldown = a.Number("cooldown").value_or(0);
-    const double shots_between = std::max(1.0, std::ceil(cooldown * shots_per_second - 1e-9));
+    const double shots_between = ShotsPerCycle(cooldown, shots_per_second);
     const int count = static_cast<int>(a.Number("numShots").value_or(1)) + StatModCount(a, "statModNumShots", geared);
     const double each = ExpectedAbilityDamage(p.min_damage, p.max_damage - 1, StatModBonus(a, "statModDamage", geared),
                                               target, p.armor_piercing);
