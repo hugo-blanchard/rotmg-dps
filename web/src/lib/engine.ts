@@ -33,6 +33,8 @@ export interface EvaluateRequest {
   wearing?: number[];
   /** Ids of up to 4 enchantments on the weapon. */
   enchantments?: string[];
+  /** Class id, which relative enchantments measure bonus stats against. */
+  class?: string;
   hitsPerVolley?: (number | null)[];
   curatedHitsPerVolley?: (number | null)[];
   hitModel?: { distance: number; radius: number };

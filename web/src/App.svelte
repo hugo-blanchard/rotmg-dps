@@ -86,6 +86,7 @@
     target: { ...target, defense },
     wearing: [...worn],
     enchantments: [...enchanted],
+    class: classId,
     hitsPerVolley: [...hitOverrides],
     hitModel: { distance: hitDistance, radius: Math.max(0.05, Number(radius) || 0.5) },
   });
