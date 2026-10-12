@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
-  import type { DatasetAbility, DatasetWeapon } from "./dataset";
+  import type { DatasetAbility, DatasetTarget, DatasetWeapon } from "./dataset";
+  import TimeChart from "./TimeChart.svelte";
   import type { Engine, EvaluateRequest, SimState } from "./engine";
   import {
     layOut,
@@ -25,6 +26,7 @@
     expectedAbilityDps,
     expectedProcDps,
     expectedTotalDps,
+    bosses = [],
   }: {
     engine: Engine;
     request: EvaluateRequest;
@@ -40,6 +42,8 @@
     expectedProcDps: number;
     /** Weapon, procs and ability together, with buffs at their uptime. */
     expectedTotalDps: number;
+    /** Bosses whose HP the targets can take. */
+    bosses?: DatasetTarget[];
   } = $props();
 
   const height = 360;
@@ -48,6 +52,8 @@
   let trails: HTMLCanvasElement | null = null;
 
   let playing = $state(true);
+  // Paused because every target died, not by the user, so a new run plays.
+  let autoPaused = false;
   let speed = $state(1);
   let showHitbox = $state(true);
   let showTrails = $state(false);
@@ -64,14 +70,24 @@
   let playerRange = $state(2);
   let seed = $state(1);
   let fullMp = $state(true);
+  // "" for dummies that can't die, "custom", or a boss's id.
+  let hpFrom = $state("");
+  let customHp = $state(10000);
+  let respawn = $state(false);
+  let randomRolls = $state(false);
+  let showNumbers = $state(false);
+  const targetHp = $derived(
+    hpFrom === "custom" ? Math.max(0, customHp) : (bosses.find((b) => b.id === hpFrom)?.maxHitPoints ?? 0),
+  );
   const distance = $derived(request.hitModel?.distance ?? 4);
-  const scenario = $derived({
-    ...withMovement(
+  const scenario = $derived.by(() => {
+    const s = withMovement(
       layOut({ placement, count, spacing }, distance, request.hitModel?.radius ?? 0.5),
       { targets: targetsMove, targetSpeed, targetRange, player: playerMoves, playerRange, seed },
       distance,
-    ),
-    fullMp,
+    );
+    const targets = targetHp > 0 ? s.targets.map((t) => ({ ...t, hp: targetHp })) : s.targets;
+    return { ...s, targets, fullMp, respawn, randomRolls };
   });
 
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
@@ -86,6 +102,13 @@
       flashUntil = [];
       lastHits = [];
       bounds = null;
+      damageHistory = [];
+      mpHistory = [];
+      floaters = [];
+      if (autoPaused) {
+        playing = true;
+        autoPaused = false;
+      }
       trails?.getContext("2d")?.clearRect(0, 0, trails.width, trails.height);
     });
   });
@@ -101,6 +124,11 @@
   let flashUntil: number[] = [];
   let lastHits: number[] = [];
   let lastVolleyMs = -1000;
+
+  let damageHistory = $state.raw<number[]>([]);
+  let mpHistory = $state.raw<number[]>([]);
+  // Damage numbers rising off the targets.
+  let floaters: { target: number; text: string; from: string; born: number; dx: number }[] = [];
 
   async function advance(ms: number) {
     if (pending) return;
@@ -120,6 +148,22 @@
       lastVolleyMs = next.timeMs;
     }
     lastHits = next.targets.map((t) => t.hits);
+    if (next.history.from === damageHistory.length) {
+      damageHistory = [...damageHistory, ...next.history.damage];
+      mpHistory = [...mpHistory, ...next.history.mp];
+    }
+    if (showNumbers) {
+      const born = performance.now();
+      for (const h of next.hits) {
+        floaters.push({ target: h.target, text: whole.format(h.damage), from: h.from, born, dx: Math.random() - 0.5 });
+      }
+      floaters = floaters.filter((f) => born - f.born < 700).slice(-80);
+    }
+    // With nothing left alive there's nothing more to see.
+    if (targetHp > 0 && !respawn && next.targets.every((t) => t.hp <= 0)) {
+      playing = false;
+      autoPaused = true;
+    }
     sim = next;
     draw();
   }
@@ -316,6 +360,20 @@
       }
     }
 
+    // Damage numbers rise a tile and fade over 0.7 s.
+    const now = performance.now();
+    ctx.textAlign = "center";
+    ctx.font = `600 ${Math.max(11, Math.min(15, tile * 0.4))}px sans-serif`;
+    for (const f of floaters) {
+      const age = (now - f.born) / 700;
+      const t = targets[f.target];
+      if (age >= 1 || !t) continue;
+      ctx.globalAlpha = 1 - age;
+      ctx.fillStyle = color(f.from === "weapon" ? "--text" : f.from === "ability" ? "--blast" : "--poison");
+      ctx.fillText(f.text, sx(t.x + f.dx * t.radius), sy(t.y + t.radius + age));
+    }
+    ctx.globalAlpha = 1;
+
     // Blasts and lightning flash over the top.
     for (const e of sim.effects) {
       if (e.kind === "blast") {
@@ -357,6 +415,25 @@
   const procDps = $derived(sim?.ok && seconds > 0 ? sim.procs.damage / seconds : 0);
   const totalDps = $derived(sim?.ok && seconds > 0 ? sim.targets.reduce((n, t) => n + t.damage, 0) / seconds : 0);
   const hasProcs = $derived(expectedProcDps > 0 || (sim?.ok && sim.procs.activations > 0));
+  const bucketS = 0.1;
+  // DPS over the last second, and since the start.
+  const lastSecond = $derived(
+    damageHistory.map((_, i) => {
+      let sum = 0;
+      for (let k = Math.max(0, i - 9); k <= i; k++) sum += damageHistory[k];
+      return sum / (Math.min(i + 1, 10) * bucketS);
+    }),
+  );
+  const sinceStart = $derived.by(() => {
+    let sum = 0;
+    return damageHistory.map((d, i) => (sum += d) / ((i + 1) * bucketS));
+  });
+  const firstKillMs = $derived(
+    sim?.ok ? Math.min(...sim.targets.map((t) => t.killedMs ?? Infinity)) : Infinity,
+  );
+  const allDeadMs = $derived(
+    sim?.ok && sim.targets.every((t) => t.killedMs !== null) ? Math.max(...sim.targets.map((t) => t.killedMs!)) : null,
+  );
   const measuredHits = $derived(
     sim?.ok
       ? sim.perSubattack.reduce((sum, c) => sum + (c.resolvedVolleys ? c.resolvedHits / c.resolvedVolleys : 0), 0)
@@ -452,6 +529,29 @@
     {#if ability}
       <label><input type="checkbox" bind:checked={fullMp} /> Start with full MP</label>
     {/if}
+    <label><input type="checkbox" bind:checked={showNumbers} /> Damage numbers</label>
+  </div>
+  <div class="controls">
+    <label>
+      Target HP
+      <select bind:value={hpFrom}>
+        <option value="">None, they can't die</option>
+        <option value="custom">Set by hand</option>
+        {#each bosses as b (b.id)}
+          <option value={b.id}>{b.name} ({whole.format(b.maxHitPoints)})</option>
+        {/each}
+      </select>
+    </label>
+    {#if hpFrom === "custom"}
+      <input type="number" min="1" step="1000" aria-label="Target HP" bind:value={customHp} />
+    {/if}
+    {#if targetHp > 0}
+      <label><input type="checkbox" bind:checked={respawn} /> Respawn</label>
+    {/if}
+    <label><input type="checkbox" bind:checked={randomRolls} /> Random rolls</label>
+    {#if randomRolls}
+      <button type="button" onclick={() => (seed += 1)}>Reroll</button>
+    {/if}
   </div>
   {#if ability && sim?.ok}
     <div class="mp">
@@ -521,7 +621,43 @@
           <dd>{whole.format(totalDps)} <span>engine {whole.format(expectedTotalDps)} on one, in the long run</span></dd>
         </div>
       {/if}
+      {#if targetHp > 0}
+        <div>
+          <dt>{sim.targets.length > 1 ? "First kill" : "Time to kill"}</dt>
+          <dd>
+            {Number.isFinite(firstKillMs) ? `${fine.format(firstKillMs / 1000)} s` : "not yet"}
+            {#if expectedTotalDps > 0}
+              <span>engine {fine.format(targetHp / expectedTotalDps)} s at its DPS</span>
+            {/if}
+          </dd>
+        </div>
+        {#if sim.targets.length > 1 && !respawn}
+          <div>
+            <dt>All dead</dt>
+            <dd>{allDeadMs !== null ? `${fine.format(allDeadMs / 1000)} s` : "not yet"}</dd>
+          </div>
+        {/if}
+      {/if}
     </dl>
+    {#if damageHistory.length > 1}
+      <TimeChart
+        caption="DPS over time"
+        bucketMs={100}
+        formatY={(v) => whole.format(v)}
+        series={[
+          { label: "Last second", values: lastSecond, color: "var(--accent)" },
+          { label: "Since the start", values: sinceStart, color: "var(--text-2)", dashed: true },
+        ]}
+      />
+      {#if ability}
+        <TimeChart
+          caption="MP"
+          bucketMs={100}
+          formatY={(v) => whole.format(v)}
+          series={[{ label: "MP", values: mpHistory, color: "var(--accent)" }]}
+        />
+      {/if}
+    {/if}
     {#if sim.targets.length > 1}
       <div class="table-scroll">
         <table>
@@ -533,6 +669,10 @@
               <th scope="col">Hits</th>
               <th scope="col">DPS</th>
               {#if ability}<th scope="col">Ability DPS</th>{/if}
+              {#if targetHp > 0}
+                <th scope="col">HP left</th>
+                <th scope="col">{respawn ? "Kills" : "Died at"}</th>
+              {/if}
             </tr>
           </thead>
           <tbody>
@@ -544,6 +684,10 @@
                 <td>{t.hits}</td>
                 <td>{whole.format(seconds > 0 ? t.damage / seconds : 0)}</td>
                 {#if ability}<td>{whole.format(seconds > 0 ? t.abilityDamage / seconds : 0)}</td>{/if}
+                {#if targetHp > 0}
+                  <td>{whole.format(t.hp)}</td>
+                  <td>{respawn ? t.kills : t.killedMs !== null ? `${fine.format(t.killedMs / 1000)} s` : ""}</td>
+                {/if}
               </tr>
             {/each}
           </tbody>

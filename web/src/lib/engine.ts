@@ -186,6 +186,11 @@ export interface SimTarget {
   damage: number;
   abilityDamage: number;
   statuses: string[];
+  /** Hit points left, for a target that can die. */
+  hp: number;
+  kills: number;
+  /** When it first died. */
+  killedMs: number | null;
 }
 
 export interface SimEffect {
@@ -219,6 +224,10 @@ export type SimState =
       statuses: string[];
       ability: { casts: number; hits: number; damage: number };
       procs: { activations: number; hits: number; damage: number };
+      /** Hits since the last state, for damage numbers. */
+      hits: { target: number; damage: number; from: "weapon" | "ability" | "proc" }[];
+      /** Damage done in each bucket and MP at its end, for buckets since the last state. */
+      history: { bucketMs: number; from: number; damage: number[]; mp: number[] };
       effects: SimEffect[];
     }
   | { ok: false; error: string };

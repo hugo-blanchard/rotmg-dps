@@ -321,6 +321,7 @@
             expectedAbilityDps={result.ability?.dps}
             expectedProcDps={result.breakdown.procs.reduce((n, p) => n + p.dps, 0)}
             expectedTotalDps={result.build?.dps ?? result.breakdown.dps}
+            bosses={dataset?.targets ?? []}
           />
         </div>
       {/if}

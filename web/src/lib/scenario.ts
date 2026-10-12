@@ -27,6 +27,8 @@ export interface ScenarioTarget {
   y: number;
   radius?: number;
   movement?: Movement;
+  /** Hit points; none for a dummy that can't die. */
+  hp?: number;
 }
 
 export interface Scenario {
@@ -37,6 +39,10 @@ export interface Scenario {
   seed?: number;
   /** Whether the MP bar starts full; empty shows the steady state. */
   fullMp?: boolean;
+  /** Whether targets that die come straight back. */
+  respawn?: boolean;
+  /** Roll damage and proc chances instead of using averages. */
+  randomRolls?: boolean;
 }
 
 export const targetMovements: { value: MovementKind; label: string }[] = [
