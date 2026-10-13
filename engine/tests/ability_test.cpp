@@ -252,3 +252,25 @@ TEST_CASE("MP given back on casting lowers what a cast costs") {
   spell.on_ability.back().params.insert_or_assign("proc", 0.5);
   CHECK(EvaluateAbility(spell, kWis60, {}, {}).casts_per_second == Approx(7.7 / 70));
 }
+
+TEST_CASE("more WIS never means fewer casts with MP given back on casting") {
+  // A refund with a cooldown comes back on fewer casts the more often you
+  // cast, which once made the cast rate flip between two values.
+  rotmg::Ability spell = Ability("Plain Spell");
+  rotmg::Activate magic;
+  magic.type = "Magic";
+  spell.on_ability.push_back(magic);
+  for (const double amount : {20.0, 40.0, 60.0, 79.0}) {
+    for (const double cooldown : {0.5, 1.0, 2.0, 3.5}) {
+      spell.on_ability.back().params.insert_or_assign("amount", amount);
+      spell.on_ability.back().params.insert_or_assign("cooldown", cooldown);
+      double previous = 0;
+      for (int wis = 0; wis <= 150; ++wis) {
+        const double casts = EvaluateAbility(spell, {.wisdom = wis}, {}, {}).casts_per_second;
+        INFO(amount << " MP every " << cooldown << " s, WIS " << wis);
+        CHECK(casts >= previous - 1e-12);
+        previous = casts;
+      }
+    }
+  }
+}

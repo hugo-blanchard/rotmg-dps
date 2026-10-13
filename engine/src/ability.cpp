@@ -195,17 +195,35 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
     }
   }
   if (!out.refunds.empty() && out.mp_cost > 0) {
-    for (int settle = 0; settle < 20; ++settle) {
-      out.mp_refund_per_cast = 0;
+    // The rate MP allows when casting at `rate`, with what comes back at
+    // that rate. Casting more often only blocks more refunds behind their
+    // cooldowns, so it never rises with the rate, and the real rate is where
+    // the two meet. Halving the interval finds it; feeding the rate back in
+    // over and over can flip between two rates either side of a cooldown
+    // step, and more WIS could then land on the lower one.
+    const double most = 1 / std::max(out.cooldown_s, 1e-3);
+    const auto refund_at = [&](double rate) {
+      double refund = 0;
       for (const MpRefund& r : out.refunds) {
-        out.mp_refund_per_cast += r.amount * CastShare(r.chance, r.cooldown_s, out.casts_per_second);
+        refund += r.amount * CastShare(r.chance, r.cooldown_s, rate);
       }
-      const double cost = out.mp_cost - out.mp_refund_per_cast;
-      out.casts_per_second = 1 / std::max(out.cooldown_s, 1e-3);
-      if (cost > 0) {
-        out.casts_per_second = std::min(out.casts_per_second, out.mp_per_second / cost);
-      }
+      return refund;
+    };
+    const auto allowed = [&](double rate) {
+      const double cost = out.mp_cost - refund_at(rate);
+      return cost > 0 ? std::min(most, out.mp_per_second / cost) : most;
+    };
+    double low = 0;
+    double high = most;
+    if (allowed(most) >= most) {
+      low = most;
     }
+    for (int halve = 0; halve < 60 && low < high; ++halve) {
+      const double mid = (low + high) / 2;
+      (allowed(mid) > mid ? low : high) = mid;
+    }
+    out.casts_per_second = low;
+    out.mp_refund_per_cast = refund_at(low);
     assume("MP an item gives back on casting counts for the share of casts it comes back on");
   }
 
