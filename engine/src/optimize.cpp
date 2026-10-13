@@ -167,7 +167,7 @@ class BuildSearch {
   void DescendFrom(const Build& from);
 
   // An item in its slot with enchantments it brings along: none, one of its
-  // own, or the special one that helps it most.
+  // own, or a special one that helps it most at some stats.
   struct Variant {
     std::string item;
     std::vector<std::string> enchants;
@@ -1298,7 +1298,7 @@ std::optional<double> BuildSearch::Probe(const Build& b, const Stats& extra) {
 }
 
 // The slot's candidates, each bare, with each of its own enchantments, and,
-// for weapons and abilities, with the special enchantment that helps it most
+// for weapons and abilities, with the special enchantments that help it most
 // on the reference build: a tradeoff like Overwhelming Strikes is worth far
 // more on a weapon held back by its burst pause than by its fire rate.
 std::vector<BuildSearch::Variant> BuildSearch::Variants(std::size_t slot, const Build& reference) {
@@ -1316,9 +1316,17 @@ std::vector<BuildSearch::Variant> BuildSearch::Variants(std::size_t slot, const 
   if (!best || slot > 1) {
     return out;
   }
+  // The best special can change with the stats, like one that slows the
+  // weapon and only pays once DEX makes up for it, so it's picked in the
+  // middle of the budget and again with each of ATT, DEX and WIS at its most.
   Stats centre{};
   for (std::size_t stat : {kAtt, kDex, kWis}) {
     centre[stat] = static_cast<int>(max_extra_[stat] / 2);
+  }
+  std::vector<Stats> points = {centre};
+  for (std::size_t stat : {kAtt, kDex, kWis}) {
+    points.push_back(centre);
+    points.back()[stat] = static_cast<int>(max_extra_[stat]);
   }
   std::vector<std::pair<std::size_t, const Enchantment*>> tries;
   const std::size_t bare_count = out.size();
@@ -1343,28 +1351,35 @@ std::vector<BuildSearch::Variant> BuildSearch::Variants(std::size_t slot, const 
     b.enchants[slot] = e == nullptr ? std::vector<std::string>{} : std::vector<std::string>{e->id};
     return b;
   };
-  std::vector<std::optional<double>> bare(bare_count);
-  ParallelFor(bare_count, [&](std::size_t i) { bare[i] = Probe(with(i, nullptr), centre); });
-  std::vector<std::optional<double>> gained(tries.size());
-  ParallelFor(tries.size(), [&](std::size_t t) { gained[t] = Probe(with(tries[t].first, tries[t].second), centre); });
-  std::map<std::size_t, std::pair<double, const Enchantment*>> best_special;
-  for (std::size_t t = 0; t < tries.size(); ++t) {
-    const auto [i, e] = tries[t];
-    if (!gained[t] || !bare[i] || !Better(*gained[t], *bare[i])) {
-      continue;
+  const std::size_t n = points.size();
+  std::vector<std::optional<double>> bare(bare_count * n);
+  ParallelFor(bare.size(), [&](std::size_t k) { bare[k] = Probe(with(k / n, nullptr), points[k % n]); });
+  std::vector<std::optional<double>> gained(tries.size() * n);
+  ParallelFor(gained.size(), [&](std::size_t k) {
+    gained[k] = Probe(with(tries[k / n].first, tries[k / n].second), points[k % n]);
+  });
+  for (std::size_t p = 0; p < n; ++p) {
+    std::map<std::size_t, std::pair<double, const Enchantment*>> best_special;
+    for (std::size_t t = 0; t < tries.size(); ++t) {
+      const auto [i, e] = tries[t];
+      const auto& with_it = gained[t * n + p];
+      const auto& without = bare[i * n + p];
+      if (!with_it || !without || !Better(*with_it, *without)) {
+        continue;
+      }
+      auto& [gain, which] = best_special[i];
+      if (*with_it - *without > gain) {
+        gain = *with_it - *without;
+        which = e;
+      }
     }
-    auto& [gain, which] = best_special[i];
-    if (*gained[t] - *bare[i] > gain) {
-      gain = *gained[t] - *bare[i];
-      which = e;
-    }
-  }
-  for (const auto& [i, special] : best_special) {
-    const bool own = std::ranges::any_of(out, [&](const Variant& v) {
-      return v.item == out[i].item && v.enchants == std::vector<std::string>{special.second->id};
-    });
-    if (!own) {
-      out.push_back({out[i].item, {special.second->id}});
+    for (const auto& [i, special] : best_special) {
+      const bool known = std::ranges::any_of(out, [&](const Variant& v) {
+        return v.item == out[i].item && v.enchants == std::vector<std::string>{special.second->id};
+      });
+      if (!known) {
+        out.push_back({out[i].item, {special.second->id}});
+      }
     }
   }
   return out;
@@ -1411,12 +1426,12 @@ std::vector<Stats> BuildSearch::CurvePoints(std::size_t slot) const {
   return out;
 }
 
-// Each slot's short list: the variants among the best few at some point of
-// their curve, tried with the leading items of the other slots. Each list
-// puts first the variants that lead somewhere, best at some point, so the
-// other slots are tried with each kind of build (an ATT bow and a DEX bow,
-// not two DEX bows); a spell that halves projectile speed is good with one
-// and bad with the other.
+// Each slot's short list: the best variants of the best few items at some
+// point of their curve, tried with the leading items of the other slots.
+// Each list puts first the variants that lead somewhere, best at some point,
+// so the other slots are tried with each kind of build (an ATT bow and a DEX
+// bow, not two DEX bows); a spell that halves projectile speed is good with
+// one and bad with the other.
 BuildSearch::Lists BuildSearch::CurveShortlists() {
   Build reference = p_.start;
   for (auto& list : reference.enchants) list.clear();
@@ -1481,12 +1496,19 @@ BuildSearch::Lists BuildSearch::CurveShortlists() {
       for (std::size_t cell = 0; cell < cells; ++cell) {
         for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
         std::ranges::stable_sort(order, [&](std::size_t a, std::size_t b) { return score[a][cell] > score[b][cell]; });
-        // The best few, and any within 2% of the best.
+        // The best few items, each with its best variant here, and any
+        // variant within 2% of the best.
+        std::set<std::string> items_here;
         for (std::size_t r = 0; r < order.size() && score[order[r]][cell] > 0; ++r) {
-          if (r >= tops && score[order[r]][cell] < score[order[0]][cell] * 0.98) {
+          const bool close = score[order[r]][cell] >= score[order[0]][cell] * 0.98;
+          const bool seen = items_here.contains(vs[order[r]].item);
+          if (!close && items_here.size() >= tops) {
             break;
           }
-          kept.insert(order[r]);
+          if (close || !seen) {
+            kept.insert(order[r]);
+            items_here.insert(vs[order[r]].item);
+          }
         }
         if (!order.empty() && score[order[0]][cell] > 0) {
           leaders.insert(order[0]);
