@@ -1086,7 +1086,7 @@ namespace {
 // range most classes fell in, what each option multiplied that by on most,
 // and how much more an evaluation cost over a whole search than in its
 // first moment.
-json Estimate(const Dataset& d, const OptimizerProblem& problem, bool burst) {
+json Estimate(const Dataset& d, const OptimizerProblem& problem) {
   using Clock = std::chrono::steady_clock;
   constexpr double kTestS = 0.2;
   struct Enough {};
@@ -1118,26 +1118,23 @@ json Estimate(const Dataset& d, const OptimizerProblem& problem, bool burst) {
   constexpr double kLaterCost = 2.0;
   const double each = kLaterCost * since() / static_cast<double>(std::max(1L, evaluated));
 
-  double low = 140000;
-  double high = 360000;
-  double factor = 1;
+  // How many builds' worth of time a search takes, fitted to every class's
+  // searches (the middle 80%): with enchantments to choose, most of it is
+  // the curves, so it hardly depends on how many each item holds or on
+  // burst. Without, only the step-by-step search runs.
+  double low = 300000;
+  double high = 800000;
   if (problem.enchantments != OptimizerProblem::Enchantments::kBest) {
     low = 1500;
     high = 3000;
-  } else {
-    constexpr std::array<double, 5> kPerItem = {0.01, 0.54, 1, 1.2, 1.33};
-    factor *= kPerItem[static_cast<std::size_t>(std::clamp(problem.per_item, 0, 4))];
+    const int restarts = static_cast<int>(std::ranges::count(problem.restart_stats, true));
+    const double factor = restarts == 0 ? 0.73 : restarts == 1 ? 0.8 : 1;
+    low *= factor;
+    high *= factor;
+  } else if (problem.candidates[1].size() <= 1) {
+    low *= 0.2;
+    high *= 0.2;
   }
-  const int restarts = static_cast<int>(std::ranges::count(problem.restart_stats, true));
-  factor *= restarts == 0 ? 0.73 : restarts == 1 ? 0.8 : 1;
-  if (problem.candidates[1].size() <= 1) {
-    factor *= 0.32;
-  }
-  if (burst) {
-    factor *= 1.23;
-  }
-  low *= factor;
-  high *= factor;
   return {{"ok", true}, {"evaluationS", each}, {"evaluations", {low, high}}, {"seconds", {low * each, high * each}}};
 }
 
@@ -1324,7 +1321,7 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
       return out;
     };
     if (run == Run::kEstimate) {
-      return Estimate(d, problem, burst.has_value()).dump();
+      return Estimate(d, problem).dump();
     }
     if (run == Run::kExplain) {
       // What the build scores, what it loses without each item but the
