@@ -1618,10 +1618,10 @@ const Enchantment* BuildSearch::ProcEnchantment(std::size_t slot, const std::str
 // Consistent enchantment plans for one set of items: every item stacks the
 // same stat with its dual-stat enchantment and takes the same kind of
 // single-stat one (more of that stat, a share of it into itself, or a share
-// of it turned into another stat), keeping its special enchantment, and any
-// room left takes on-shoot boosts, each stat once since they don't stack. A
-// conversion only pays once the stat it reads is stacked on several items,
-// which swapping one enchantment at a time never reaches.
+// of it turned into another stat), with and without its special enchantment,
+// and any room left takes on-shoot boosts, each stat once since they don't
+// stack. A conversion only pays once the stat it reads is stacked on several
+// items, which swapping one enchantment at a time never reaches.
 std::vector<Build> BuildSearch::Plans(const Build& items) {
   constexpr std::array<std::size_t, 4> kStacked = {kAtt, kDex, kSpd, kWis};
   // Each plan's single-stat enchantment: more of the stacked stat, a share
@@ -1632,8 +1632,7 @@ std::vector<Build> BuildSearch::Plans(const Build& items) {
                                                                       {Kind::kShare, kAtt},
                                                                       {Kind::kShare, kDex},
                                                                       {Kind::kShare, kWis}}};
-  // The items' own enchantments (their special or awakening), kept in every
-  // plan.
+  // The items' own enchantments (their special or awakening).
   std::array<std::vector<const Enchantment*>, kSlotCount> kept;
   for (std::size_t s = 0; s < kSlotCount; ++s) {
     for (const std::string& id : items.enchants[s]) {
@@ -1654,41 +1653,52 @@ std::vector<Build> BuildSearch::Plans(const Build& items) {
     }
   }
   std::vector<Build> out;
-  for (std::size_t stat : kStacked) {
-    for (const auto& [kind, into] : kSingles) {
-      Build b = items;
-      std::vector<std::size_t> boosts;
-      for (std::size_t boost : {stat, kAtt, kDex, kWis}) {
-        if (boost != kSpd && std::ranges::find(boosts, boost) == boosts.end()) boosts.push_back(boost);
-      }
-      for (std::size_t s = 0; s < kSlotCount; ++s) {
-        if (b.items[s].empty()) {
-          continue;
+  // Each plan with the items' own enchantments and, when there are any,
+  // without them, for the room they take: a bow can be worth more holding
+  // two WIS enchantments for its ability than its own special.
+  const bool any_kept = std::ranges::any_of(kept, [](const auto& list) { return !list.empty(); });
+  for (bool keep : {true, false}) {
+    if (!keep && !any_kept) {
+      continue;
+    }
+    for (std::size_t stat : kStacked) {
+      for (const auto& [kind, into] : kSingles) {
+        Build b = items;
+        std::vector<std::size_t> boosts;
+        for (std::size_t boost : {stat, kAtt, kDex, kWis}) {
+          if (boost != kSpd && std::ranges::find(boosts, boost) == boosts.end()) boosts.push_back(boost);
         }
-        const int room = std::min(p_.per_item, Fits(s, b.items[s]).slots);
-        std::vector<const Enchantment*> chosen;
-        const auto add = [&](const Enchantment* e) {
-          if (e == nullptr || std::cmp_greater_equal(chosen.size(), room) ||
-              std::ranges::any_of(chosen, [&](const Enchantment* c) { return c == e || Conflict(*c, *e); })) {
-            return;
+        for (std::size_t s = 0; s < kSlotCount; ++s) {
+          if (b.items[s].empty()) {
+            continue;
           }
-          chosen.push_back(e);
-        };
-        for (const Enchantment* e : kept[s]) add(e);
-        add(StatEnchantment(s, b.items[s], Kind::kDual, stat, stat));
-        add(StatEnchantment(s, b.items[s], kind, into == kItself ? stat : into, stat));
-        for (auto it = boosts.begin(); it != boosts.end(); ++it) {
-          const std::size_t before = chosen.size();
-          add(ProcEnchantment(s, b.items[s], *it, worn));
-          if (chosen.size() > before) {
-            boosts.erase(it);
-            break;
+          const int room = std::min(p_.per_item, Fits(s, b.items[s]).slots);
+          std::vector<const Enchantment*> chosen;
+          const auto add = [&](const Enchantment* e) {
+            if (e == nullptr || std::cmp_greater_equal(chosen.size(), room) ||
+                std::ranges::any_of(chosen, [&](const Enchantment* c) { return c == e || Conflict(*c, *e); })) {
+              return;
+            }
+            chosen.push_back(e);
+          };
+          if (keep) {
+            for (const Enchantment* e : kept[s]) add(e);
           }
+          add(StatEnchantment(s, b.items[s], Kind::kDual, stat, stat));
+          add(StatEnchantment(s, b.items[s], kind, into == kItself ? stat : into, stat));
+          for (auto it = boosts.begin(); it != boosts.end(); ++it) {
+            const std::size_t before = chosen.size();
+            add(ProcEnchantment(s, b.items[s], *it, worn));
+            if (chosen.size() > before) {
+              boosts.erase(it);
+              break;
+            }
+          }
+          b.enchants[s].clear();
+          for (const Enchantment* e : chosen) b.enchants[s].push_back(e->id);
         }
-        b.enchants[s].clear();
-        for (const Enchantment* e : chosen) b.enchants[s].push_back(e->id);
+        out.push_back(std::move(b));
       }
-      out.push_back(std::move(b));
     }
   }
   return out;
