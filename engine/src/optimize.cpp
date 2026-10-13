@@ -7,6 +7,7 @@
 #include <exception>
 #include <map>
 #include <mutex>
+#include <ranges>
 #include <set>
 #include <string_view>
 #include <tuple>
@@ -164,7 +165,7 @@ class BuildSearch {
   std::vector<const Enchantment*> OwnEnchantments(std::size_t slot, const std::string& item);
   std::pair<double, Build> Descend(Build current, std::size_t index);
   std::vector<std::string> Seeds(const Build& from);
-  void DescendFrom(const Build& from);
+  void DescendFrom(const Build& from, const std::vector<Build>& others = {});
 
   // An item in its slot with enchantments it brings along: none, one of its
   // own, or a special one that helps it most at some stats.
@@ -1207,6 +1208,9 @@ std::optional<OptimizerResult> BuildSearch::Search() {
     }
   }
   Build best = p_.start;
+  // The best build of other items close behind gets a descent too: a set
+  // filled around the wrong ability can be one change from the top.
+  std::vector<Build> others;
   {
     std::lock_guard lock(mu_);
     double top = -1;
@@ -1216,24 +1220,37 @@ std::optional<OptimizerResult> BuildSearch::Search() {
         best = entry.second;
       }
     }
+    const auto differ = [&](const Build& b) {
+      return std::ranges::count_if(std::views::iota(std::size_t{0}, kSlotCount),
+                                   [&](std::size_t s) { return b.items[s] != best.items[s]; });
+    };
+    double runner = top * 0.97;
+    for (const auto& [key, entry] : seen_) {
+      if (entry.first > runner && differ(entry.second) >= 2) {
+        runner = entry.first;
+        others = {entry.second};
+      }
+    }
     parts_done_[1] = 1;
   }
   for (std::size_t s = 0; s < kSlotCount; ++s) {
-    if (std::ranges::find(candidates_[s], best.items[s]) == candidates_[s].end()) {
-      candidates_[s].push_back(best.items[s]);
+    for (const Build* b : {&best, others.empty() ? &best : &others[0]}) {
+      if (std::ranges::find(candidates_[s], b->items[s]) == candidates_[s].end()) {
+        candidates_[s].push_back(b->items[s]);
+      }
     }
   }
-  DescendFrom(best);
+  DescendFrom(best, others);
   return Results();
 }
 
-// Descents from `from` over the search's candidates, then the best few
-// sets of items found get their enchantments traded around. Some builds
-// only work around one ability, like stacking the stat it scales with: each
-// change on the way there looks worse on its own. So the descents also
-// start again from the abilities whose DPS grows most with each stat asked
-// for, or from every ability in a thorough search.
-void BuildSearch::DescendFrom(const Build& from) {
+// Descents from `from` and each of `others` over the search's candidates,
+// then the best few sets of items found get their enchantments traded
+// around. Some builds only work around one ability, like stacking the stat
+// it scales with: each change on the way there looks worse on its own. So
+// the descents also start again from the abilities whose DPS grows most
+// with each stat asked for, or from every ability in a thorough search.
+void BuildSearch::DescendFrom(const Build& from, const std::vector<Build>& others) {
   const std::vector<std::string> seeds = Seeds(from);
   // Shares of progress: the descent from `from` takes a few times more than
   // one from a seed, most of which is already scored, and trading
@@ -1246,16 +1263,18 @@ void BuildSearch::DescendFrom(const Build& from) {
     std::lock_guard lock(mu_);
     first = part_sizes_.size();
     part_sizes_.push_back(kDescent);
-    for (std::size_t i = 0; i < seeds.size(); ++i) {
+    for (std::size_t i = 0; i < seeds.size() + others.size(); ++i) {
       part_sizes_.push_back(kSeedDescent);
     }
     part_sizes_.push_back(kExchange);
     parts_done_.resize(part_sizes_.size(), 0);
   }
   // The descents are independent, so they run at once.
-  ParallelFor(seeds.size() + 1, [&](std::size_t i) {
+  ParallelFor(seeds.size() + others.size() + 1, [&](std::size_t i) {
     Build start = from;
-    if (i > 0) {
+    if (i > seeds.size()) {
+      start = others[i - seeds.size() - 1];
+    } else if (i > 0) {
       start.items[1] = seeds[i - 1];
       Adapt(start, 1);
     }
