@@ -1806,29 +1806,61 @@ std::vector<Build> BuildSearch::Combinations(const Lists& lists) {
       }
     }
   }
+  std::vector<std::vector<Combo>> set_combos;
   for (const auto& row : set_rows) {
+    set_combos.emplace_back();
     // A slot the set leaves free takes the items of the best combinations
-    // so far.
+    // so far and the slot's leading items.
     std::array<std::vector<std::size_t>, kSlotCount> choices;
     for (std::size_t s = 0; s < kSlotCount; ++s) {
       choices[s] = row[s];
       for (std::size_t k = 0; row[s].empty() && k < combos.size() && k < 3; ++k) {
         if (std::ranges::find(choices[s], combos[k][s]) == choices[s].end()) choices[s].push_back(combos[k][s]);
       }
+      for (std::size_t k = 0; row[s].empty() && k < lim[s] && k < 3; ++k) {
+        if (std::ranges::find(choices[s], k) == choices[s].end()) choices[s].push_back(k);
+      }
       if (choices[s].empty()) choices[s] = {0};
     }
     for (std::size_t a : choices[0])
       for (std::size_t b : choices[1])
         for (std::size_t c : choices[2])
-          for (std::size_t e : choices[3]) combos.push_back({a, b, c, e});
+          for (std::size_t e : choices[3]) set_combos.back().push_back({a, b, c, e});
+    combos.insert(combos.end(), set_combos.back().begin(), set_combos.back().end());
   }
   std::ranges::sort(combos);
   combos.erase(std::unique(combos.begin(), combos.end()), combos.end());
   combos = best_first(combos);
-  const std::size_t fills = p_.thorough ? 32 : 16;
+  const std::size_t fills = p_.thorough ? 32 : 12;
   std::vector<Build> out;
+  std::set<Combo> filled;
   for (std::size_t i = 0; i < combos.size() && out.size() < fills; ++i) {
-    if (rated.at(combos[i]).first > 0) out.push_back(rated.at(combos[i]).second);
+    if (rated.at(combos[i]).first > 0) {
+      out.push_back(rated.at(combos[i]).second);
+      filled.insert(combos[i]);
+    }
+  }
+  // A set's pieces often pay off only with enchantments the plans don't
+  // try, like Alien gear turning a DEF boost into DEX, so the best few
+  // sets get filled and the ones that fill best are kept.
+  std::vector<Combo> set_bests;
+  for (const std::vector<Combo>& list : set_combos) {
+    const auto best = std::ranges::max_element(list, {}, [&](const Combo& c) { return rated.at(c).first; });
+    if (best != list.end() && rated.at(*best).first > 0 && !filled.contains(*best)) set_bests.push_back(*best);
+  }
+  set_bests = best_first(set_bests);
+  set_bests.erase(std::unique(set_bests.begin(), set_bests.end()), set_bests.end());
+  constexpr std::size_t kSetTries = 6;
+  constexpr std::size_t kSetFills = 3;
+  if (set_bests.size() > kSetTries) set_bests.resize(kSetTries);
+  std::vector<std::pair<double, std::size_t>> set_fills(set_bests.size());
+  ParallelFor(set_bests.size(), [&](std::size_t i) {
+    Build b = rated.at(set_bests[i]).second;
+    set_fills[i] = {FillAll(b), i};
+  });
+  std::ranges::stable_sort(set_fills, std::greater<>{}, &std::pair<double, std::size_t>::first);
+  for (std::size_t i = 0; i < set_fills.size() && i < kSetFills; ++i) {
+    out.push_back(rated.at(set_bests[set_fills[i].second]).second);
   }
   return out;
 }
