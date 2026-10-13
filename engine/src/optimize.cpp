@@ -23,11 +23,8 @@ namespace rotmg {
 namespace {
 
 constexpr std::size_t kSlotCount = 4;
-// Indexes into kOptimizerStats.
+// ATT's index in kOptimizerStats.
 constexpr std::size_t kAtt = 0;
-constexpr std::size_t kDex = 1;
-constexpr std::size_t kSpd = 2;
-constexpr std::size_t kWis = 3;
 // How much of a stat is added to see whether a build's DPS depends on it:
 // enough to cross the steps some effects scale in, like one more target
 // every 10 WIS, and then much more in case nothing scales until a stat is
@@ -180,6 +177,7 @@ class BuildSearch {
   std::vector<std::optional<double>> ProbeAll(const Build& b, const std::vector<Stats>& extras);
   std::vector<Variant> Variants(std::size_t slot, const Build& reference);
   std::vector<Stats> CurvePoints(std::size_t slot) const;
+  std::vector<std::size_t> ScalingStats();
   Lists CurveShortlists();
   const Enchantment* StatEnchantment(std::size_t slot, const std::string& item, Kind kind, std::size_t stat,
                                      std::size_t from);
@@ -201,6 +199,9 @@ class BuildSearch {
   // Every item a curve pass short-listed, by slot.
   std::array<std::vector<std::string>, kSlotCount> shortlisted_;
   std::array<double, kOptimizerStats.size()> max_extra_{};
+  // The stats some candidate's score depends on, in kOptimizerStats order:
+  // what the curves, plans and specials spread the enchantment budget over.
+  std::vector<std::size_t> scaling_;
   std::atomic<long> probes_ = 0;
   std::map<std::tuple<std::size_t, std::string, int, std::size_t, std::size_t>, const Enchantment*>
       stat_enchantments_;
@@ -1192,6 +1193,7 @@ std::optional<OptimizerResult> BuildSearch::Search() {
   }
   // Which items are worth a look, by their damage curves, and the most
   // promising sets of them, each filled from its best enchantment plan.
+  scaling_ = ScalingStats();
   const Lists lists = CurveShortlists();
   const std::vector<Build> starts = Combinations(lists);
   {
@@ -1363,13 +1365,13 @@ std::vector<BuildSearch::Variant> BuildSearch::Variants(std::size_t slot, const 
   }
   // The best special can change with the stats, like one that slows the
   // weapon and only pays once DEX makes up for it, so it's picked in the
-  // middle of the budget and again with each of ATT, DEX and WIS at its most.
+  // middle of the budget and again with each stat that matters at its most.
   Stats centre{};
-  for (std::size_t stat : {kAtt, kDex, kWis}) {
+  for (std::size_t stat : scaling_) {
     centre[stat] = static_cast<int>(max_extra_[stat] / 2);
   }
   std::vector<Stats> points = {centre};
-  for (std::size_t stat : {kAtt, kDex, kWis}) {
+  for (std::size_t stat : scaling_) {
     points.push_back(centre);
     points.back()[stat] = static_cast<int>(max_extra_[stat]);
   }
@@ -1434,39 +1436,99 @@ std::vector<BuildSearch::Variant> BuildSearch::Variants(std::size_t slot, const 
   return out;
 }
 
-// The stat points a slot's items are compared at. Enchantment slots are
-// shared, so stats trade off: each point spends the same budget, all on one
-// stat, half on each of two, or a third each on ATT, DEX and WIS. Abilities
-// also get a line along every stat, WIS one point at a time for its
-// breakpoints, the rest of the budget in ATT and DEX.
+// The stats any candidate's score rises with, each tried alone at the most
+// enchantments can add to it, on the request's build without enchantments.
+// Nothing about which stats matter is assumed: a new ability that scales
+// with VIT makes VIT one of them.
+std::vector<std::size_t> BuildSearch::ScalingStats() {
+  // The search spreads the budget over this many stats at most, the ones
+  // that raise a score the most: every one more multiplies the plans.
+  constexpr std::size_t kMostScaling = 4;
+  Build reference = p_.start;
+  for (auto& list : reference.enchants) list.clear();
+  std::vector<Stats> points = {Stats{}};
+  std::vector<std::size_t> point_stat = {kOptimizerStats.size()};
+  for (std::size_t s = 0; s < kOptimizerStats.size(); ++s) {
+    if (max_extra_[s] > 0) {
+      points.push_back(Stats{});
+      points.back()[s] = static_cast<int>(max_extra_[s]);
+      point_stat.push_back(s);
+    }
+  }
+  std::vector<Build> builds;
+  for (std::size_t slot = 0; slot < kSlotCount; ++slot) {
+    for (const std::string& name : candidates_[slot]) {
+      builds.push_back(reference);
+      builds.back().items[slot] = name;
+    }
+  }
+  std::vector<std::vector<std::optional<double>>> scores(builds.size());
+  ParallelFor(builds.size(), [&](std::size_t i) { scores[i] = ProbeAll(builds[i], points); });
+  // By the most any candidate gains from it, as a share of its score.
+  std::array<double, kOptimizerStats.size()> gain{};
+  for (const auto& row : scores) {
+    for (std::size_t k = 1; k < row.size(); ++k) {
+      if (row[0] && row[k] && *row[0] > 0 && Better(*row[k], *row[0])) {
+        gain[point_stat[k]] = std::max(gain[point_stat[k]], *row[k] / *row[0] - 1);
+      }
+    }
+  }
+  std::vector<std::size_t> out;
+  for (std::size_t s = 0; s < gain.size(); ++s) {
+    if (gain[s] > 0) out.push_back(s);
+  }
+  std::ranges::stable_sort(out, std::greater<>{}, [&](std::size_t s) { return gain[s]; });
+  if (out.size() > kMostScaling) {
+    out.resize(kMostScaling);
+  }
+  std::ranges::sort(out);
+  if (out.empty()) {
+    out.push_back(kAtt);
+  }
+  return out;
+}
+
+// The stat points a slot's items are compared at, over the stats that
+// matter. Enchantment slots are shared, so stats trade off: each point
+// spends the same budget, all on one stat, half on each of two, or evenly
+// on all. Abilities also get a line along each, one point at a time for
+// their breakpoints, the rest of the budget spread over the others.
 std::vector<Stats> BuildSearch::CurvePoints(std::size_t slot) const {
   const auto share = [&](std::size_t stat, double part) {
     return static_cast<int>(std::lround(max_extra_[stat] * part));
   };
   std::vector<Stats> out = {Stats{}};
-  for (std::size_t s = 0; s < kOptimizerStats.size(); ++s) {
+  for (std::size_t s : scaling_) {
     for (double part : {0.5, 1.0}) {
       Stats e{};
       e[s] = share(s, part);
       out.push_back(e);
     }
   }
-  for (const auto& [a, b] : {std::pair{kAtt, kDex}, {kAtt, kWis}, {kDex, kWis}}) {
+  for (std::size_t i = 0; i < scaling_.size(); ++i) {
+    for (std::size_t j = i + 1; j < scaling_.size(); ++j) {
+      Stats e{};
+      e[scaling_[i]] = share(scaling_[i], 0.5);
+      e[scaling_[j]] = share(scaling_[j], 0.5);
+      out.push_back(e);
+    }
+  }
+  if (scaling_.size() > 2) {
     Stats e{};
-    e[a] = share(a, 0.5);
-    e[b] = share(b, 0.5);
+    for (std::size_t s : scaling_) e[s] = share(s, 1.0 / static_cast<double>(scaling_.size()));
     out.push_back(e);
   }
-  out.push_back({share(kAtt, 1 / 3.0), share(kDex, 1 / 3.0), 0, share(kWis, 1 / 3.0), 0, 0, 0, 0});
   if (slot == 1) {
-    for (std::size_t s = 0; s < kOptimizerStats.size(); ++s) {
+    for (std::size_t s : scaling_) {
       const int top = std::max(1, share(s, 1.0));
-      const int step = s == kWis ? 1 : std::max(1, top / 12);
+      const int step = std::max(1, top / 12);
+      const double others = static_cast<double>(scaling_.size() - 1);
       for (int v = 0; v <= top; v += step) {
         const double rest = 1 - static_cast<double>(v) / top;
         Stats e{};
-        e[kAtt] = share(kAtt, rest / 2);
-        e[kDex] = share(kDex, rest / 2);
+        for (std::size_t o : scaling_) {
+          if (o != s) e[o] = share(o, rest / others);
+        }
         e[s] += v;
         out.push_back(e);
       }
@@ -1671,19 +1733,16 @@ const Enchantment* BuildSearch::ProcEnchantment(std::size_t slot, const std::str
 // same stat with its dual-stat enchantment and takes the same kind of
 // single-stat one (more of that stat, a share of it into itself, or a share
 // of it turned into another stat), with and without its special enchantment,
-// and any room left takes on-shoot boosts, each stat once since they don't
-// stack. A conversion only pays once the stat it reads is stacked on several
+// and any room left takes on-shoot boosts, each stat once when its boosts
+// don't stack. A conversion only pays once the stat it reads is stacked on several
 // items, which swapping one enchantment at a time never reaches.
 std::vector<Build> BuildSearch::Plans(const Build& items) {
-  constexpr std::array<std::size_t, 4> kStacked = {kAtt, kDex, kSpd, kWis};
-  // Each plan's single-stat enchantment: more of the stacked stat, a share
-  // of it into itself, or a share of it turned into ATT, DEX or WIS.
+  // Each plan stacks a stat that matters, and its single-stat enchantment
+  // is more of that stat, a share of it into itself, or a share of it
+  // turned into another stat that matters.
   constexpr std::size_t kItself = kOptimizerStats.size();
-  constexpr std::array<std::pair<Kind, std::size_t>, 5> kSingles = {{{Kind::kSingle, kItself},
-                                                                      {Kind::kShare, kItself},
-                                                                      {Kind::kShare, kAtt},
-                                                                      {Kind::kShare, kDex},
-                                                                      {Kind::kShare, kWis}}};
+  std::vector<std::pair<Kind, std::size_t>> singles = {{Kind::kSingle, kItself}, {Kind::kShare, kItself}};
+  for (std::size_t into : scaling_) singles.emplace_back(Kind::kShare, into);
   // The items' own enchantments (their special or awakening).
   std::array<std::vector<const Enchantment*>, kSlotCount> kept;
   for (std::size_t s = 0; s < kSlotCount; ++s) {
@@ -1713,12 +1772,14 @@ std::vector<Build> BuildSearch::Plans(const Build& items) {
     if (!keep && !any_kept) {
       continue;
     }
-    for (std::size_t stat : kStacked) {
-      for (const auto& [kind, into] : kSingles) {
+    for (std::size_t stat : scaling_) {
+      for (const auto& [kind, into] : singles) {
+        if (kind == Kind::kShare && into == stat) continue;
         Build b = items;
         std::vector<std::size_t> boosts;
-        for (std::size_t boost : {stat, kAtt, kDex, kWis}) {
-          if (boost != kSpd && std::ranges::find(boosts, boost) == boosts.end()) boosts.push_back(boost);
+        boosts.push_back(stat);
+        for (std::size_t boost : scaling_) {
+          if (boost != stat) boosts.push_back(boost);
         }
         for (std::size_t s = 0; s < kSlotCount; ++s) {
           if (b.items[s].empty()) {
@@ -1742,7 +1803,10 @@ std::vector<Build> BuildSearch::Plans(const Build& items) {
             const std::size_t before = chosen.size();
             add(ProcEnchantment(s, b.items[s], *it, worn));
             if (chosen.size() > before) {
-              boosts.erase(it);
+              // Boosts of the same stat don't add up when the data says so.
+              if (chosen.back()->mutators[0].attributes.Text("channel") == "noStack") {
+                boosts.erase(it);
+              }
               break;
             }
           }

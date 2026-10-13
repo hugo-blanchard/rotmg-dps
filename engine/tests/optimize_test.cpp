@@ -377,3 +377,20 @@ TEST_CASE("a locked weapon's special is planned around") {
   REQUIRE(found.has_value());
   CHECK(found->builds[0].first == Catch::Approx(best));
 }
+
+TEST_CASE("the plans stack whatever stat the builds scale with") {
+  // Rampart only pays well above 50 DEF, which only DEF on every item
+  // reaches. With no fresh starts from DEF to fall back on, only a plan
+  // that stacks DEF finds it, and nothing tells the search DEF matters but
+  // the scores.
+  const Dataset d = World();
+  OptimizerBuild truth;
+  const double best = BestByBruteForce(d, 2, &truth);
+  REQUIRE(truth.items[1] == "Rampart");
+  OptimizerProblem p = Problem(d, 2);
+  p.restart_stats = {};
+  p.restart_stats[0] = true;  // ATT
+  const auto found = rotmg::SearchBuilds(d, p);
+  REQUIRE(found.has_value());
+  CHECK(found->builds[0].first == Catch::Approx(best));
+}
