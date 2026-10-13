@@ -212,10 +212,13 @@ class BuildSearch {
   std::unordered_map<std::string, Rates> rates_;
   std::map<std::string, std::pair<double, Build>> seen_;
   // Whether an enchantment that does more than add stats changes an
-  // item's DPS, by slot, item and enchantment.
+  // item's DPS, by slot, the items worn and enchantment. Keyed by all the
+  // items: the answer depends on the rest of them, like an Alien boost on
+  // the Alien gear worn, and keying by the item alone kept whichever build
+  // a thread reached first.
   std::map<std::tuple<std::size_t, std::string, const Enchantment*>, bool> tested_;
-  // Relevant's answers, by slot, item and which stats matter.
-  std::map<std::tuple<std::size_t, std::string, unsigned>, std::vector<const Enchantment*>> relevant_;
+  // Relevant's answers, by slot, the items worn and which stats matter.
+  std::map<std::pair<std::size_t, std::string>, std::vector<const Enchantment*>> relevant_;
   // Guards the caches above, which the search's threads share. Each is
   // looked up and filled under it, and worked out outside it; two threads
   // may work out the same thing, which only costs time.
@@ -413,14 +416,19 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
   for (std::size_t i = 0; i < matters.size(); ++i) {
     bits |= matters[i] ? 1u << i : 0u;
   }
-  const auto cache_key = std::tuple{slot, b.items[slot], bits};
+  // Whether an enchantment changes anything is tried on the items alone,
+  // so the answer is the same whichever build asks first.
+  Build items = b;
+  for (auto& list : items.enchants) list.clear();
+  const std::string context = Key(items);
+  const auto cache_key = std::pair{slot, context + std::to_string(bits)};
   {
     std::lock_guard lock(mu_);
     if (auto it = relevant_.find(cache_key); it != relevant_.end()) {
       return it->second;
     }
   }
-  const double without = Score(bare).value_or(0);
+  const double without = Score(items).value_or(0);
   // Enchantments that do more than add stats, each on its own, at once.
   {
     std::vector<const Enchantment*> untested;
@@ -428,12 +436,12 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
     {
       std::lock_guard lock(mu_);
       for (const Enchantment* e : fits.options) {
-        if (!effects_.at(e).by_stats && !tested_.contains(std::tuple{slot, b.items[slot], e})) {
+        if (!effects_.at(e).by_stats && !tested_.contains(std::tuple{slot, context, e})) {
           untested.push_back(e);
         }
       }
     }
-    std::vector<Build> ones(untested.size(), bare);
+    std::vector<Build> ones(untested.size(), items);
     for (std::size_t i = 0; i < untested.size(); ++i) {
       ones[i].enchants[slot] = {untested[i]->id};
     }
@@ -441,7 +449,7 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
     std::lock_guard lock(mu_);
     for (std::size_t i = 0; i < untested.size(); ++i) {
       const auto& s = scored[i];
-      tested_.try_emplace(std::tuple{slot, b.items[slot], untested[i]}, s && std::abs(*s - without) > without * 1e-9);
+      tested_.try_emplace(std::tuple{slot, context, untested[i]}, s && std::abs(*s - without) > without * 1e-9);
     }
   }
   std::vector<const Enchantment*> out;
@@ -457,7 +465,7 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
       }
       continue;
     }
-    const auto key = std::tuple{slot, b.items[slot], e};
+    const auto key = std::tuple{slot, context, e};
     std::optional<bool> changes;
     {
       std::lock_guard lock(mu_);
@@ -466,7 +474,7 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
       }
     }
     if (!changes) {
-      Build one = bare;
+      Build one = items;
       one.enchants[slot] = {e->id};
       const auto s = Score(one);
       changes = s && std::abs(*s - without) > without * 1e-9;

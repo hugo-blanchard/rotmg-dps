@@ -274,3 +274,52 @@ TEST_CASE("the search leaves a slot empty rather than fill it with what adds not
     }
   }
 }
+
+TEST_CASE("the search finds the same builds every time it runs") {
+  // Alien Band is a little better than Band, and Spark only does something
+  // next to it, so whether Spark is worth trying depends on the rest of the
+  // build. That answer was once kept from whichever build got there first,
+  // which could be one with Band.
+  Dataset d = World();
+  rotmg::Gear& alien = d.rings.emplace_back();
+  alien.id = "Alien Band";
+  alien.name = "Alien Band";
+  alien.labels = {"EQUIPMENT", "RING"};
+  alien.enchanting = {4, "Pool"};
+  Enchantment& spark = d.enchantments.emplace_back(Stat("Spark", {{"ATT", 0}}, {"SPARK"}));
+  spark.mutators[0].tag = "AddOnPlayerShootActivate";
+  spark.mutators[0].text = "Lightning";
+  d.enchantment_pools["Pool"].insert("Spark");
+  OptimizerProblem p = Problem(d, 2);
+  p.candidates[3] = {"Band", "Alien Band"};
+  p.score = [&d](const OptimizerBuild& b, const std::array<int, 8>& extra) {
+    std::optional<double> dps = Dps(d, b, extra);
+    if (dps && b.items[3] == "Alien Band") {
+      *dps += 5;
+      for (const auto& list : b.enchants) {
+        if (std::ranges::find(list, "Spark") != list.end()) {
+          *dps += 2000;
+        }
+      }
+    }
+    return dps;
+  };
+  const auto first = rotmg::SearchBuilds(d, p);
+  REQUIRE(first.has_value());
+  const OptimizerBuild& best = first->builds[0].second;
+  CHECK(best.items[3] == "Alien Band");
+  CHECK(std::ranges::any_of(best.enchants, [](const auto& list) {
+    return std::ranges::find(list, "Spark") != list.end();
+  }));
+  for (int run = 0; run < 5; ++run) {
+    const auto again = rotmg::SearchBuilds(d, p);
+    REQUIRE(again.has_value());
+    CHECK(again->evaluated == first->evaluated);
+    REQUIRE(again->builds.size() == first->builds.size());
+    for (std::size_t i = 0; i < first->builds.size(); ++i) {
+      CHECK(again->builds[i].first == first->builds[i].first);
+      CHECK(again->builds[i].second.items == first->builds[i].second.items);
+      CHECK(again->builds[i].second.enchants == first->builds[i].second.enchants);
+    }
+  }
+}
