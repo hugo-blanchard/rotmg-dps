@@ -21,6 +21,11 @@ namespace rotmg {
 namespace {
 
 constexpr std::size_t kSlotCount = 4;
+// Indexes into kOptimizerStats.
+constexpr std::size_t kAtt = 0;
+constexpr std::size_t kDex = 1;
+constexpr std::size_t kSpd = 2;
+constexpr std::size_t kWis = 3;
 // How much of a stat is added to see whether a build's DPS depends on it:
 // enough to cross the steps some effects scale in, like one more target
 // every 10 WIS, and then much more in case nothing scales until a stat is
@@ -108,6 +113,27 @@ class BuildSearch {
     for (const Ability& a : d_.abilities) count(a.labels);
     for (const Gear& g : d_.armors) count(g.labels);
     for (const Gear& g : d_.rings) count(g.labels);
+    candidates_ = p_.candidates;
+    // The most enchantments can add to each stat: each item holds at most
+    // one single-stat and one dual-stat enchantment, and there are four.
+    std::array<double, kOptimizerStats.size()> single{};
+    std::array<double, kOptimizerStats.size()> dual{};
+    for (const Enchantment& e : d_.enchantments) {
+      if (Legacy(e)) {
+        continue;
+      }
+      const bool is_dual = std::ranges::find(e.labels, "DUALSTAT") != e.labels.end();
+      for (const Mutator& m : e.mutators) {
+        const int stat = StatIndex(m.attributes.Text("stat"));
+        if (m.tag == "ActivateOnEquip" && m.text == "IncrementStat" && stat >= 0) {
+          double& most = is_dual ? dual[static_cast<std::size_t>(stat)] : single[static_cast<std::size_t>(stat)];
+          most = std::max(most, m.attributes.Number("amount").value_or(0));
+        }
+      }
+    }
+    for (std::size_t s = 0; s < kOptimizerStats.size(); ++s) {
+      max_extra_[s] = 4 * (single[s] + dual[s]);
+    }
   }
 
   std::optional<OptimizerResult> Run();
@@ -136,7 +162,26 @@ class BuildSearch {
   double FillAll(Build& b);
   std::vector<const Enchantment*> OwnEnchantments(std::size_t slot, const std::string& item);
   std::pair<double, Build> Descend(Build current, std::size_t index);
-  std::vector<std::string> Seeds();
+  std::vector<std::string> Seeds(const Build& from);
+  void DescendFrom(const Build& from);
+
+  // An item in its slot with enchantments it brings along: none, one of its
+  // own, or the special one that helps it most.
+  struct Variant {
+    std::string item;
+    std::vector<std::string> enchants;
+  };
+  using Lists = std::array<std::vector<Variant>, kSlotCount>;
+  enum class Kind { kDual, kSingle, kShare };
+  std::optional<double> Probe(const Build& b, const Stats& extra);
+  std::vector<Variant> Variants(std::size_t slot, const Build& reference);
+  std::vector<Stats> CurvePoints(std::size_t slot) const;
+  Lists CurveShortlists();
+  const Enchantment* StatEnchantment(std::size_t slot, const std::string& item, Kind kind, std::size_t stat,
+                                     std::size_t from);
+  std::vector<Build> Plans(const Build& items);
+  std::pair<double, Build> BestPlan(const Build& items);
+  std::vector<Build> Combinations(const Lists& lists);
   std::optional<OptimizerResult> Search();
   OptimizerResult Results();
   void Report();
@@ -144,6 +189,15 @@ class BuildSearch {
 
   const Dataset& d_;
   const OptimizerProblem& p_;
+  // The items each slot's descents try: all the problem's, then the short
+  // lists' once the curves have made them.
+  std::array<std::vector<std::string>, kSlotCount> candidates_;
+  // Every item a curve pass short-listed, by slot.
+  std::array<std::vector<std::string>, kSlotCount> shortlisted_;
+  std::array<double, kOptimizerStats.size()> max_extra_{};
+  std::atomic<long> probes_ = 0;
+  std::map<std::tuple<std::size_t, std::string, int, std::size_t, std::size_t>, const Enchantment*>
+      stat_enchantments_;
   std::map<const Enchantment*, StatEffect> effects_;
   std::map<std::pair<std::size_t, std::string>, Fitting> fitting_;
   // How many items carry each label.
@@ -861,7 +915,7 @@ std::pair<double, Build> BuildSearch::Descend(Build current, std::size_t index) 
     std::array<std::vector<std::string>, kSlotCount> ranked;
     for (std::size_t slot = 0; slot < kSlotCount; ++slot) {
       std::vector<Build> nexts;
-      for (const std::string& name : p_.candidates[slot]) {
+      for (const std::string& name : candidates_[slot]) {
         if (name != current.items[slot]) {
           nexts.push_back(current);
           nexts.back().items[slot] = name;
@@ -969,7 +1023,7 @@ std::pair<double, Build> BuildSearch::Descend(Build current, std::size_t index) 
       std::size_t last = 0;
       for (const EquipmentSet::Piece& piece : set.pieces) {
         const auto slot = static_cast<std::size_t>(piece.slot);
-        const auto& options = p_.candidates[slot < kSlotCount ? slot : 0];
+        const auto& options = candidates_[slot < kSlotCount ? slot : 0];
         const bool usable = slot < kSlotCount && std::ranges::find(options, piece.name) != options.end();
         if (usable && next.items[slot] != piece.name) {
           next.items[slot] = piece.name;
@@ -1011,8 +1065,8 @@ std::pair<double, Build> BuildSearch::Descend(Build current, std::size_t index) 
 
 // Abilities to start the search from besides the start's: for each stat
 // asked for, the one whose DPS grows the most with a lot more of it.
-std::vector<std::string> BuildSearch::Seeds() {
-  const std::vector<std::string>& abilities = p_.candidates[1];
+std::vector<std::string> BuildSearch::Seeds(const Build& from) {
+  const std::vector<std::string>& abilities = candidates_[1];
   if (p_.thorough) {
     return abilities;
   }
@@ -1022,7 +1076,7 @@ std::vector<std::string> BuildSearch::Seeds() {
     if (!p_.restart_stats[stat]) {
       continue;
     }
-    std::vector<Build> builds(abilities.size(), p_.start);
+    std::vector<Build> builds(abilities.size(), from);
     for (std::size_t k = 0; k < abilities.size(); ++k) {
       builds[k].items[1] = abilities[k];
       Adapt(builds[k], 1);
@@ -1039,7 +1093,7 @@ std::vector<std::string> BuildSearch::Seeds() {
     }
     std::ranges::stable_sort(gains, [](const auto& a, const auto& b) { return a.first > b.first; });
     for (std::size_t i = 0; i < gains.size() && i < 1; ++i) {
-      if (gains[i].second != p_.start.items[1] && std::ranges::find(out, gains[i].second) == out.end()) {
+      if (gains[i].second != from.items[1] && std::ranges::find(out, gains[i].second) == out.end()) {
         out.push_back(gains[i].second);
       }
     }
@@ -1053,7 +1107,7 @@ OptimizerResult BuildSearch::Results() {
   {
     std::lock_guard lock(mu_);
     // Distinct builds, since two threads can score the same one at once.
-    out.evaluated = static_cast<long>(scores_.size());
+    out.evaluated = static_cast<long>(scores_.size()) + probes_;
     for (const auto& [key, entry] : seen_) {
       out.builds.push_back(entry);
     }
@@ -1104,39 +1158,108 @@ std::optional<OptimizerResult> BuildSearch::Search() {
     return std::nullopt;
   }
   baseline_ = *baseline;
-  // Some builds only work around one ability, like stacking the stat it
-  // scales with: each change on the way there looks worse on its own. So
-  // the search starts again from the abilities whose DPS grows most with
-  // each stat, or from every ability in a thorough search.
-  const std::vector<std::string> seeds = Seeds();
-  // The descents from the start and from each seed are independent, so
-  // they run at once. Shares of the search for progress reports, from
-  // timing every class: one from a seed takes a few times less than the
-  // one from the start, as most of what it looks at is already scored, and
-  // trading enchantments very little.
-  constexpr double kSeedDescent = 0.15;
-  constexpr double kExchange = 0.03;
+  // Without enchantments to choose, the step-by-step search alone finds
+  // the same builds as the curves, many times faster. Built around nothing,
+  // the request asks only for its own build improved, which is that search
+  // from the start.
+  if (p_.enchantments != Mode::kBest || std::ranges::none_of(p_.restart_stats, [](bool b) { return b; })) {
+    DescendFrom(p_.start);
+    return Results();
+  }
+  // Shares of the search for progress reports, from timing every class:
+  // the curves, the combinations and their fills, then the descents.
+  constexpr double kCurves = 0.25;
+  constexpr double kCombinations = 0.3;
   {
     std::lock_guard lock(mu_);
-    part_sizes_.assign(seeds.size() + 2, kSeedDescent);
-    part_sizes_.front() = 1;
-    part_sizes_.back() = kExchange;
-    parts_done_.assign(part_sizes_.size(), 0);
+    part_sizes_ = {kCurves, kCombinations};
+    parts_done_ = {0, 0};
   }
-  ParallelFor(seeds.size() + 1, [&](std::size_t i) {
-    Build from = p_.start;
-    if (i > 0) {
-      from.items[1] = seeds[i - 1];
-      Adapt(from, 1);
+  // Which items are worth a look, by their damage curves, and the most
+  // promising sets of them, each filled from its best enchantment plan.
+  const Lists lists = CurveShortlists();
+  const std::vector<Build> starts = Combinations(lists);
+  {
+    std::lock_guard lock(mu_);
+    parts_done_[0] = 1;
+  }
+  ParallelFor(starts.size(), [&](std::size_t i) {
+    // The fill improves one item at a time from the plan; when it ends up
+    // worse than the plan, the plan is what gets traded.
+    Build filled = starts[i];
+    const double fill = FillAll(filled);
+    Build plan = starts[i];
+    Exchange(fill > Score(plan).value_or(0) ? filled : plan);
+    std::lock_guard lock(mu_);
+    parts_done_[1] += 1.0 / static_cast<double>(starts.size());
+  });
+  // Then the step-by-step search over the short lists from the best build
+  // so far: it carries enchantments from one item to the next, which finds
+  // what the plans miss.
+  for (std::size_t s = 0; s < kSlotCount; ++s) {
+    if (candidates_[s].size() > 1 && !shortlisted_[s].empty()) {
+      candidates_[s] = shortlisted_[s];
     }
-    if (Score(from)) {
-      Descend(from, i);
+  }
+  Build best = p_.start;
+  {
+    std::lock_guard lock(mu_);
+    double top = -1;
+    for (const auto& [key, entry] : seen_) {
+      if (entry.first > top) {
+        top = entry.first;
+        best = entry.second;
+      }
+    }
+    parts_done_[1] = 1;
+  }
+  for (std::size_t s = 0; s < kSlotCount; ++s) {
+    if (std::ranges::find(candidates_[s], best.items[s]) == candidates_[s].end()) {
+      candidates_[s].push_back(best.items[s]);
+    }
+  }
+  DescendFrom(best);
+  return Results();
+}
+
+// Descents from `from` over the search's candidates, then the best few
+// sets of items found get their enchantments traded around. Some builds
+// only work around one ability, like stacking the stat it scales with: each
+// change on the way there looks worse on its own. So the descents also
+// start again from the abilities whose DPS grows most with each stat asked
+// for, or from every ability in a thorough search.
+void BuildSearch::DescendFrom(const Build& from) {
+  const std::vector<std::string> seeds = Seeds(from);
+  // Shares of progress: the descent from `from` takes a few times more than
+  // one from a seed, most of which is already scored, and trading
+  // enchantments very little.
+  constexpr double kDescent = 0.25;
+  constexpr double kSeedDescent = 0.04;
+  constexpr double kExchange = 0.05;
+  std::size_t first = 0;
+  {
+    std::lock_guard lock(mu_);
+    first = part_sizes_.size();
+    part_sizes_.push_back(kDescent);
+    for (std::size_t i = 0; i < seeds.size(); ++i) {
+      part_sizes_.push_back(kSeedDescent);
+    }
+    part_sizes_.push_back(kExchange);
+    parts_done_.resize(part_sizes_.size(), 0);
+  }
+  // The descents are independent, so they run at once.
+  ParallelFor(seeds.size() + 1, [&](std::size_t i) {
+    Build start = from;
+    if (i > 0) {
+      start.items[1] = seeds[i - 1];
+      Adapt(start, 1);
+    }
+    if (Score(start)) {
+      Descend(start, first + i);
     }
     std::lock_guard lock(mu_);
-    parts_done_[i] = 1;
+    parts_done_[first + i] = 1;
   });
-  // The best few sets of items found, wherever the searches ended, get
-  // their enchantments traded around.
   std::vector<std::pair<double, Build>> top;
   {
     std::lock_guard lock(mu_);
@@ -1154,7 +1277,485 @@ std::optional<OptimizerResult> BuildSearch::Search() {
     std::lock_guard lock(mu_);
     parts_done_.back() += 1.0 / kTraded;
   });
-  return Results();
+}
+
+// A build scored with extra stats for a curve, outside the score cache:
+// each probe is asked once, and there are many.
+std::optional<double> BuildSearch::Probe(const Build& b, const Stats& extra) {
+  if (stopping_) {
+    throw Stopped{};
+  }
+  if (p_.progress && !OnHelperThread()) {
+    Report();
+  }
+  ++probes_;
+  return p_.score(b, extra);
+}
+
+// The slot's candidates, each bare, with each of its own enchantments, and,
+// for weapons and abilities, with the special enchantment that helps it most
+// on the reference build: a tradeoff like Overwhelming Strikes is worth far
+// more on a weapon held back by its burst pause than by its fire rate.
+std::vector<BuildSearch::Variant> BuildSearch::Variants(std::size_t slot, const Build& reference) {
+  std::vector<Variant> out;
+  const bool best = p_.enchantments == Mode::kBest;
+  for (const std::string& name : candidates_[slot]) {
+    out.push_back({name, {}});
+    if (!best) {
+      continue;
+    }
+    for (const Enchantment* e : OwnEnchantments(slot, name)) {
+      out.push_back({name, {e->id}});
+    }
+  }
+  if (!best || slot > 1) {
+    return out;
+  }
+  Stats centre{};
+  for (std::size_t stat : {kAtt, kDex, kWis}) {
+    centre[stat] = static_cast<int>(max_extra_[stat] / 2);
+  }
+  std::vector<std::pair<std::size_t, const Enchantment*>> tries;
+  const std::size_t bare_count = out.size();
+  for (std::size_t i = 0; i < bare_count; ++i) {
+    if (!out[i].enchants.empty()) {
+      continue;
+    }
+    for (const Enchantment* e : Fits(slot, out[i].item).options) {
+      const bool stats_only = !e->mutators.empty() && e->containers.empty() &&
+                              std::ranges::all_of(e->mutators, [](const Mutator& m) {
+                                return m.tag == "ActivateOnEquip" &&
+                                       (m.text == "IncrementStat" || m.text == "BonusStatRelative");
+                              });
+      if (!stats_only) {
+        tries.emplace_back(i, e);
+      }
+    }
+  }
+  const auto with = [&](std::size_t i, const Enchantment* e) {
+    Build b = reference;
+    b.items[slot] = out[i].item;
+    b.enchants[slot] = e == nullptr ? std::vector<std::string>{} : std::vector<std::string>{e->id};
+    return b;
+  };
+  std::vector<std::optional<double>> bare(bare_count);
+  ParallelFor(bare_count, [&](std::size_t i) { bare[i] = Probe(with(i, nullptr), centre); });
+  std::vector<std::optional<double>> gained(tries.size());
+  ParallelFor(tries.size(), [&](std::size_t t) { gained[t] = Probe(with(tries[t].first, tries[t].second), centre); });
+  std::map<std::size_t, std::pair<double, const Enchantment*>> best_special;
+  for (std::size_t t = 0; t < tries.size(); ++t) {
+    const auto [i, e] = tries[t];
+    if (!gained[t] || !bare[i] || !Better(*gained[t], *bare[i])) {
+      continue;
+    }
+    auto& [gain, which] = best_special[i];
+    if (*gained[t] - *bare[i] > gain) {
+      gain = *gained[t] - *bare[i];
+      which = e;
+    }
+  }
+  for (const auto& [i, special] : best_special) {
+    const bool own = std::ranges::any_of(out, [&](const Variant& v) {
+      return v.item == out[i].item && v.enchants == std::vector<std::string>{special.second->id};
+    });
+    if (!own) {
+      out.push_back({out[i].item, {special.second->id}});
+    }
+  }
+  return out;
+}
+
+// The stat points a slot's items are compared at. Enchantment slots are
+// shared, so stats trade off: each point spends the same budget, all on one
+// stat, half on each of two, or a third each on ATT, DEX and WIS. Abilities
+// also get a line along every stat, WIS one point at a time for its
+// breakpoints, the rest of the budget in ATT and DEX.
+std::vector<Stats> BuildSearch::CurvePoints(std::size_t slot) const {
+  const auto share = [&](std::size_t stat, double part) {
+    return static_cast<int>(std::lround(max_extra_[stat] * part));
+  };
+  std::vector<Stats> out = {Stats{}};
+  for (std::size_t s = 0; s < kOptimizerStats.size(); ++s) {
+    for (double part : {0.5, 1.0}) {
+      Stats e{};
+      e[s] = share(s, part);
+      out.push_back(e);
+    }
+  }
+  for (const auto& [a, b] : {std::pair{kAtt, kDex}, {kAtt, kWis}, {kDex, kWis}}) {
+    Stats e{};
+    e[a] = share(a, 0.5);
+    e[b] = share(b, 0.5);
+    out.push_back(e);
+  }
+  out.push_back({share(kAtt, 1 / 3.0), share(kDex, 1 / 3.0), 0, share(kWis, 1 / 3.0), 0, 0, 0, 0});
+  if (slot == 1) {
+    for (std::size_t s = 0; s < kOptimizerStats.size(); ++s) {
+      const int top = std::max(1, share(s, 1.0));
+      const int step = s == kWis ? 1 : std::max(1, top / 12);
+      for (int v = 0; v <= top; v += step) {
+        const double rest = 1 - static_cast<double>(v) / top;
+        Stats e{};
+        e[kAtt] = share(kAtt, rest / 2);
+        e[kDex] = share(kDex, rest / 2);
+        e[s] += v;
+        out.push_back(e);
+      }
+    }
+  }
+  return out;
+}
+
+// Each slot's short list: the variants among the best few at some point of
+// their curve, tried with the leading items of the other slots. Each list
+// puts first the variants that lead somewhere, best at some point, so the
+// other slots are tried with each kind of build (an ATT bow and a DEX bow,
+// not two DEX bows); a spell that halves projectile speed is good with one
+// and bad with the other.
+BuildSearch::Lists BuildSearch::CurveShortlists() {
+  Build reference = p_.start;
+  for (auto& list : reference.enchants) list.clear();
+  std::array<std::vector<Variant>, kSlotCount> variants;
+  for (std::size_t s = 0; s < kSlotCount; ++s) {
+    variants[s] = Variants(s, reference);
+  }
+  Lists lists;
+  for (std::size_t s = 0; s < kSlotCount; ++s) {
+    lists[s] = {{reference.items[s], {}}};
+  }
+  const std::size_t tops = p_.thorough ? 4 : 3;
+  constexpr std::size_t kPartners = 2;
+  for (int pass = 0; pass < 2; ++pass) {
+    for (std::size_t slot = 0; slot < kSlotCount; ++slot) {
+      if (candidates_[slot].size() <= 1) {
+        continue;
+      }
+      // Weapons are tried with the leading abilities, abilities with the
+      // leading weapons, armor and rings with pairs of both.
+      const auto partners = [&](std::size_t s) {
+        if (s == slot) {
+          return std::vector<Variant>{Variant{}};
+        }
+        const std::size_t n = s <= 1 ? kPartners : 1;
+        return std::vector<Variant>(lists[s].begin(), lists[s].begin() + static_cast<std::ptrdiff_t>(
+                                                                              std::min(n, lists[s].size())));
+      };
+      std::vector<std::array<Variant, kSlotCount>> contexts;
+      for (const Variant& w : partners(0))
+        for (const Variant& a : partners(1))
+          for (const Variant& ar : partners(2))
+            for (const Variant& r : partners(3)) contexts.push_back({w, a, ar, r});
+      const std::vector<Stats> points = CurvePoints(slot);
+      const auto& vs = variants[slot];
+      const std::size_t cells = contexts.size() * points.size();
+      std::vector<std::vector<double>> score(vs.size(), std::vector<double>(cells, -1));
+      ParallelFor(vs.size() * cells, [&](std::size_t n) {
+        const std::size_t i = n / cells;
+        const std::size_t cell = n % cells;
+        Build b;
+        for (std::size_t s = 0; s < kSlotCount; ++s) {
+          const Variant& v = s == slot ? vs[i] : contexts[cell / points.size()][s];
+          b.items[s] = v.item;
+          b.enchants[s] = v.enchants;
+        }
+        if (const auto v = Probe(b, points[cell % points.size()])) {
+          score[i][cell] = *v;
+        }
+      });
+      std::set<std::size_t> kept;
+      std::set<std::size_t> leaders;
+      std::vector<std::size_t> order(vs.size());
+      for (std::size_t cell = 0; cell < cells; ++cell) {
+        for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+        std::ranges::stable_sort(order, [&](std::size_t a, std::size_t b) { return score[a][cell] > score[b][cell]; });
+        // The best few, and any within 2% of the best.
+        for (std::size_t r = 0; r < order.size() && score[order[r]][cell] > 0; ++r) {
+          if (r >= tops && score[order[r]][cell] < score[order[0]][cell] * 0.98) {
+            break;
+          }
+          kept.insert(order[r]);
+        }
+        if (!order.empty() && score[order[0]][cell] > 0) {
+          leaders.insert(order[0]);
+        }
+      }
+      std::vector<std::tuple<bool, double, std::size_t>> ranked;
+      for (std::size_t i : kept) {
+        ranked.emplace_back(leaders.contains(i), *std::ranges::max_element(score[i]), i);
+      }
+      std::ranges::sort(ranked, std::greater<>());
+      lists[slot].clear();
+      for (const auto& [leads, best, i] : ranked) {
+        lists[slot].push_back(vs[i]);
+        if (std::ranges::find(shortlisted_[slot], vs[i].item) == shortlisted_[slot].end()) {
+          shortlisted_[slot].push_back(vs[i].item);
+        }
+      }
+      std::lock_guard lock(mu_);
+      parts_done_[0] = std::min(1.0, parts_done_[0] + 1.0 / 8);
+    }
+  }
+  return lists;
+}
+
+// The enchantment that adds the most of a stat to the item: a dual-stat
+// one, a flat single-stat one, or a share of `from` turned into `stat`.
+const Enchantment* BuildSearch::StatEnchantment(std::size_t slot, const std::string& item, Kind kind,
+                                                std::size_t stat, std::size_t from) {
+  const auto key = std::tuple{slot, item, static_cast<int>(kind), stat, from};
+  {
+    std::lock_guard lock(mu_);
+    if (auto it = stat_enchantments_.find(key); it != stat_enchantments_.end()) {
+      return it->second;
+    }
+  }
+  const Enchantment* best = nullptr;
+  double most = 0;
+  for (const Enchantment* e : Fits(slot, item).options) {
+    const bool dual = std::ranges::find(e->labels, "DUALSTAT") != e->labels.end();
+    const bool single = std::ranges::find(e->labels, "SINGLESTAT") != e->labels.end();
+    if ((kind == Kind::kDual) != dual || (kind != Kind::kDual && !single) || e->mutators.empty() ||
+        !e->containers.empty()) {
+      continue;
+    }
+    double amount = 0;
+    bool only_this = true;
+    for (const Mutator& m : e->mutators) {
+      const bool equip = m.tag == "ActivateOnEquip";
+      if (equip && kind == Kind::kShare && m.text == "BonusStatRelative" &&
+          m.attributes.Text("stat") == kOptimizerStats[stat] &&
+          m.attributes.Text("statRelativeTo") == kOptimizerStats[from]) {
+        amount += m.attributes.Number("amount").value_or(0);
+      } else if (equip && kind != Kind::kShare && m.text == "IncrementStat") {
+        if (m.attributes.Text("stat") == kOptimizerStats[stat]) {
+          amount += m.attributes.Number("amount").value_or(0);
+        }
+      } else {
+        only_this = false;
+      }
+    }
+    if (only_this && amount > most) {
+      best = e;
+      most = amount;
+    }
+  }
+  std::lock_guard lock(mu_);
+  return stat_enchantments_.try_emplace(key, best).first->second;
+}
+
+// Consistent enchantment plans for one set of items: every item stacks the
+// same stat with its dual-stat enchantment and takes the same kind of
+// single-stat one (more of that stat, a share of it into itself, or a share
+// of it turned into another stat), keeping its special enchantment. A
+// conversion only pays once the stat it reads is stacked on several items,
+// which swapping one enchantment at a time never reaches.
+std::vector<Build> BuildSearch::Plans(const Build& items) {
+  constexpr std::array<std::size_t, 4> kStacked = {kAtt, kDex, kSpd, kWis};
+  // Each plan's single-stat enchantment: more of the stacked stat, a share
+  // of it into itself, or a share of it turned into ATT, DEX or WIS.
+  constexpr std::size_t kItself = kOptimizerStats.size();
+  constexpr std::array<std::pair<Kind, std::size_t>, 5> kSingles = {{{Kind::kSingle, kItself},
+                                                                      {Kind::kShare, kItself},
+                                                                      {Kind::kShare, kAtt},
+                                                                      {Kind::kShare, kDex},
+                                                                      {Kind::kShare, kWis}}};
+  // The items' own enchantments (their special or awakening), kept in every
+  // plan.
+  std::array<std::vector<const Enchantment*>, kSlotCount> kept;
+  for (std::size_t s = 0; s < kSlotCount; ++s) {
+    for (const std::string& id : items.enchants[s]) {
+      const auto it = std::ranges::find(d_.enchantments, id, &Enchantment::id);
+      if (it != d_.enchantments.end()) kept[s].push_back(&*it);
+    }
+  }
+  std::vector<Build> out;
+  for (std::size_t stat : kStacked) {
+    for (const auto& [kind, into] : kSingles) {
+      Build b = items;
+      for (std::size_t s = 0; s < kSlotCount; ++s) {
+        if (b.items[s].empty()) {
+          continue;
+        }
+        const int room = std::min(p_.per_item, Fits(s, b.items[s]).slots);
+        std::vector<const Enchantment*> chosen;
+        const auto add = [&](const Enchantment* e) {
+          if (e == nullptr || std::cmp_greater_equal(chosen.size(), room) ||
+              std::ranges::any_of(chosen, [&](const Enchantment* c) { return c == e || Conflict(*c, *e); })) {
+            return;
+          }
+          chosen.push_back(e);
+        };
+        for (const Enchantment* e : kept[s]) add(e);
+        add(StatEnchantment(s, b.items[s], Kind::kDual, stat, stat));
+        add(StatEnchantment(s, b.items[s], kind, into == kItself ? stat : into, stat));
+        b.enchants[s].clear();
+        for (const Enchantment* e : chosen) b.enchants[s].push_back(e->id);
+      }
+      out.push_back(std::move(b));
+    }
+  }
+  return out;
+}
+
+// A set of items' best plan and its score; without enchantments to choose,
+// the items as they are.
+std::pair<double, Build> BuildSearch::BestPlan(const Build& items) {
+  if (p_.enchantments != Mode::kBest) {
+    return {Score(items).value_or(-1), items};
+  }
+  std::pair<double, Build> best = {-1, items};
+  const std::vector<Build> plans = Plans(items);
+  const std::vector<std::optional<double>> scores = ScoreAll(plans);
+  for (std::size_t i = 0; i < plans.size(); ++i) {
+    if (scores[i] && *scores[i] > best.first) {
+      best = {*scores[i], plans[i]};
+    }
+  }
+  return best;
+}
+
+// The most promising sets of items, with their best plans. Weapon and
+// ability pairs come first, with the leading armor and ring; then each of
+// the best pairs gets its own best armors and rings; and every set's pieces
+// are tried together, the slots they leave with the best combinations' items.
+std::vector<Build> BuildSearch::Combinations(const Lists& lists) {
+  using Widths = std::array<std::size_t, kSlotCount>;
+  const Widths width = p_.thorough ? Widths{14, 16, 16, 24} : Widths{10, 12, 12, 16};
+  // Distinct items per slot, each with its best variant.
+  Lists pool;
+  for (std::size_t s = 0; s < kSlotCount; ++s) {
+    std::set<std::string> seen;
+    for (const Variant& v : lists[s]) {
+      if (seen.insert(v.item).second) pool[s].push_back(v);
+    }
+    if (pool[s].empty()) {
+      pool[s] = {{p_.start.items[s], {}}};
+    }
+  }
+  std::array<std::size_t, kSlotCount> lim;
+  for (std::size_t s = 0; s < kSlotCount; ++s) lim[s] = std::min(width[s], pool[s].size());
+  // Each set's pieces, the two best of a slot that takes several.
+  const auto rank_of = [&](std::size_t slot, const std::string& name) {
+    const auto it = std::ranges::find(pool[slot], name, &Variant::item);
+    return static_cast<std::size_t>(it - pool[slot].begin());
+  };
+  std::vector<std::array<std::vector<std::size_t>, kSlotCount>> set_rows;
+  for (const EquipmentSet& set : d_.sets) {
+    std::array<std::vector<std::string>, kSlotCount> pieces;
+    for (const EquipmentSet::Piece& piece : set.pieces) {
+      const auto slot = static_cast<std::size_t>(piece.slot);
+      if (slot >= kSlotCount || candidates_[slot].size() <= 1 ||
+          std::ranges::find(candidates_[slot], piece.name) == candidates_[slot].end()) {
+        continue;
+      }
+      // Only the key piece makes a set with key pieces count.
+      if (slot == 3 && !set.key_pieces.empty() &&
+          std::ranges::find(set.key_pieces, piece.item_type) == set.key_pieces.end()) {
+        continue;
+      }
+      if (std::ranges::find(pieces[slot], piece.name) == pieces[slot].end()) pieces[slot].push_back(piece.name);
+    }
+    std::array<std::vector<std::size_t>, kSlotCount> row;
+    int covered = 0;
+    for (std::size_t slot = 0; slot < kSlotCount; ++slot) {
+      auto& names = pieces[slot];
+      if (names.empty()) continue;
+      std::ranges::stable_sort(names,
+                               [&](const auto& a, const auto& b) { return rank_of(slot, a) < rank_of(slot, b); });
+      if (names.size() > 2) names.resize(2);
+      for (const std::string& name : names) {
+        if (rank_of(slot, name) == pool[slot].size()) pool[slot].push_back({name, {}});
+        row[slot].push_back(rank_of(slot, name));
+      }
+      ++covered;
+    }
+    if (covered >= 2) set_rows.push_back(row);
+  }
+  using Combo = std::array<std::size_t, kSlotCount>;
+  const auto build_of = [&](const Combo& c) {
+    Build b = p_.start;
+    for (std::size_t s = 0; s < kSlotCount; ++s) {
+      b.items[s] = pool[s][c[s]].item;
+      if (p_.enchantments == Mode::kBest) {
+        b.enchants[s] = pool[s][c[s]].enchants;
+      } else {
+        Adapt(b, s);
+      }
+    }
+    return b;
+  };
+  std::map<Combo, std::pair<double, Build>> rated;
+  const auto rate = [&](std::vector<Combo> list) {
+    std::ranges::sort(list);
+    list.erase(std::unique(list.begin(), list.end()), list.end());
+    std::erase_if(list, [&](const Combo& c) { return rated.contains(c); });
+    std::vector<std::pair<double, Build>> found(list.size());
+    ParallelFor(list.size(), [&](std::size_t i) { found[i] = BestPlan(build_of(list[i])); });
+    for (std::size_t i = 0; i < list.size(); ++i) rated.emplace(list[i], std::move(found[i]));
+  };
+  const auto best_first = [&](std::vector<Combo> list) {
+    rate(list);
+    std::ranges::stable_sort(list,
+                             [&](const Combo& a, const Combo& b) { return rated.at(a).first > rated.at(b).first; });
+    return list;
+  };
+  std::vector<Combo> pairs;
+  for (std::size_t a = 0; a < lim[0]; ++a)
+    for (std::size_t b = 0; b < lim[1]; ++b) pairs.push_back({a, b, 0, 0});
+  // The best pairs, but no ability or weapon more than a few times: when
+  // the weapon hardly matters (an ability-weighted search) the top pairs
+  // would otherwise be one ability with interchangeable weapons.
+  const std::size_t pair_count = p_.thorough ? 20 : 10;
+  std::map<std::size_t, std::size_t> per_weapon;
+  std::map<std::size_t, std::size_t> per_ability;
+  std::vector<Combo> top_pairs;
+  for (const Combo& c : best_first(pairs)) {
+    if (top_pairs.size() >= pair_count) break;
+    if (per_ability[c[1]] >= 2 || per_weapon[c[0]] >= 3) continue;
+    ++per_ability[c[1]];
+    ++per_weapon[c[0]];
+    top_pairs.push_back(c);
+  }
+  constexpr std::size_t kKeep = 3;
+  std::vector<Combo> combos;
+  for (const Combo& pair : top_pairs) {
+    std::vector<Combo> armors;
+    std::vector<Combo> rings;
+    for (std::size_t c = 0; c < lim[2]; ++c) armors.push_back({pair[0], pair[1], c, 0});
+    for (std::size_t r = 0; r < lim[3]; ++r) rings.push_back({pair[0], pair[1], 0, r});
+    armors = best_first(armors);
+    rings = best_first(rings);
+    for (std::size_t i = 0; i < kKeep && i < armors.size(); ++i) {
+      for (std::size_t j = 0; j < kKeep && j < rings.size(); ++j) {
+        combos.push_back({pair[0], pair[1], armors[i][2], rings[j][3]});
+      }
+    }
+  }
+  for (const auto& row : set_rows) {
+    // A slot the set leaves free takes the items of the best combinations
+    // so far.
+    std::array<std::vector<std::size_t>, kSlotCount> choices;
+    for (std::size_t s = 0; s < kSlotCount; ++s) {
+      choices[s] = row[s];
+      for (std::size_t k = 0; row[s].empty() && k < combos.size() && k < 3; ++k) {
+        if (std::ranges::find(choices[s], combos[k][s]) == choices[s].end()) choices[s].push_back(combos[k][s]);
+      }
+      if (choices[s].empty()) choices[s] = {0};
+    }
+    for (std::size_t a : choices[0])
+      for (std::size_t b : choices[1])
+        for (std::size_t c : choices[2])
+          for (std::size_t e : choices[3]) combos.push_back({a, b, c, e});
+  }
+  std::ranges::sort(combos);
+  combos.erase(std::unique(combos.begin(), combos.end()), combos.end());
+  combos = best_first(combos);
+  const std::size_t fills = p_.thorough ? 32 : 16;
+  std::vector<Build> out;
+  for (std::size_t i = 0; i < combos.size() && out.size() < fills; ++i) {
+    if (rated.at(combos[i]).first > 0) out.push_back(rated.at(combos[i]).second);
+  }
+  return out;
 }
 
 }  // namespace
