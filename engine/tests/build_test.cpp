@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -51,6 +52,32 @@ TEST_CASE("a buff counts for the share of the cast cycle it's up") {
   CHECK(b.uptimes[0].share == Approx(7 / period));
   CHECK(b.weapon_dps == Approx((7 * on + (period - 7) * off) / period));
   CHECK(b.dps == Approx(b.weapon_dps));
+}
+
+TEST_CASE("more WIS never lowers DPS when an item's effect on casting has a cooldown") {
+  // +30 ATT for 6s on casting, at most every 20s. Casting every 10.4s it
+  // goes off every second cast; a little more WIS and every third, unless
+  // the cast is held back to every 10s.
+  rotmg::Ability spell = *Find("Plain Spell");
+  rotmg::Activate boost;
+  boost.type = "StatBoostSelf";
+  boost.params.emplace("stat", std::string("ATT"));
+  boost.params.emplace("amount", 30.0);
+  boost.params.emplace("duration", 6.0);
+  boost.params.emplace("cooldown", 20.0);
+  spell.on_ability.push_back(boost);
+  double previous = 0;
+  bool held = false;
+  for (int wis = 40; wis <= 150; ++wis) {
+    const auto b = EvaluateBuild(Sword(), &spell, {.attack = 50, .dexterity = 50, .wisdom = wis}, {}, {});
+    INFO("WIS " << wis);
+    CHECK(b.dps >= previous * (1 - 1e-12));
+    previous = b.dps;
+    held = held || std::ranges::any_of(b.ability->assumptions, [](const std::string& a) {
+             return a.find("held back") != std::string::npos;
+           });
+  }
+  CHECK(held);
 }
 
 TEST_CASE("buffs with different durations are split into pieces") {

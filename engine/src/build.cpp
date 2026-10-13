@@ -93,6 +93,9 @@ double MixedDps(const Weapon& weapon, const Character& character, const Target& 
   return total;
 }
 
+void WithAbility(BuildBreakdown& out, const Weapon& weapon, const Character& with_ability_gear, const Target& target,
+                 const Assumptions& assumptions, const std::vector<ChanceBoost>& boosts);
+
 }  // namespace
 
 BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const Character& character,
@@ -121,13 +124,36 @@ BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const
   }
 
   // The ability sees the weapon's stat bonuses too, as in game, and its
-  // on-shoot stat changes, since the weapon is firing.
-  out.ability =
-      EvaluateAbility(*ability, character.With(weapon.stat_bonuses).With(WhileShooting(weapon)), target, assumptions);
+  // on-shoot stat changes, since the weapon is firing. It's cast as soon as
+  // it can be, unless holding it back a moment does more: an item effect
+  // on casting that a slightly faster rhythm blocks on one more cast.
+  const Character caster = character.With(weapon.stat_bonuses).With(WhileShooting(weapon));
+  const BuildBreakdown without_ability = out;
+  const auto cast_at = [&](double held) {
+    BuildBreakdown b = without_ability;
+    b.ability = EvaluateAbility(*ability, caster, target, assumptions, held);
+    WithAbility(b, weapon, with_ability_gear, target, assumptions, boosts);
+    return b;
+  };
+  out = cast_at(0);
+  for (const double rate : HeldCastRates(*out.ability)) {
+    BuildBreakdown held = cast_at(rate);
+    if (held.dps > out.dps * (1 + 1e-12)) {
+      out = std::move(held);
+    }
+  }
+  return out;
+}
+
+namespace {
+
+// Adds the ability's DPS and its buffs' effect on the weapon to `out`.
+void WithAbility(BuildBreakdown& out, const Weapon& weapon, const Character& with_ability_gear, const Target& target,
+                 const Assumptions& assumptions, const std::vector<ChanceBoost>& boosts) {
   const AbilityBreakdown& a = *out.ability;
   out.dps += a.dps;
   if (a.buffs.empty() || a.casts_per_second <= 0) {
-    return out;
+    return;
   }
   const double no_buffs = out.weapon_dps;
 
@@ -165,8 +191,9 @@ BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const
   out.assumptions.push_back(
       "every cast's buffs and debuffs start together and run their full duration, and a new cast doesn't extend "
       "one that's still up");
-  return out;
 }
+
+}  // namespace
 
 namespace {
 

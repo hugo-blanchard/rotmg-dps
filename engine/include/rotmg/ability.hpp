@@ -116,6 +116,9 @@ struct AbilityBreakdown {
   double dps = 0;
   std::vector<AbilityPart> parts;
   std::vector<Buff> buffs;
+  /// Cooldowns in seconds of item effects that go off on casting but miss
+  /// some casts at this rate, which casting a little slower can avoid.
+  std::vector<double> blocked_cooldowns_s;
   std::vector<Term> terms;
   std::vector<std::string> assumptions;
   /// Effects and tags on this ability the engine doesn't model.
@@ -139,7 +142,14 @@ double CastShare(double chance, double cooldown_s, double casts_per_second);
 /// The hit estimate settings in `assumptions` apply to abilities that fire
 /// projectiles at the target. The ability's on-use effects count when the
 /// gear they need is in `character.worn`.
+/// Cast as often as MP and the cooldown allow, or at `held_casts_per_second`
+/// when that's above 0 and slower: the player holding the cast back.
 AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& character, const Target& target,
-                                 const Assumptions& assumptions);
+                                 const Assumptions& assumptions, double held_casts_per_second = 0);
+
+/// Slower cast rates worth trying than `asap`'s: for each item effect it
+/// blocks on some casts, the fastest rates that block it on one cast fewer,
+/// then two, then three. Fastest first.
+std::vector<double> HeldCastRates(const AbilityBreakdown& asap);
 
 }  // namespace rotmg

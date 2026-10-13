@@ -148,6 +148,24 @@ double CastShare(const Activate& a, double casts_per_second) {
                    casts_per_second);
 }
 
+std::vector<double> HeldCastRates(const AbilityBreakdown& asap) {
+  std::vector<double> out;
+  for (const double cooldown : asap.blocked_cooldowns_s) {
+    // CastShare's blocked casts: casting exactly n times per cooldown
+    // blocks n - 1.
+    const int blocked = static_cast<int>(std::ceil(cooldown * asap.casts_per_second - 1e-9)) - 1;
+    for (int n = blocked; n >= std::max(1, blocked - 2); --n) {
+      const double rate = n / cooldown;
+      if (rate > 0 && rate < asap.casts_per_second) {
+        out.push_back(rate);
+      }
+    }
+  }
+  std::ranges::sort(out, std::greater<>());
+  out.erase(std::unique(out.begin(), out.end()), out.end());
+  return out;
+}
+
 double CastShare(double chance, double cooldown_s, double casts_per_second) {
   if (casts_per_second <= 0 || chance <= 0) {
     return 0;
@@ -159,7 +177,7 @@ double CastShare(double chance, double cooldown_s, double casts_per_second) {
 }
 
 AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& character, const Target& target,
-                                 const Assumptions& assumptions) {
+                                 const Assumptions& assumptions, double held_casts_per_second) {
   AbilityBreakdown out;
   out.unsupported = ability.unsupported;
   const Character c = character.With(ability.stat_bonuses);
@@ -194,6 +212,13 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
                              a.Number("cooldown").value_or(0)});
     }
   }
+  const auto refund_at = [&](double rate) {
+    double refund = 0;
+    for (const MpRefund& r : out.refunds) {
+      refund += r.amount * CastShare(r.chance, r.cooldown_s, rate);
+    }
+    return refund;
+  };
   if (!out.refunds.empty() && out.mp_cost > 0) {
     // The rate MP allows when casting at `rate`, with what comes back at
     // that rate. Casting more often only blocks more refunds behind their
@@ -202,13 +227,6 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
     // over and over can flip between two rates either side of a cooldown
     // step, and more WIS could then land on the lower one.
     const double most = 1 / std::max(out.cooldown_s, 1e-3);
-    const auto refund_at = [&](double rate) {
-      double refund = 0;
-      for (const MpRefund& r : out.refunds) {
-        refund += r.amount * CastShare(r.chance, r.cooldown_s, rate);
-      }
-      return refund;
-    };
     const auto allowed = [&](double rate) {
       const double cost = out.mp_cost - refund_at(rate);
       return cost > 0 ? std::min(most, out.mp_per_second / cost) : most;
@@ -225,6 +243,13 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
     out.casts_per_second = low;
     out.mp_refund_per_cast = refund_at(low);
     assume("MP an item gives back on casting counts for the share of casts it comes back on");
+  }
+  // Casting slower never runs out of MP: refunds only come back on more of
+  // the casts.
+  if (held_casts_per_second > 0 && held_casts_per_second < out.casts_per_second) {
+    out.casts_per_second = held_casts_per_second;
+    out.mp_refund_per_cast = refund_at(held_casts_per_second);
+    assume("the ability is held back a moment so an item's effect on casting isn't blocked by its own cooldown");
   }
 
   // One effect of a cast. An item's effect that goes off on only a share of
@@ -404,6 +429,9 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
     cooldown = a.Number("cooldown").value_or(0);
     if (share <= 0) {
       continue;
+    }
+    if (cooldown > 0 && cooldown * out.casts_per_second > 1 + 1e-9) {
+      out.blocked_cooldowns_s.push_back(cooldown);
     }
     if (share < 1) {
       assume("an item effect that can't go off on every cast counts for the share of casts it can, its buff up for "
