@@ -16,6 +16,7 @@
 #include "parallel.hpp"
 #include "rotmg/dataset.hpp"
 #include "rotmg/enchant.hpp"
+#include "rotmg/evaluate.hpp"
 
 namespace rotmg {
 namespace {
@@ -180,6 +181,8 @@ class BuildSearch {
   Lists CurveShortlists();
   const Enchantment* StatEnchantment(std::size_t slot, const std::string& item, Kind kind, std::size_t stat,
                                      std::size_t from);
+  const Enchantment* ProcEnchantment(std::size_t slot, const std::string& item, std::size_t stat,
+                                     const std::vector<int>& worn);
   std::vector<Build> Plans(const Build& items);
   std::pair<double, Build> BestPlan(const Build& items);
   std::vector<Build> Combinations(const Lists& lists);
@@ -199,6 +202,7 @@ class BuildSearch {
   std::atomic<long> probes_ = 0;
   std::map<std::tuple<std::size_t, std::string, int, std::size_t, std::size_t>, const Enchantment*>
       stat_enchantments_;
+  std::map<std::tuple<std::size_t, std::string, std::size_t>, std::vector<const Enchantment*>> procs_;
   std::map<const Enchantment*, StatEffect> effects_;
   std::map<std::pair<std::size_t, std::string>, Fitting> fitting_;
   // How many items carry each label.
@@ -1552,10 +1556,48 @@ const Enchantment* BuildSearch::StatEnchantment(std::size_t slot, const std::str
   return stat_enchantments_.try_emplace(key, best).first->second;
 }
 
+// The on-shoot boost of a stat that gives the item the most of it, whose
+// gear condition (like wearing an Alien item) `worn` meets.
+const Enchantment* BuildSearch::ProcEnchantment(std::size_t slot, const std::string& item, std::size_t stat,
+                                                const std::vector<int>& worn) {
+  const auto key = std::tuple{slot, item, stat};
+  std::vector<const Enchantment*> procs;
+  bool known = false;
+  {
+    std::lock_guard lock(mu_);
+    if (auto it = procs_.find(key); it != procs_.end()) {
+      procs = it->second;
+      known = true;
+    }
+  }
+  if (!known) {
+    // By how much of the stat each keeps up while it lasts.
+    std::vector<std::pair<double, const Enchantment*>> ranked;
+    for (const Enchantment* e : Fits(slot, item).options) {
+      if (e->mutators.size() != 1 || !e->containers.empty()) continue;
+      const Mutator& m = e->mutators[0];
+      if (m.tag == "AddOnPlayerShootActivate" && m.text == "StatBoostSelf" &&
+          m.attributes.Text("stat") == kOptimizerStats[stat]) {
+        ranked.emplace_back(m.attributes.Number("amount").value_or(0) * m.attributes.Number("duration").value_or(0),
+                            e);
+      }
+    }
+    std::ranges::stable_sort(ranked, std::greater<>{}, &std::pair<double, const Enchantment*>::first);
+    for (const auto& [value, e] : ranked) procs.push_back(e);
+    std::lock_guard lock(mu_);
+    procs_.try_emplace(key, procs);
+  }
+  for (const Enchantment* e : procs) {
+    if (GearWorn(e->mutators[0].attributes, worn)) return e;
+  }
+  return nullptr;
+}
+
 // Consistent enchantment plans for one set of items: every item stacks the
 // same stat with its dual-stat enchantment and takes the same kind of
 // single-stat one (more of that stat, a share of it into itself, or a share
-// of it turned into another stat), keeping its special enchantment. A
+// of it turned into another stat), keeping its special enchantment, and any
+// room left takes on-shoot boosts, each stat once since they don't stack. A
 // conversion only pays once the stat it reads is stacked on several items,
 // which swapping one enchantment at a time never reaches.
 std::vector<Build> BuildSearch::Plans(const Build& items) {
@@ -1577,10 +1619,26 @@ std::vector<Build> BuildSearch::Plans(const Build& items) {
       if (it != d_.enchantments.end()) kept[s].push_back(&*it);
     }
   }
+  std::vector<int> worn;
+  for (std::size_t s = 0; s < kSlotCount; ++s) {
+    const std::string& name = items.items[s];
+    if (name.empty()) continue;
+    if (s == 0) {
+      if (const Weapon* w = FindWeapon(d_, name)) worn.push_back(w->type);
+    } else if (s == 1) {
+      if (const Ability* a = FindAbility(d_, name)) worn.push_back(a->type);
+    } else if (const Gear* g = FindGear(s == 2 ? d_.armors : d_.rings, name)) {
+      worn.push_back(g->type);
+    }
+  }
   std::vector<Build> out;
   for (std::size_t stat : kStacked) {
     for (const auto& [kind, into] : kSingles) {
       Build b = items;
+      std::vector<std::size_t> boosts;
+      for (std::size_t boost : {stat, kAtt, kDex, kWis}) {
+        if (boost != kSpd && std::ranges::find(boosts, boost) == boosts.end()) boosts.push_back(boost);
+      }
       for (std::size_t s = 0; s < kSlotCount; ++s) {
         if (b.items[s].empty()) {
           continue;
@@ -1597,6 +1655,14 @@ std::vector<Build> BuildSearch::Plans(const Build& items) {
         for (const Enchantment* e : kept[s]) add(e);
         add(StatEnchantment(s, b.items[s], Kind::kDual, stat, stat));
         add(StatEnchantment(s, b.items[s], kind, into == kItself ? stat : into, stat));
+        for (auto it = boosts.begin(); it != boosts.end(); ++it) {
+          const std::size_t before = chosen.size();
+          add(ProcEnchantment(s, b.items[s], *it, worn));
+          if (chosen.size() > before) {
+            boosts.erase(it);
+            break;
+          }
+        }
         b.enchants[s].clear();
         for (const Enchantment* e : chosen) b.enchants[s].push_back(e->id);
       }
