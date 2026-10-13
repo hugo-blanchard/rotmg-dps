@@ -324,10 +324,11 @@
         {#if estimateText}<p class="hint">{estimateText}</p>{/if}
       {/if}
       <p class="hint">
-        Against the target and distance below, using the calculated numbers. It tries items one or two slots at a time
-        and whole sets, and refits every item's enchantments around each change. Then it starts again from the
-        ability that scales best with each stat you build around, since some builds only work when everything feeds
-        that ability. It can still miss a better build, but never returns one worse than yours.
+        Against the target and distance below, using the calculated numbers. It first measures how each item's damage
+        grows with each stat and keeps the items that are best somewhere, like a spell that wins at low WIS next to one
+        that wins at high WIS. It tries the most promising sets of those with whole enchantment plans, like stacking ATT
+        and turning it into DEX, then improves the best one or two slots at a time. It can still miss a better build,
+        but never returns one worse than yours.
       </p>
       {#if shown && !shown.ok}
         <p role="alert">{shown.error}</p>
