@@ -170,6 +170,7 @@ class BuildSearch {
   struct Variant {
     std::string item;
     std::vector<std::string> enchants;
+    bool operator==(const Variant&) const = default;
   };
   using Lists = std::array<std::vector<Variant>, kSlotCount>;
   enum class Kind { kDual, kSingle, kShare };
@@ -1425,6 +1426,8 @@ BuildSearch::Lists BuildSearch::CurveShortlists() {
   }
   const std::size_t tops = p_.thorough ? 4 : 3;
   constexpr std::size_t kPartners = 2;
+  // A slot whose partners are the same as last pass would come out the same.
+  std::array<std::vector<std::array<Variant, kSlotCount>>, kSlotCount> last_contexts;
   for (int pass = 0; pass < 2; ++pass) {
     for (std::size_t slot = 0; slot < kSlotCount; ++slot) {
       if (candidates_[slot].size() <= 1) {
@@ -1445,6 +1448,12 @@ BuildSearch::Lists BuildSearch::CurveShortlists() {
         for (const Variant& a : partners(1))
           for (const Variant& ar : partners(2))
             for (const Variant& r : partners(3)) contexts.push_back({w, a, ar, r});
+      if (contexts == last_contexts[slot]) {
+        std::lock_guard lock(mu_);
+        parts_done_[0] = std::min(1.0, parts_done_[0] + 1.0 / 8);
+        continue;
+      }
+      last_contexts[slot] = contexts;
       const std::vector<Stats> points = CurvePoints(slot);
       const auto& vs = variants[slot];
       const std::size_t cells = contexts.size() * points.size();
