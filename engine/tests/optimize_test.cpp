@@ -323,3 +323,57 @@ TEST_CASE("the search finds the same builds every time it runs") {
     }
   }
 }
+
+TEST_CASE("a locked weapon's special is planned around") {
+  // Heavy Swing, which any weapon takes, doubles the damage at 80 DEX or
+  // more and halves it below. Only DEX on every item gets there, so adding
+  // it to a build one enchantment at a time always looks worse: only a plan
+  // that keeps it while stacking DEX finds it, which needs the locked
+  // weapon's specials.
+  Dataset d = World();
+  Enchantment& heavy = d.enchantments.emplace_back();
+  heavy.id = "Heavy_Swing";
+  heavy.name = "Heavy_Swing";
+  heavy.compatible = {"WEAPON"};
+  heavy.labels = {"HEAVY"};
+  heavy.incompatible_labels = {"HEAVY"};
+  rotmg::Mutator swing;
+  swing.tag = "ActivateOnEquip";
+  swing.text = "DamageMultSelf";
+  swing.attributes.params.emplace("amount", 0.0);
+  heavy.mutators.push_back(swing);
+  d.enchantment_pools["Pool"].insert("Heavy_Swing");
+  const auto score = [&d](const OptimizerBuild& b, const std::array<int, 8>& extra) -> std::optional<double> {
+    std::optional<double> dps = Dps(d, b, extra);
+    if (!dps || std::ranges::find(b.enchants[0], "Heavy_Swing") == b.enchants[0].end()) {
+      return dps;
+    }
+    double dex = 50 + extra[1];
+    for (const auto& list : b.enchants) {
+      for (const std::string& id : list) {
+        const auto e = std::ranges::find(d.enchantments, id, &Enchantment::id);
+        for (const rotmg::Mutator& m : e->mutators) {
+          if (m.attributes.Text("stat") == "DEX") dex += *m.attributes.Number("amount");
+        }
+      }
+    }
+    return *dps * (dex >= 80 ? 2 : 0.5);
+  };
+  double best = 0;
+  for (const char* ability : {"Battle Cry", "Rampart"}) {
+    for (const auto& ew : Choices(d, "Stone Blade", 2))
+      for (const auto& ea : Choices(d, ability, 2))
+        for (const auto& er : Choices(d, "Mail", 2))
+          for (const auto& eg : Choices(d, "Band", 2)) {
+            best = std::max(best, *score({{"Stone Blade", ability, "Mail", "Band"}, {ew, ea, er, eg}}, {}));
+          }
+  }
+  OptimizerProblem p = Problem(d, 2);
+  p.candidates[0] = {"Stone Blade"};
+  p.start.items[0] = "Stone Blade";
+  p.start.enchants[0] = {"Attack"};
+  p.score = score;
+  const auto found = rotmg::SearchBuilds(d, p);
+  REQUIRE(found.has_value());
+  CHECK(found->builds[0].first == Catch::Approx(best));
+}

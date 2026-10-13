@@ -1844,12 +1844,45 @@ std::vector<Build> BuildSearch::Combinations(const Lists& lists) {
     return b;
   };
   std::map<Combo, std::pair<double, Build>> rated;
+  // Each weapon's and ability's enchantments of its own to plan around:
+  // the curves' variants, or for a slot they didn't look at (a locked one),
+  // its variants now. A weapon's best special can depend on the rest of
+  // the build, like a slow, hard-hitting one that needs DEX from the plan.
+  std::array<std::map<std::string, std::vector<std::vector<std::string>>>, 2> specials;
+  if (p_.enchantments == Mode::kBest) {
+    Build reference = p_.start;
+    for (auto& list : reference.enchants) list.clear();
+    for (std::size_t s = 0; s < 2; ++s) {
+      const std::vector<Variant> all = candidates_[s].size() <= 1 ? Variants(s, reference) : lists[s];
+      for (const Variant& v : all) {
+        auto& known = specials[s][v.item];
+        if (std::ranges::find(known, v.enchants) == known.end()) known.push_back(v.enchants);
+      }
+    }
+  }
+  // A combination's best plan, with each of its weapon's and ability's
+  // specials in turn.
+  const auto best_plan = [&](const Combo& c) {
+    const Build b = build_of(c);
+    std::pair<double, Build> best = BestPlan(b);
+    for (std::size_t s = 0; s < 2; ++s) {
+      const auto it = specials[s].find(b.items[s]);
+      if (it == specials[s].end()) continue;
+      for (const auto& enchants : it->second) {
+        if (enchants == b.enchants[s]) continue;
+        Build other = b;
+        other.enchants[s] = enchants;
+        if (auto plan = BestPlan(other); plan.first > best.first) best = std::move(plan);
+      }
+    }
+    return best;
+  };
   const auto rate = [&](std::vector<Combo> list) {
     std::ranges::sort(list);
     list.erase(std::unique(list.begin(), list.end()), list.end());
     std::erase_if(list, [&](const Combo& c) { return rated.contains(c); });
     std::vector<std::pair<double, Build>> found(list.size());
-    ParallelFor(list.size(), [&](std::size_t i) { found[i] = BestPlan(build_of(list[i])); });
+    ParallelFor(list.size(), [&](std::size_t i) { found[i] = best_plan(list[i]); });
     for (std::size_t i = 0; i < list.size(); ++i) rated.emplace(list[i], std::move(found[i]));
   };
   const auto best_first = [&](std::vector<Combo> list) {
