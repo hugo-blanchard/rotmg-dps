@@ -177,6 +177,7 @@ class BuildSearch {
   using Lists = std::array<std::vector<Variant>, kSlotCount>;
   enum class Kind { kDual, kSingle, kShare };
   std::optional<double> Probe(const Build& b, const Stats& extra);
+  std::vector<std::optional<double>> ProbeAll(const Build& b, const std::vector<Stats>& extras);
   std::vector<Variant> Variants(std::size_t slot, const Build& reference);
   std::vector<Stats> CurvePoints(std::size_t slot) const;
   Lists CurveShortlists();
@@ -1324,6 +1325,23 @@ std::optional<double> BuildSearch::Probe(const Build& b, const Stats& extra) {
   return p_.score(b, extra);
 }
 
+// The same at several stat points at once.
+std::vector<std::optional<double>> BuildSearch::ProbeAll(const Build& b, const std::vector<Stats>& extras) {
+  if (!p_.score_points) {
+    std::vector<std::optional<double>> out;
+    for (const Stats& extra : extras) out.push_back(Probe(b, extra));
+    return out;
+  }
+  if (stopping_) {
+    throw Stopped{};
+  }
+  if (p_.progress && !OnHelperThread()) {
+    Report();
+  }
+  probes_ += static_cast<long>(extras.size());
+  return p_.score_points(b, extras);
+}
+
 // The slot's candidates, each bare, with each of its own enchantments, and,
 // for weapons and abilities, with the special enchantments that help it most
 // on the reference build: a tradeoff like Overwhelming Strikes is worth far
@@ -1380,10 +1398,14 @@ std::vector<BuildSearch::Variant> BuildSearch::Variants(std::size_t slot, const 
   };
   const std::size_t n = points.size();
   std::vector<std::optional<double>> bare(bare_count * n);
-  ParallelFor(bare.size(), [&](std::size_t k) { bare[k] = Probe(with(k / n, nullptr), points[k % n]); });
+  ParallelFor(bare_count, [&](std::size_t i) {
+    const auto scores = ProbeAll(with(i, nullptr), points);
+    std::ranges::copy(scores, bare.begin() + static_cast<std::ptrdiff_t>(i * n));
+  });
   std::vector<std::optional<double>> gained(tries.size() * n);
-  ParallelFor(gained.size(), [&](std::size_t k) {
-    gained[k] = Probe(with(tries[k / n].first, tries[k / n].second), points[k % n]);
+  ParallelFor(tries.size(), [&](std::size_t t) {
+    const auto scores = ProbeAll(with(tries[t].first, tries[t].second), points);
+    std::ranges::copy(scores, gained.begin() + static_cast<std::ptrdiff_t>(t * n));
   });
   for (std::size_t p = 0; p < n; ++p) {
     std::map<std::size_t, std::pair<double, const Enchantment*>> best_special;
@@ -1504,17 +1526,20 @@ BuildSearch::Lists BuildSearch::CurveShortlists() {
       const auto& vs = variants[slot];
       const std::size_t cells = contexts.size() * points.size();
       std::vector<std::vector<double>> score(vs.size(), std::vector<double>(cells, -1));
-      ParallelFor(vs.size() * cells, [&](std::size_t n) {
-        const std::size_t i = n / cells;
-        const std::size_t cell = n % cells;
+      ParallelFor(vs.size() * contexts.size(), [&](std::size_t n) {
+        const std::size_t i = n / contexts.size();
+        const std::size_t context = n % contexts.size();
         Build b;
         for (std::size_t s = 0; s < kSlotCount; ++s) {
-          const Variant& v = s == slot ? vs[i] : contexts[cell / points.size()][s];
+          const Variant& v = s == slot ? vs[i] : contexts[context][s];
           b.items[s] = v.item;
           b.enchants[s] = v.enchants;
         }
-        if (const auto v = Probe(b, points[cell % points.size()])) {
-          score[i][cell] = *v;
+        const auto scores = ProbeAll(b, points);
+        for (std::size_t p = 0; p < points.size(); ++p) {
+          if (scores[p]) {
+            score[i][context * points.size() + p] = *scores[p];
+          }
         }
       });
       std::set<std::size_t> kept;

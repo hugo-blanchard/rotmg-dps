@@ -61,6 +61,12 @@ struct OptimizerProblem {
   /// A build's DPS with `extra` added to its stats (in kOptimizerStats
   /// order), or nothing for a build the engine refuses.
   std::function<std::optional<double>(const OptimizerBuild&, const std::array<int, 8>& extra)> score;
+  /// The same for one build at several stat points, sharing the work their
+  /// items and enchantments decide. Optional: without it, `score` is called
+  /// for each point.
+  std::function<std::vector<std::optional<double>>(const OptimizerBuild&,
+                                                   const std::vector<std::array<int, 8>>& extras)>
+      score_points;
 };
 
 /// Nothing when the start itself doesn't evaluate.

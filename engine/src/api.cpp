@@ -272,16 +272,25 @@ RequestSpec ReadSpec(const json& req) {
   return spec;
 }
 
-// The request a spec describes, with everything looked up. Throws on an
+// What a request's items and enchantments decide, whatever its base stats.
+struct Prepared {
+  // Its character holds only what gear, sets and enchantments add.
+  Request request;
+  std::vector<Enchanted::Relative> relative;
+  std::vector<Enchanted::Relative> item_relative;
+  const Class* cls = nullptr;
+};
+
+// Everything in the spec but its base stats, looked up. Throws on an
 // unknown armor, ring or enchantment; an unknown weapon leaves `weapon` null.
-Request Assemble(const RequestSpec& spec, const Dataset& dataset) {
-  Request r;
+Prepared Prepare(const RequestSpec& spec, const Dataset& dataset) {
+  Prepared out;
+  Request& r = out.request;
   r.weapon = FindWeapon(dataset, spec.weapon);
   if (spec.ability) {
     r.ability = FindAbility(dataset, *spec.ability);
     r.unknown_ability = r.ability == nullptr;
   }
-  r.character = spec.character;
   r.target = spec.target;
   r.assumptions = spec.assumptions;
   // The armor and ring add their stats like the weapon and ability do.
@@ -437,42 +446,10 @@ Request Assemble(const RequestSpec& spec, const Dataset& dataset) {
     r.enchanted_ability = std::make_shared<const Ability>(std::move(cheaper));
     r.ability = r.enchanted_ability.get();
   }
-  // Relative bonuses from enchantments and items all come from the stats
-  // before any of them, so they don't feed each other.
-  if ((!relative.empty() || !item_relative.empty()) && r.weapon != nullptr) {
-    const auto found = std::ranges::find(dataset.classes, spec.class_id, &Class::id);
-    const Class* cls = found == dataset.classes.end() ? nullptr : &*found;
-    const bool of_bonus = !relative.empty() || std::ranges::any_of(item_relative, [](const auto& x) {
-      return !x.of_total;
-    });
-    if (cls == nullptr && of_bonus) {
-      r.gear_unsupported.emplace_back("relative stat bonuses, which need the class");
-    }
-    Character everything = r.character.With(r.weapon->stat_bonuses);
-    if (r.ability != nullptr) {
-      everything = everything.With(r.ability->stat_bonuses);
-    }
-    const std::vector<StatBonus> gains = RelativeBonuses(relative, cls, everything);
-    r.item_stats = RelativeBonuses(item_relative, cls, everything);
-    r.character = r.character.With(gains).With(r.item_stats);
-    for (const StatBonus& g : gains) {
-      const auto same = std::ranges::find(r.enchantment_stats, g.stat, &StatBonus::stat);
-      if (same == r.enchantment_stats.end()) {
-        r.enchantment_stats.push_back(g);
-      } else {
-        same->amount += g.amount;
-      }
-    }
-    if (!relative.empty() && cls != nullptr) {
-      r.notes.emplace_back(
-          "relative enchantments count stats above the class's max as bonus stats, as on a maxed character, and "
-          "round down");
-    }
-    if (!r.item_stats.empty()) {
-      r.notes.emplace_back("an item's share of one stat added to another rounds down, and counts with relative "
-                           "enchantments in one step");
-    }
-  }
+  out.relative = std::move(relative);
+  out.item_relative = std::move(item_relative);
+  const auto found = std::ranges::find(dataset.classes, spec.class_id, &Class::id);
+  out.cls = found == dataset.classes.end() ? nullptr : &*found;
   // The other gear's on-shoot effects go off as the weapon fires, like its
   // own, and some create their projectiles.
   const auto join = [&](const std::vector<Activate>& on_shoot, const std::map<int, Projectile>& created,
@@ -523,7 +500,67 @@ Request Assemble(const RequestSpec& spec, const Dataset& dataset) {
       r.ability = r.enchanted_ability.get();
     }
   }
+  return out;
+}
+
+// The prepared request on a character with `base` stats: they add to what
+// the gear gives, then relative bonuses come from the totals.
+Request Finish(const Prepared& prepared, const Character& base) {
+  Request r = prepared.request;
+  const std::vector<Enchanted::Relative>& relative = prepared.relative;
+  const std::vector<Enchanted::Relative>& item_relative = prepared.item_relative;
+  const Class* cls = prepared.cls;
+  Character& c = r.character;
+  c.attack += base.attack;
+  c.dexterity += base.dexterity;
+  c.wisdom += base.wisdom;
+  c.vitality += base.vitality;
+  c.defense += base.defense;
+  c.speed += base.speed;
+  c.max_hit_points += base.max_hit_points;
+  c.max_magic_points += base.max_magic_points;
+  c.status = base.status;
+  // Relative bonuses from enchantments and items all come from the stats
+  // before any of them, so they don't feed each other.
+  if ((!relative.empty() || !item_relative.empty()) && r.weapon != nullptr) {
+    const bool of_bonus = !relative.empty() || std::ranges::any_of(item_relative, [](const auto& x) {
+      return !x.of_total;
+    });
+    if (cls == nullptr && of_bonus) {
+      r.gear_unsupported.emplace_back("relative stat bonuses, which need the class");
+    }
+    Character everything = r.character.With(r.weapon->stat_bonuses);
+    if (r.ability != nullptr) {
+      everything = everything.With(r.ability->stat_bonuses);
+    }
+    const std::vector<StatBonus> gains = RelativeBonuses(relative, cls, everything);
+    r.item_stats = RelativeBonuses(item_relative, cls, everything);
+    r.character = r.character.With(gains).With(r.item_stats);
+    for (const StatBonus& g : gains) {
+      const auto same = std::ranges::find(r.enchantment_stats, g.stat, &StatBonus::stat);
+      if (same == r.enchantment_stats.end()) {
+        r.enchantment_stats.push_back(g);
+      } else {
+        same->amount += g.amount;
+      }
+    }
+    if (!relative.empty() && cls != nullptr) {
+      r.notes.emplace_back(
+          "relative enchantments count stats above the class's max as bonus stats, as on a maxed character, and "
+          "round down");
+    }
+    if (!r.item_stats.empty()) {
+      r.notes.emplace_back("an item's share of one stat added to another rounds down, and counts with relative "
+                           "enchantments in one step");
+    }
+  }
   return r;
+}
+
+// The request a spec describes, with everything looked up. Throws on an
+// unknown armor, ring or enchantment; an unknown weapon leaves `weapon` null.
+Request Assemble(const RequestSpec& spec, const Dataset& dataset) {
+  return Finish(Prepare(spec, dataset), spec.character);
 }
 
 // Reads the parts of a request Evaluate and StartSimulation share. Throws on
@@ -1246,11 +1283,10 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
     constexpr std::array<int Character::*, 8> kStatFields = {
         &Character::attack,   &Character::dexterity, &Character::speed,          &Character::wisdom,
         &Character::vitality, &Character::defense,   &Character::max_hit_points, &Character::max_magic_points};
-    const auto read = [&](const OptimizerBuild& b, const std::array<int, 8>& extra) -> std::optional<Request> {
+    // The build's items and enchantments looked up, or nothing for a build
+    // the engine rejects.
+    const auto prepare = [&](const OptimizerBuild& b) -> std::optional<Prepared> {
       RequestSpec spec = base_spec;
-      for (std::size_t i = 0; i < extra.size(); ++i) {
-        spec.character.*kStatFields[i] += extra[i];
-      }
       const auto named = [](const std::string& name) {
         return name.empty() ? std::nullopt : std::optional<std::string>(name);
       };
@@ -1264,8 +1300,8 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
       (*spec.gear_enchantments)["armor"] = b.enchants[2];
       (*spec.gear_enchantments)["ring"] = b.enchants[3];
       try {
-        Request p = Assemble(spec, d);
-        if (p.weapon != nullptr && !p.unknown_ability) {
+        Prepared p = Prepare(spec, d);
+        if (p.request.weapon != nullptr && !p.request.unknown_ability) {
           return p;
         }
       } catch (const std::exception&) {
@@ -1274,6 +1310,17 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
       }
       return std::nullopt;
     };
+    const auto finish = [&](const Prepared& p, const std::array<int, 8>& extra) {
+      Character base = base_spec.character;
+      for (std::size_t i = 0; i < extra.size(); ++i) {
+        base.*kStatFields[i] += extra[i];
+      }
+      return Finish(p, base);
+    };
+    const auto read = [&](const OptimizerBuild& b, const std::array<int, 8>& extra) -> std::optional<Request> {
+      const std::optional<Prepared> p = prepare(b);
+      return p ? std::optional<Request>(finish(*p, extra)) : std::nullopt;
+    };
     const auto evaluate = [](const Request& p) {
       return EvaluateBuild(*p.weapon, p.ability, p.character, p.target, p.assumptions);
     };
@@ -1281,20 +1328,29 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
       return EvaluateBurst(*p.weapon, p.ability, p.character, p.target, p.assumptions, *burst);
     };
     const auto ability_dps = [](const BuildBreakdown& b) { return b.ability ? b.ability->dps : 0.0; };
-    problem.score = [&](const OptimizerBuild& b, const std::array<int, 8>& extra) -> std::optional<double> {
-      const std::optional<Request> p = read(b, extra);
-      if (!p) {
-        return std::nullopt;
-      }
+    const auto score_of = [&](const Request& p) {
       // Ties, common when a weight is 0, go to the build with the most
       // damage in all: a millionth of it is enough to tell them apart.
       constexpr double kTieBreak = 1e-6;
       if (burst) {
-        const BurstBreakdown e = evaluate_burst(*p);
+        const BurstBreakdown e = evaluate_burst(p);
         return weapon_weight * e.weapon_damage + ability_weight * e.ability_damage + kTieBreak * e.damage;
       }
-      const BuildBreakdown e = evaluate(*p);
+      const BuildBreakdown e = evaluate(p);
       return weapon_weight * e.weapon_dps + ability_weight * ability_dps(e) + kTieBreak * e.dps;
+    };
+    problem.score = [&](const OptimizerBuild& b, const std::array<int, 8>& extra) -> std::optional<double> {
+      const std::optional<Request> p = read(b, extra);
+      return p ? std::optional<double>(score_of(*p)) : std::nullopt;
+    };
+    problem.score_points = [&](const OptimizerBuild& b, const std::vector<std::array<int, 8>>& extras) {
+      std::vector<std::optional<double>> out(extras.size());
+      if (const std::optional<Prepared> p = prepare(b)) {
+        for (std::size_t i = 0; i < extras.size(); ++i) {
+          out[i] = score_of(finish(*p, extras[i]));
+        }
+      }
+      return out;
     };
 
     const auto builds = [&](const OptimizerResult& result) {
