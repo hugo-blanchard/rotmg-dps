@@ -41,15 +41,21 @@ double WeaponDps(const Weapon& weapon, Character character, Target target, const
 
 // The mixes of the weapon's chance boosts, each up or not on its own, as
 // the character each makes and how often it comes up. Boosts of stats the
-// weapon doesn't read leave it as it is, so mixes that differ only in those
-// come back as one: ATT and DEX count, and any stat an on-shoot effect
-// scales with.
+// weapon doesn't read leave it as it is, so they're left out, and mixes
+// that come to the same stats come back as one: ATT and DEX count, and any
+// stat an on-shoot effect scales with.
 std::vector<std::pair<double, Character>> BoostMixes(const Weapon& weapon, const Character& character,
-                                                     const std::vector<ChanceBoost>& boosts) {
+                                                     const std::vector<ChanceBoost>& all_boosts) {
   std::vector<std::string> read = {"ATT", "DEX"};
   for (const Activate& a : weapon.on_shoot) {
     if (const std::string stat = a.Text("scalingStat"); !stat.empty() && std::ranges::find(read, stat) == read.end()) {
       read.push_back(stat);
+    }
+  }
+  std::vector<ChanceBoost> boosts;
+  for (const ChanceBoost& b : all_boosts) {
+    if (std::ranges::find(read, b.bonus.stat) != read.end()) {
+      boosts.push_back(b);
     }
   }
   std::map<std::vector<int>, std::size_t> seen;
