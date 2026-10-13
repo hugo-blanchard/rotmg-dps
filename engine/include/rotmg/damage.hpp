@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "rotmg/model.hpp"
 
 // Damage of a single hit. Rules come from the RealmEye wiki pages
@@ -27,11 +29,13 @@ struct Target {
 
 /// An exact fraction, so per-hit damage can be rounded down without floating
 /// point error. In doubles, a roll of 50 at 4 ATT is 28.999... instead of 29.
+/// 64-bit: with a damage bonus and Damaging, a big roll times the numerator
+/// passes 2^31.
 struct Multiplier {
-  int num = 1;
-  int den = 1;
+  std::int64_t num = 1;
+  std::int64_t den = 1;
 
-  double Value() const { return static_cast<double>(num) / den; }
+  double Value() const { return static_cast<double>(num) / static_cast<double>(den); }
 };
 
 /// (ATT + 25) / 50. Weak makes it 0.5 whatever the ATT. Damaging adds 25%

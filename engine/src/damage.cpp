@@ -18,7 +18,7 @@ Multiplier DamageMultiplier(int attack, const PlayerStatus& status) {
 }
 
 int HitDamage(int roll, Multiplier multiplier) {
-  return roll * multiplier.num / multiplier.den;
+  return static_cast<int>(roll * multiplier.num / multiplier.den);
 }
 
 int EffectiveDefense(const Target& target, bool armor_piercing) {
@@ -48,7 +48,7 @@ Multiplier WithDamageBonus(Multiplier multiplier, double bonus) {
   if (bonus == 1) {
     return multiplier;
   }
-  return {multiplier.num * static_cast<int>(std::lround(bonus * 10000)), multiplier.den * 10000};
+  return {multiplier.num * std::lround(bonus * 10000), multiplier.den * 10000};
 }
 
 double ExpectedHitDamage(const Projectile& projectile, Multiplier multiplier, const Target& target) {

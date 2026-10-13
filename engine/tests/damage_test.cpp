@@ -43,6 +43,12 @@ TEST_CASE("hit damage is rounded down exactly") {
   CHECK(rotmg::HitDamage(7, DamageMultiplier(0, {})) == 3);
 }
 
+TEST_CASE("a big roll with a damage bonus and Damaging doesn't overflow") {
+  // 600 x 1125 x 13500 is past 2^31: the hit came out negative.
+  const rotmg::Multiplier m = rotmg::WithDamageBonus(DamageMultiplier(200, {.damaging = true}), 1.35);
+  CHECK(rotmg::HitDamage(600, m) == 4556);
+}
+
 TEST_CASE("Armored adds half the DEF, rounded down") {
   CHECK(EffectiveDefense({.defense = 25, .armored = true}, false) == 37);
 }
