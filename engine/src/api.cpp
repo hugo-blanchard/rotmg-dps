@@ -187,35 +187,63 @@ struct Request {
   std::vector<StatBonus> item_stats;
 };
 
-// Reads the parts of a request Evaluate and StartSimulation share. Throws on
-// malformed JSON; an unknown weapon leaves `weapon` null.
-Request ParseRequest(const json& req, const Dataset& dataset) {
-  Request r;
-  r.weapon = FindWeapon(dataset, req.at("weapon").get<std::string>());
+// What a request asks for, as read from its JSON, before anything is looked
+// up. The optimizer fills one in for each build it scores, which costs far
+// less than writing and reading JSON.
+struct RequestSpec {
+  std::string weapon;
+  std::optional<std::string> ability;
+  std::optional<std::string> armor;
+  std::optional<std::string> ring;
+  std::string class_id;
+  // The base stats and status; gear and enchantments add to these.
+  Character character;
+  Target target;
+  Assumptions assumptions;
+  std::vector<int> wearing;
+  bool artifacts = true;
+  // Enchantment ids on the weapon, and on the other gear by "ability",
+  // "armor" and "ring"; missing ones aren't asked about.
+  std::optional<std::vector<std::string>> enchantments;
+  std::optional<std::map<std::string, std::vector<std::string>, std::less<>>> gear_enchantments;
+};
+
+// Throws on malformed JSON.
+RequestSpec ReadSpec(const json& req) {
+  RequestSpec spec;
+  spec.weapon = req.at("weapon").get<std::string>();
   if (auto it = req.find("ability"); it != req.end() && !it->is_null()) {
-    r.ability = FindAbility(dataset, it->get<std::string>());
-    r.unknown_ability = r.ability == nullptr;
+    spec.ability = it->get<std::string>();
   }
-  r.character.attack = req.value("attack", 0);
-  r.character.dexterity = req.value("dexterity", 0);
-  r.character.wisdom = req.value("wisdom", 0);
-  r.character.vitality = req.value("vitality", 0);
-  r.character.defense = req.value("defense", 0);
-  r.character.speed = req.value("speed", 0);
-  r.character.max_hit_points = req.value("maxHitPoints", 0);
-  r.character.max_magic_points = req.value("maxMagicPoints", 0);
+  for (const auto& [key, into] : {std::pair{"armor", &spec.armor}, {"ring", &spec.ring}}) {
+    if (auto it = req.find(key); it != req.end() && !it->is_null()) {
+      *into = it->get<std::string>();
+    }
+  }
+  if (auto it = req.find("class"); it != req.end() && it->is_string()) {
+    spec.class_id = it->get<std::string>();
+  }
+  Character& c = spec.character;
+  c.attack = req.value("attack", 0);
+  c.dexterity = req.value("dexterity", 0);
+  c.wisdom = req.value("wisdom", 0);
+  c.vitality = req.value("vitality", 0);
+  c.defense = req.value("defense", 0);
+  c.speed = req.value("speed", 0);
+  c.max_hit_points = req.value("maxHitPoints", 0);
+  c.max_magic_points = req.value("maxMagicPoints", 0);
   if (auto it = req.find("status"); it != req.end()) {
-    r.character.status.weak = it->value("weak", false);
-    r.character.status.damaging = it->value("damaging", false);
-    r.character.status.berserk = it->value("berserk", false);
-    r.character.status.dazed = it->value("dazed", false);
+    c.status.weak = it->value("weak", false);
+    c.status.damaging = it->value("damaging", false);
+    c.status.berserk = it->value("berserk", false);
+    c.status.dazed = it->value("dazed", false);
   }
   if (auto it = req.find("target"); it != req.end()) {
-    r.target.defense = it->value("defense", 0);
-    r.target.armored = it->value("armored", false);
-    r.target.armor_broken = it->value("armorBroken", false);
-    r.target.exposed = it->value("exposed", false);
-    r.target.cursed = it->value("cursed", false);
+    spec.target.defense = it->value("defense", 0);
+    spec.target.armored = it->value("armored", false);
+    spec.target.armor_broken = it->value("armorBroken", false);
+    spec.target.exposed = it->value("exposed", false);
+    spec.target.cursed = it->value("cursed", false);
   }
   const auto read_hits = [&req](const char* key, std::vector<std::optional<double>>& out) {
     if (auto it = req.find(key); it != req.end()) {
@@ -224,19 +252,46 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
       }
     }
   };
-  read_hits("hitsPerVolley", r.assumptions.hits_per_volley);
-  read_hits("curatedHitsPerVolley", r.assumptions.curated_hits_per_volley);
+  read_hits("hitsPerVolley", spec.assumptions.hits_per_volley);
+  read_hits("curatedHitsPerVolley", spec.assumptions.curated_hits_per_volley);
   if (auto it = req.find("hitModel"); it != req.end()) {
-    r.assumptions.distance = it->value("distance", 4.0);
-    r.assumptions.target_radius = it->value("radius", kDefaultTargetRadius);
+    spec.assumptions.distance = it->value("distance", 4.0);
+    spec.assumptions.target_radius = it->value("radius", kDefaultTargetRadius);
   }
+  spec.wearing = req.value("wearing", std::vector<int>{});
+  spec.artifacts = req.value("artifacts", true);
+  if (auto it = req.find("enchantments"); it != req.end()) {
+    spec.enchantments = it->get<std::vector<std::string>>();
+  }
+  if (auto it = req.find("gearEnchantments"); it != req.end()) {
+    spec.gear_enchantments.emplace();
+    for (const auto& [key, ids] : it->items()) {
+      (*spec.gear_enchantments)[key] = ids.get<std::vector<std::string>>();
+    }
+  }
+  return spec;
+}
+
+// The request a spec describes, with everything looked up. Throws on an
+// unknown armor, ring or enchantment; an unknown weapon leaves `weapon` null.
+Request Assemble(const RequestSpec& spec, const Dataset& dataset) {
+  Request r;
+  r.weapon = FindWeapon(dataset, spec.weapon);
+  if (spec.ability) {
+    r.ability = FindAbility(dataset, *spec.ability);
+    r.unknown_ability = r.ability == nullptr;
+  }
+  r.character = spec.character;
+  r.target = spec.target;
+  r.assumptions = spec.assumptions;
   // The armor and ring add their stats like the weapon and ability do.
-  std::vector<int> worn = req.value("wearing", std::vector<int>{});
-  for (const auto& [key, list, into] : {std::tuple{"armor", &dataset.armors, &r.armor}, {"ring", &dataset.rings, &r.ring}}) {
-    if (auto it = req.find(key); it != req.end() && !it->is_null()) {
-      *into = FindGear(*list, it->get<std::string>());
+  std::vector<int> worn = spec.wearing;
+  for (const auto& [key, list, into, name] : {std::tuple{"armor", &dataset.armors, &r.armor, &spec.armor},
+                                              {"ring", &dataset.rings, &r.ring, &spec.ring}}) {
+    if (*name) {
+      *into = FindGear(*list, **name);
       if (*into == nullptr) {
-        throw std::runtime_error(std::string("no ") + key + " named \"" + it->get<std::string>() + "\"");
+        throw std::runtime_error(std::string("no ") + key + " named \"" + **name + "\"");
       }
       r.character = r.character.With((*into)->stat_bonuses);
       worn.push_back((*into)->type);
@@ -262,13 +317,14 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
   r.character.worn = worn;
   // Reads one item's enchantment ids, checking the item can have each, that
   // none clash and that they fit in its slots.
-  const bool artifacts = req.value("artifacts", true);
-  const auto pick = [&](const json& ids, const std::string& item, const auto& obtained, int slots) {
+  const bool artifacts = spec.artifacts;
+  const auto pick = [&](const std::vector<std::string>& ids, const std::string& item, const auto& obtained,
+                        int slots) {
     std::vector<const Enchantment*> picked;
-    for (const json& id : ids) {
-      const auto e = std::ranges::find(dataset.enchantments, id.get<std::string>(), &Enchantment::id);
+    for (const std::string& id : ids) {
+      const auto e = std::ranges::find(dataset.enchantments, id, &Enchantment::id);
       if (e == dataset.enchantments.end()) {
-        throw std::runtime_error("no enchantment named \"" + id.get<std::string>() + "\"");
+        throw std::runtime_error("no enchantment named \"" + id + "\"");
       }
       const Obtained how = obtained(*e);
       if (how == Obtained::kNever && Legacy(*e)) {
@@ -298,12 +354,12 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
     }
     return picked;
   };
-  const auto on_weapon = req.find("enchantments");
-  const auto on_gear = req.find("gearEnchantments");
+  const auto& on_weapon = spec.enchantments;
+  const auto& on_gear = spec.gear_enchantments;
   std::vector<Enchanted::Relative> relative;
-  if ((on_weapon != req.end() || on_gear != req.end()) && r.weapon != nullptr) {
+  if ((on_weapon || on_gear) && r.weapon != nullptr) {
     const std::vector<const Enchantment*> picked =
-        on_weapon == req.end()
+        !on_weapon
             ? std::vector<const Enchantment*>{}
             : pick(*on_weapon, r.weapon->name,
                    [&](const Enchantment& e) { return HowObtained(e, *r.weapon, dataset); },
@@ -312,20 +368,20 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
     // A named item takes what its own labels and pool allow; otherwise any
     // item of the slot.
     const auto on_slot = [&](const char* key, const char* label, const auto* item) {
-      const auto ids = on_gear->find(key);
+      const auto ids = on_gear->find(std::string_view(key));
       if (ids == on_gear->end()) {
         return;
       }
       if (item == nullptr) {
-        gear.emplace_back(label, pick(*ids, std::string("your ") + key,
+        gear.emplace_back(label, pick(ids->second, std::string("your ") + key,
                                       [&](const Enchantment& e) { return HowObtainedOnSlot(e, label); }, 4));
       } else {
-        gear.emplace_back(label, pick(*ids, item->name,
+        gear.emplace_back(label, pick(ids->second, item->name,
                                       [&](const Enchantment& e) { return HowObtained(e, *item, dataset); },
                                       EnchantmentSlots(item->enchanting, dataset)));
       }
     };
-    if (on_gear != req.end()) {
+    if (on_gear) {
       on_slot("ring", "RING", r.ring);
       on_slot("armor", "ARMOR", r.armor);
       on_slot("ability", "ABILITY", r.ability);
@@ -384,9 +440,7 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
   // Relative bonuses from enchantments and items all come from the stats
   // before any of them, so they don't feed each other.
   if ((!relative.empty() || !item_relative.empty()) && r.weapon != nullptr) {
-    const auto class_id = req.find("class");
-    const auto found = std::ranges::find(
-        dataset.classes, class_id != req.end() && class_id->is_string() ? class_id->get<std::string>() : "", &Class::id);
+    const auto found = std::ranges::find(dataset.classes, spec.class_id, &Class::id);
     const Class* cls = found == dataset.classes.end() ? nullptr : &*found;
     const bool of_bonus = !relative.empty() || std::ranges::any_of(item_relative, [](const auto& x) {
       return !x.of_total;
@@ -456,7 +510,7 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
       with.on_ability.insert(with.on_ability.end(), on_ability.begin(), on_ability.end());
       with.created_projectiles.insert(created.begin(), created.end());
     };
-    if (const Weapon* w = FindWeapon(dataset, req.at("weapon").get<std::string>())) {
+    if (const Weapon* w = FindWeapon(dataset, spec.weapon)) {
       add(w->on_ability, w->created_projectiles);
     }
     for (const Gear* g : {r.armor, r.ring}) {
@@ -471,6 +525,10 @@ Request ParseRequest(const json& req, const Dataset& dataset) {
   }
   return r;
 }
+
+// Reads the parts of a request Evaluate and StartSimulation share. Throws on
+// malformed JSON; an unknown weapon leaves `weapon` null.
+Request ParseRequest(const json& req, const Dataset& dataset) { return Assemble(ReadSpec(req), dataset); }
 
 json ToJson(const WornSet& s) {
   json stats = json::array();
@@ -1174,9 +1232,6 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
         std::ranges::find(kOptimizerStats, around) == kOptimizerStats.end()) {
       return Error("can't build around \"" + around + "\"").dump();
     }
-    // The request's stats in kOptimizerStats order, for adding to.
-    constexpr std::array<const char*, 8> kStatKeys = {"attack",   "dexterity", "speed",        "wisdom",
-                                                      "vitality", "defense",   "maxHitPoints", "maxMagicPoints"};
     const json weights = opt.value("weights", json::object());
     const double weapon_weight = std::max(0.0, weights.value("weapon", 1.0));
     const double ability_weight = std::max(0.0, weights.value("ability", 1.0));
@@ -1188,25 +1243,31 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
       burst = ParseBurst(*it);
     }
     // The build as a request the engine has read, or nothing for one it
-    // rejects.
+    // rejects. It starts from the request's own spec, read once, rather
+    // than writing and reading JSON for every build.
+    const RequestSpec base_spec = ReadSpec(base);
+    constexpr std::array<int Character::*, 8> kStatFields = {
+        &Character::attack,   &Character::dexterity, &Character::speed,          &Character::wisdom,
+        &Character::vitality, &Character::defense,   &Character::max_hit_points, &Character::max_magic_points};
     const auto read = [&](const OptimizerBuild& b, const std::array<int, 8>& extra) -> std::optional<Request> {
-      json r = base;
+      RequestSpec spec = base_spec;
       for (std::size_t i = 0; i < extra.size(); ++i) {
-        if (extra[i] != 0) {
-          r[kStatKeys[i]] = r.value(kStatKeys[i], 0) + extra[i];
-        }
+        spec.character.*kStatFields[i] += extra[i];
       }
-      for (std::size_t i = 0; i < kSlots.size(); ++i) {
-        if (b.items[i].empty()) {
-          r.erase(kSlots[i]);
-        } else {
-          r[kSlots[i]] = b.items[i];
-        }
-      }
-      r["enchantments"] = b.enchants[0];
-      r["gearEnchantments"] = {{"ability", b.enchants[1]}, {"armor", b.enchants[2]}, {"ring", b.enchants[3]}};
+      const auto named = [](const std::string& name) {
+        return name.empty() ? std::nullopt : std::optional<std::string>(name);
+      };
+      spec.weapon = b.items[0];
+      spec.ability = named(b.items[1]);
+      spec.armor = named(b.items[2]);
+      spec.ring = named(b.items[3]);
+      spec.enchantments = b.enchants[0];
+      spec.gear_enchantments.emplace();
+      (*spec.gear_enchantments)["ability"] = b.enchants[1];
+      (*spec.gear_enchantments)["armor"] = b.enchants[2];
+      (*spec.gear_enchantments)["ring"] = b.enchants[3];
       try {
-        Request p = ParseRequest(r, d);
+        Request p = Assemble(spec, d);
         if (p.weapon != nullptr && !p.unknown_ability) {
           return p;
         }
