@@ -405,11 +405,11 @@ void Search::FindReadStats() {
 // layout's own stats. Not a proof, a guard: it catches a formula that
 // starts reading a new stat.
 bool Search::ReadStatsHold(const PreparedLayout& layout) {
-  const double base = scorer_.Weighted(layout, scorer_.WithStats(layout, layout.stats));
+  const double base = scorer_.Weighted(layout, scorer_.WithStats(layout, layout.stats.before));
   for (std::size_t s = 0; s < kStats; ++s) {
     if (read_[s]) continue;
     for (const int more : {20, 200}) {
-      Stats st = layout.stats;
+      Stats st = layout.stats.before;
       st[s] += more;
       const double v = scorer_.Weighted(layout, scorer_.WithStats(layout, st));
       if (std::abs(v - base) > 1e-9 * std::max(1.0, std::abs(base))) {
@@ -496,7 +496,7 @@ void Search::CompileOptions() {
   for (std::size_t s = 0; s < kStats; ++s) useful_[s] = read_[s] || sources[s];
   down_ = {};
   if (const PreparedLayout* open = scorer_.Prepare(Layout{items_, {}})) {
-    for (const Conversion& c : open->own) {
+    for (const Conversion& c : open->stats.own) {
       if (!read_[c.to]) continue;
       useful_[c.from] = true;
       if (c.percent < 0) down_[c.from] = true;
@@ -729,7 +729,7 @@ void Search::Directions(std::span<const Conversion> conversions, const PreparedL
   for (const Conversion& c : conversions) {
     if (read_[c.to]) up[c.from] = true;
   }
-  for (const Conversion& c : layout.own) {
+  for (const Conversion& c : layout.stats.own) {
     if (!read_[c.to] || c.percent == 0) continue;
     (c.percent > 0 ? up : down)[c.from] = true;
   }
@@ -1088,7 +1088,7 @@ std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, co
 // Whether a build among the group's finals could score above `best`: the
 // score at the most of every read stat over the group bounds them all.
 bool Search::CanBeat(const PreparedLayout& layout, const std::vector<const Final*>& group, double best) const {
-  Stats top = layout.stats;
+  Stats top = layout.stats.before;
   for (const std::size_t s : read_list_) {
     top[s] = std::numeric_limits<int>::min();
     for (const Final* f : group) top[s] = std::max(top[s], f->stats[s]);

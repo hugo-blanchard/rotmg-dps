@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "rotmg/model.hpp"
+#include "rotmg/stats.hpp"
 
 // The search for the build with the most DPS. It knows the items and
 // enchantments a build can hold; how much DPS one deals is up to the caller.
@@ -22,8 +23,7 @@ struct OptimizerBuild {
 };
 
 /// The stats the search can ask about, in this order.
-inline constexpr std::array<const char*, 8> kOptimizerStats = {"ATT", "DEX", "SPD", "WIS",
-                                                                "VIT", "DEF", "MAXHP", "MAXMP"};
+inline constexpr std::array<const char*, kStats> kOptimizerStats = kStatNames;
 
 struct OptimizerResult {
   /// The start's DPS.

@@ -1,68 +1,17 @@
 #include "score.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <exception>
 #include <string>
 #include <utility>
-
-#include "rotmg/optimize.hpp"
 
 namespace rotmg::search {
 
 namespace {
 
-constexpr std::array<int Character::*, kStats> kFields = {
-    &Character::attack,   &Character::dexterity, &Character::speed,          &Character::wisdom,
-    &Character::vitality, &Character::defense,   &Character::max_hit_points, &Character::max_magic_points};
-
 // The items' order when the engine collects enchantment stats: the gear's,
 // then the weapon's.
 constexpr std::array<std::size_t, kSlots> kCollectOrder = {kRing, kArmor, kAbility, kWeapon};
-
-void AddBonuses(Stats& to, const std::vector<StatBonus>& bonuses) {
-  for (const StatBonus& b : bonuses) {
-    if (const int s = StatIndex(b.stat); s >= 0) {
-      to[static_cast<std::size_t>(s)] += b.amount;
-    }
-  }
-}
-
-void AddOwn(std::vector<Conversion>& to, const std::vector<Activate>& on_equip) {
-  for (const Activate& a : on_equip) {
-    const bool of_total = a.type == "IncrementStatRelative";
-    if (!of_total && a.type != "BonusStatRelative") {
-      continue;
-    }
-    const int stat = StatIndex(a.Text("stat"));
-    const int from = StatIndex(a.Text("statRelativeTo"));
-    if (stat >= 0 && from >= 0) {
-      to.push_back({static_cast<std::uint8_t>(from), static_cast<std::uint8_t>(stat),
-                    a.Number("amount").value_or(0), of_total});
-    }
-  }
-}
-
-// RealmEye, Item Stat-Scaling: relative bonuses all come from the stats
-// before any of them, each stat's total rounds down. Bonus stats are those
-// above the class max, as on a maxed character; without a class only
-// shares of the whole stat count.
-Stats Gains(std::span<const Conversion> conversions, const Stats& everything, const Stats& class_max,
-            bool has_class) {
-  std::array<double, kStats> sum{};
-  for (const Conversion& c : conversions) {
-    if (!c.of_total && !has_class) {
-      continue;
-    }
-    const int of = c.of_total ? everything[c.from] : std::max(0, everything[c.from] - class_max[c.from]);
-    sum[c.to] += c.percent / 100 * of;
-  }
-  Stats out{};
-  for (std::size_t s = 0; s < kStats; ++s) {
-    out[s] = static_cast<int>(std::floor(sum[s] + 1e-9));
-  }
-  return out;
-}
 
 }  // namespace
 
@@ -124,35 +73,11 @@ const PreparedLayout* Scorer::Prepare(const Layout& layout) {
       Prepared p = rotmg::Prepare(spec, model_->dataset());
       if (p.request.weapon != nullptr && !p.request.unknown_ability) {
         out = std::make_unique<PreparedLayout>();
+        out->stats = StatBaseOf(p, spec.character);
         Request& r = out->request;
         r = std::move(p.request);
-        // The layout's enchantment stats are worked out with the build's
-        // others, so they come off; the base stats go on, as Finish does.
-        Character& c = r.character;
-        for (const StatBonus& b : r.enchantment_stats) {
-          if (const int s = StatIndex(b.stat); s >= 0) {
-            c.*kFields[static_cast<std::size_t>(s)] -= b.amount;
-          }
-        }
-        r.enchantment_stats.clear();
-        for (std::size_t s = 0; s < kStats; ++s) {
-          c.*kFields[s] += spec.character.*kFields[s];
-        }
-        c.status = spec.character.status;
-        for (std::size_t s = 0; s < kStats; ++s) {
-          out->stats[s] = c.*kFields[s];
-        }
-        AddBonuses(out->item_bonuses, r.weapon->stat_bonuses);
-        if (r.ability != nullptr) {
-          AddBonuses(out->item_bonuses, r.ability->stat_bonuses);
-          AddOwn(out->own, r.ability->on_equip);
-        }
-        AddOwn(out->own, r.weapon->on_equip);
-        for (const Gear* g : {r.armor, r.ring}) {
-          if (g != nullptr) {
-            AddOwn(out->own, g->on_equip);
-          }
-        }
+        r.character = rotmg::WithStats(r.character, out->stats.before);
+        r.character.status = spec.character.status;
       }
     } catch (const std::exception&) {
       // A layout the engine rejects, like an enchantment that doesn't fit,
@@ -166,41 +91,13 @@ Character Scorer::Final(const PreparedLayout& layout, const EnchantStats& stats)
   return Final(layout, stats.tenths, stats.conversions);
 }
 
-Stats Scorer::FinalStats(const PreparedLayout& layout, const std::array<std::int32_t, kStats>& tenths,
-                         std::span<const Conversion> conversions) const {
-  Stats out = layout.stats;
-  for (std::size_t s = 0; s < kStats; ++s) {
-    const std::int32_t t = tenths[s];
-    // Rounded down, negative sums too.
-    out[s] += t >= 0 ? t / 10 : -((-t + 9) / 10);
-  }
-  if (conversions.empty() && layout.own.empty()) {
-    return out;
-  }
-  Stats everything{};
-  for (std::size_t s = 0; s < kStats; ++s) {
-    everything[s] = out[s] + layout.item_bonuses[s];
-  }
-  const bool has_class = model_->class_max() != Stats{};
-  const Stats gains = Gains(conversions, everything, model_->class_max(), has_class);
-  const Stats own = Gains(layout.own, everything, model_->class_max(), has_class);
-  for (std::size_t s = 0; s < kStats; ++s) {
-    out[s] += gains[s] + own[s];
-  }
-  return out;
-}
-
-Character Scorer::Final(const PreparedLayout& layout, const std::array<std::int32_t, kStats>& tenths,
+Character Scorer::Final(const PreparedLayout& layout, const Tenths& tenths,
                         std::span<const Conversion> conversions) const {
   return WithStats(layout, FinalStats(layout, tenths, conversions));
 }
 
 Character Scorer::WithStats(const PreparedLayout& layout, const Stats& stats) const {
-  Character c = layout.request.character;
-  for (std::size_t s = 0; s < kStats; ++s) {
-    c.*kFields[s] = stats[s];
-  }
-  return c;
+  return rotmg::WithStats(layout.request.character, stats);
 }
 
 double Scorer::Score(const PreparedLayout& layout, const Character& character) const {

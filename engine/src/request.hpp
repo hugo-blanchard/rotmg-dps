@@ -18,6 +18,7 @@
 #include "rotmg/evaluate.hpp"
 #include "rotmg/model.hpp"
 #include "rotmg/sets.hpp"
+#include "rotmg/stats.hpp"
 
 namespace rotmg {
 
@@ -71,10 +72,13 @@ struct RequestSpec {
 
 // What a request's items and enchantments decide, whatever its base stats.
 struct Prepared {
-  // Its character holds only what gear, sets and enchantments add.
+  // Its character's stats are worked out by Finish.
   Request request;
-  std::vector<Enchanted::Relative> relative;
-  std::vector<Enchanted::Relative> item_relative;
+  // What gear and sets add, without the base stats; the rest of FinalStats'
+  // base.
+  StatBase stats;
+  // What every item's enchantments add.
+  EnchantStats enchantments;
   const Class* cls = nullptr;
 };
 
@@ -85,8 +89,12 @@ RequestSpec ReadSpec(const nlohmann::json& req);
 // unknown armor, ring or enchantment; an unknown weapon leaves `weapon` null.
 Prepared Prepare(const RequestSpec& spec, const Dataset& dataset);
 
-// The prepared request on a character with `base` stats: they add to what
-// the gear gives, then relative bonuses come from the totals.
+// FinalStats' base for the prepared request on a character with `base`
+// stats.
+StatBase StatBaseOf(const Prepared& prepared, const Character& base);
+
+// The prepared request on a character with `base` stats, through
+// FinalStats.
 Request Finish(const Prepared& prepared, const Character& base);
 
 // The request a spec describes, with everything looked up. Throws on an

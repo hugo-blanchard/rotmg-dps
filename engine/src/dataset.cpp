@@ -1,6 +1,7 @@
 #include "rotmg/dataset.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -169,6 +170,14 @@ Enchantment ReadEnchantment(const json& j) {
       if (auto params = m.find("params"); params != m.end()) {
         for (const auto& [name, value] : params->items()) {
           out.attributes.params.emplace(name, ReadValue(value));
+        }
+      }
+      // Flat stats are summed in tenths, exactly.
+      if (out.tag == "ActivateOnEquip" && out.text == "IncrementStat") {
+        const double amount = out.attributes.Number("amount").value_or(0);
+        if (std::abs(amount * 10 - std::round(amount * 10)) > 1e-6) {
+          throw DatasetError("stat amount " + std::to_string(amount) + " in enchantment \"" + e.id +
+                             "\" isn't a whole number of tenths");
         }
       }
       e.mutators.push_back(std::move(out));

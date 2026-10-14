@@ -30,26 +30,14 @@ struct Layout {
   auto operator<=>(const Layout&) const = default;
 };
 
-/// A build's enchantment stats: flat amounts summed in tenths, and every
-/// conversion in the order the engine collects them.
-struct EnchantStats {
-  std::array<std::int32_t, kStats> tenths{};
-  std::vector<Conversion> conversions;
-};
-
 /// A layout looked up and applied.
 struct PreparedLayout {
   /// The weapon and ability with the layout's enchantments, the target and
-  /// assumptions; the character has the base stats, gear and sets but no
-  /// enchantment stats.
+  /// assumptions; the character's stats come from FinalStats.
   Request request;
-  /// What conversions count on top of the character: the weapon's and
-  /// ability's own stat bonuses, which the evaluation adds later.
-  Stats item_bonuses{};
-  /// The items' own conversions.
-  std::vector<Conversion> own;
-  /// The character's stats in kOptimizerStats order.
-  Stats stats{};
+  /// The base stats, gear and sets, and what else decides the final stats
+  /// besides the build's enchantments.
+  StatBase stats;
 };
 
 /// The build's layout.
@@ -66,19 +54,17 @@ class Scorer {
   /// enchantment that doesn't fit, an unknown item). Kept for later calls.
   const PreparedLayout* Prepare(const Layout& layout);
 
-  /// The character a build's enchantment stats make on the layout, as the
-  /// engine works it out: flat stats summed and rounded down, then each
-  /// stat's conversions from those totals, summed and rounded down, the
-  /// items' own conversions apart from the enchantments'.
+  /// The character a build's enchantment stats make on the layout, through
+  /// FinalStats as for any request.
   Character Final(const PreparedLayout& layout, const EnchantStats& stats) const;
   /// The same from flat sums in tenths and the conversions, without
   /// gathering them first.
-  Character Final(const PreparedLayout& layout, const std::array<std::int32_t, kStats>& tenths,
-                  std::span<const Conversion> conversions) const;
+  Character Final(const PreparedLayout& layout, const Tenths& tenths, std::span<const Conversion> conversions) const;
   /// Just the stats, in kOptimizerStats order: no allocation, for loops
   /// over many sums.
-  Stats FinalStats(const PreparedLayout& layout, const std::array<std::int32_t, kStats>& tenths,
-                   std::span<const Conversion> conversions) const;
+  Stats FinalStats(const PreparedLayout& layout, const Tenths& tenths, std::span<const Conversion> conversions) const {
+    return rotmg::FinalStats(layout.stats, tenths, conversions);
+  }
   /// The layout's character with these stats.
   Character WithStats(const PreparedLayout& layout, const Stats& stats) const;
 

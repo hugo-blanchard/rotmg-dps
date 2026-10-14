@@ -50,6 +50,14 @@ TEST_CASE("rejects malformed JSON and missing fields") {
   CHECK_THROWS_AS(rotmg::ParseDataset(R"({"schemaVersion": 1, "build": "x", "classes": []})"), rotmg::DatasetError);
 }
 
+TEST_CASE("rejects a flat stat amount that isn't whole tenths") {
+  std::string text = ReadSmallDatasetText();
+  const std::string tenths = R"("stat": "ATT", "amount": 1.4 })";
+  REQUIRE(text.find(tenths) != std::string::npos);
+  text.replace(text.find(tenths), tenths.size(), R"("stat": "ATT", "amount": 1.45 })");
+  CHECK_THROWS_AS(rotmg::ParseDataset(text), rotmg::DatasetError);
+}
+
 TEST_CASE("loads abilities and the rest of the class stats") {
   const rotmg::Dataset d = LoadSmallDataset();
   CHECK(d.classes[0].ability_slot_type == 10);

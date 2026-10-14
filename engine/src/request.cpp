@@ -161,7 +161,6 @@ Prepared Prepare(const RequestSpec& spec, const Dataset& dataset) {
   };
   const auto& on_weapon = spec.enchantments;
   const auto& on_gear = spec.gear_enchantments;
-  std::vector<Enchanted::Relative> relative;
   if ((on_weapon || on_gear) && r.weapon != nullptr) {
     const std::vector<const Enchantment*> picked =
         !on_weapon
@@ -198,25 +197,23 @@ Prepared Prepare(const RequestSpec& spec, const Dataset& dataset) {
       r.enchanted_ability = std::make_shared<const Ability>(std::move(cheaper));
       r.ability = r.enchanted_ability.get();
     }
-    r.enchantment_stats = en.stats;
-    r.character = r.character.With(en.stats);
-    if (!en.stats.empty()) {
+    // Any stat the flat amounts move by a point or more, after rounding down.
+    if (std::ranges::any_of(en.stats.tenths, [](std::int32_t t) { return t < 0 || t >= 10; })) {
       r.notes.emplace_back("fractional stat bonuses from enchantments add up and the total rounds down");
     }
-    relative = en.relative;
+    out.enchantments = std::move(en.stats);
     en.weapon.unsupported.insert(en.weapon.unsupported.end(), en.unsupported.begin(), en.unsupported.end());
     r.enchanted = std::make_shared<const Weapon>(std::move(en.weapon));
     r.weapon = r.enchanted.get();
   }
   // The items' own on-equip effects besides flat stats.
-  std::vector<Enchanted::Relative> item_relative;
   double discount = 1;
   const auto equip = [&](const std::vector<Activate>& on_equip) {
     for (const Activate& a : on_equip) {
-      if (a.type == "IncrementStatRelative" || a.type == "BonusStatRelative") {
-        item_relative.push_back({a.Text("stat"), a.Text("statRelativeTo"), a.Number("amount").value_or(0),
-                                 a.type == "IncrementStatRelative"});
-      } else if (a.type == "AbilityUseDiscount") {
+      if (AddOwnConversion(a, out.stats.own)) {
+        continue;
+      }
+      if (a.type == "AbilityUseDiscount") {
         // RealmEye, The Twilight Gemstone: its cut stacks with other gear's.
         discount *= a.Number("multiplier").value_or(1);
       } else if (const std::string tag = "ActivateOnEquip " + a.type;
@@ -242,10 +239,24 @@ Prepared Prepare(const RequestSpec& spec, const Dataset& dataset) {
     r.enchanted_ability = std::make_shared<const Ability>(std::move(cheaper));
     r.ability = r.enchanted_ability.get();
   }
-  out.relative = std::move(relative);
-  out.item_relative = std::move(item_relative);
   const auto found = std::ranges::find(dataset.classes, spec.class_id, &Class::id);
   out.cls = found == dataset.classes.end() ? nullptr : &*found;
+  out.stats.before = ToStats(r.character);
+  if (r.weapon != nullptr) {
+    out.stats.item_bonuses = ToStats(r.weapon->stat_bonuses);
+  }
+  if (r.ability != nullptr) {
+    const Stats ability = ToStats(r.ability->stat_bonuses);
+    for (std::size_t s = 0; s < kStats; ++s) {
+      out.stats.item_bonuses[s] += ability[s];
+    }
+  }
+  if (out.cls != nullptr) {
+    out.stats.has_class = true;
+    out.stats.class_max = {out.cls->attack.max,   out.cls->dexterity.max, out.cls->speed.max,
+                           out.cls->wisdom.max,   out.cls->vitality.max,  out.cls->defense.max,
+                           out.cls->max_hit_points.max, out.cls->max_magic_points.max};
+  }
   // The other gear's on-shoot effects go off as the weapon fires, like its
   // own, and some create their projectiles.
   const auto join = [&](const std::vector<Activate>& on_shoot, const std::map<int, Projectile>& created,
@@ -299,54 +310,41 @@ Prepared Prepare(const RequestSpec& spec, const Dataset& dataset) {
   return out;
 }
 
+StatBase StatBaseOf(const Prepared& prepared, const Character& base) {
+  StatBase out = prepared.stats;
+  const Stats more = ToStats(base);
+  for (std::size_t s = 0; s < kStats; ++s) {
+    out.before[s] += more[s];
+  }
+  return out;
+}
+
 Request Finish(const Prepared& prepared, const Character& base) {
   Request r = prepared.request;
-  const std::vector<Enchanted::Relative>& relative = prepared.relative;
-  const std::vector<Enchanted::Relative>& item_relative = prepared.item_relative;
-  const Class* cls = prepared.cls;
-  Character& c = r.character;
-  c.attack += base.attack;
-  c.dexterity += base.dexterity;
-  c.wisdom += base.wisdom;
-  c.vitality += base.vitality;
-  c.defense += base.defense;
-  c.speed += base.speed;
-  c.max_hit_points += base.max_hit_points;
-  c.max_magic_points += base.max_magic_points;
-  c.status = base.status;
-  // Relative bonuses from enchantments and items all come from the stats
-  // before any of them, so they don't feed each other.
-  if ((!relative.empty() || !item_relative.empty()) && r.weapon != nullptr) {
-    const bool of_bonus = !relative.empty() || std::ranges::any_of(item_relative, [](const auto& x) {
-      return !x.of_total;
-    });
-    if (cls == nullptr && of_bonus) {
-      r.gear_unsupported.emplace_back("relative stat bonuses, which need the class");
-    }
-    Character everything = r.character.With(r.weapon->stat_bonuses);
-    if (r.ability != nullptr) {
-      everything = everything.With(r.ability->stat_bonuses);
-    }
-    const std::vector<StatBonus> gains = RelativeBonuses(relative, cls, everything);
-    r.item_stats = RelativeBonuses(item_relative, cls, everything);
-    r.character = r.character.With(gains).With(r.item_stats);
-    for (const StatBonus& g : gains) {
-      const auto same = std::ranges::find(r.enchantment_stats, g.stat, &StatBonus::stat);
-      if (same == r.enchantment_stats.end()) {
-        r.enchantment_stats.push_back(g);
-      } else {
-        same->amount += g.amount;
-      }
-    }
-    if (!relative.empty() && cls != nullptr) {
-      r.notes.emplace_back(
-          "relative enchantments count stats above the class's max as bonus stats, as on a maxed character, and "
-          "round down");
-    }
-    if (!r.item_stats.empty()) {
-      r.notes.emplace_back("an item's share of one stat added to another rounds down, and counts with relative "
-                           "enchantments in one step");
-    }
+  const StatBase stats = StatBaseOf(prepared, base);
+  const EnchantStats& enchantments = prepared.enchantments;
+  StatParts parts;
+  r.character = WithStats(r.character, FinalStats(stats, enchantments.tenths, enchantments.conversions, &parts));
+  r.character.status = base.status;
+  Stats from_enchantments{};
+  for (std::size_t s = 0; s < kStats; ++s) {
+    from_enchantments[s] = parts.flat[s] + parts.converted[s];
+  }
+  r.enchantment_stats = BonusesOf(from_enchantments);
+  r.item_stats = BonusesOf(parts.own);
+  const bool relative = !enchantments.conversions.empty();
+  if (prepared.cls == nullptr &&
+      (relative || std::ranges::any_of(stats.own, [](const Conversion& c) { return !c.of_total; }))) {
+    r.gear_unsupported.emplace_back("relative stat bonuses, which need the class");
+  }
+  if (relative && prepared.cls != nullptr) {
+    r.notes.emplace_back(
+        "relative enchantments count stats above the class's max as bonus stats, as on a maxed character, and "
+        "round down");
+  }
+  if (!r.item_stats.empty()) {
+    r.notes.emplace_back("an item's share of one stat added to another rounds down, and counts with relative "
+                         "enchantments in one step");
   }
   return r;
 }

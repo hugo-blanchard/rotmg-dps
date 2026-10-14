@@ -2,8 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cmath>
-#include <map>
 
 namespace rotmg {
 namespace {
@@ -55,38 +53,7 @@ bool TakeSubattack(Weapon& w, const Enchantment& e, const Mutator& m) {
   return true;
 }
 
-int ClassMax(const Class& c, const std::string& stat) {
-  if (stat == "ATT") return c.attack.max;
-  if (stat == "DEX") return c.dexterity.max;
-  if (stat == "WIS") return c.wisdom.max;
-  if (stat == "VIT") return c.vitality.max;
-  if (stat == "DEF") return c.defense.max;
-  if (stat == "SPD") return c.speed.max;
-  if (stat == "MAXHP") return c.max_hit_points.max;
-  if (stat == "MAXMP") return c.max_magic_points.max;
-  return 0;
-}
-
 }  // namespace
-
-std::vector<StatBonus> RelativeBonuses(const std::vector<Enchanted::Relative>& relative, const Class* cls,
-                                       const Character& character) {
-  std::map<std::string, double> gains;
-  for (const Enchanted::Relative& r : relative) {
-    if (!r.of_total && cls == nullptr) {
-      continue;
-    }
-    const int of = r.of_total ? character.Stat(r.from) : std::max(0, character.Stat(r.from) - ClassMax(*cls, r.from));
-    gains[r.stat] += r.percent / 100 * of;
-  }
-  std::vector<StatBonus> out;
-  for (const auto& [stat, amount] : gains) {
-    if (const int whole = static_cast<int>(std::floor(amount + 1e-9)); whole != 0) {
-      out.push_back({stat, whole});
-    }
-  }
-  return out;
-}
 
 bool FitsLabels(const Enchantment& e, const std::vector<std::string>& labels, const std::string& id) {
   return !e.compatible.empty() &&
@@ -160,24 +127,17 @@ bool Conflict(const Enchantment& a, const Enchantment& b) {
 
 Enchanted Enchant(const Weapon& weapon, const std::vector<const Enchantment*>& enchantments,
                   const GearEnchantments& gear) {
-  Enchanted out{weapon, {}, {}, 1, {}};
+  Enchanted out{weapon, {}, 1, {}};
   Weapon& w = out.weapon;
-  std::map<std::string, double> stats;
   // Effects that work the same on any item.
   const auto shared = [&](const Mutator& m) {
     if (m.tag == "AddOnPlayerShootActivate") {
       Activate effect = m.attributes;
       effect.type = m.text;
       w.on_shoot.push_back(std::move(effect));
-    } else if (m.tag == "ActivateOnEquip" && m.text == "BonusStatRelative") {
-      out.relative.push_back({m.attributes.Text("stat"), m.attributes.Text("statRelativeTo"),
-                              m.attributes.Number("amount").value_or(0)});
-    } else if (m.tag == "ActivateOnEquip" && m.text == "IncrementStat") {
-      stats[m.attributes.Text("stat")] += m.attributes.Number("amount").value_or(0);
-    } else {
-      return false;
+      return true;
     }
-    return true;
+    return AddStatMutator(m, out.stats);
   };
   for (const auto& [slot, list] : gear) {
     for (const Enchantment* e : list) {
@@ -239,11 +199,6 @@ Enchanted Enchant(const Weapon& weapon, const std::vector<const Enchantment*>& e
     }
     if (!modelled) {
       out.unsupported.push_back(e->name + " (enchantment)");
-    }
-  }
-  for (const auto& [stat, amount] : stats) {
-    if (const int whole = static_cast<int>(std::floor(amount + 1e-9)); whole != 0) {
-      out.stats.push_back({stat, whole});
     }
   }
   return out;
