@@ -26,7 +26,8 @@ add_executable(rotmg_engine_tests
   build_test.cpp
   sets_test.cpp
   search_score_test.cpp
-  search_frontier_test.cpp)
+  search_frontier_test.cpp
+  search_enchantments_test.cpp)
 target_link_libraries(rotmg_engine_tests PRIVATE rotmg_engine rotmg_warnings Catch2::Catch2WithMain
                                                  nlohmann_json::nlohmann_json)
 # The search's internals are tested directly.

@@ -47,7 +47,7 @@ void AddOwn(std::vector<Conversion>& to, const std::vector<Activate>& on_equip) 
 // before any of them, each stat's total rounds down. Bonus stats are those
 // above the class max, as on a maxed character; without a class only
 // shares of the whole stat count.
-Stats Gains(const std::vector<Conversion>& conversions, const Stats& everything, const Stats& class_max,
+Stats Gains(std::span<const Conversion> conversions, const Stats& everything, const Stats& class_max,
             bool has_class) {
   std::array<double, kStats> sum{};
   for (const Conversion& c : conversions) {
@@ -139,6 +139,9 @@ const PreparedLayout* Scorer::Prepare(const Layout& layout) {
           c.*kFields[s] += spec.character.*kFields[s];
         }
         c.status = spec.character.status;
+        for (std::size_t s = 0; s < kStats; ++s) {
+          out->stats[s] = c.*kFields[s];
+        }
         AddBonuses(out->item_bonuses, r.weapon->stat_bonuses);
         if (r.ability != nullptr) {
           AddBonuses(out->item_bonuses, r.ability->stat_bonuses);
@@ -160,33 +163,57 @@ const PreparedLayout* Scorer::Prepare(const Layout& layout) {
 }
 
 Character Scorer::Final(const PreparedLayout& layout, const EnchantStats& stats) const {
-  Character c = layout.request.character;
+  return Final(layout, stats.tenths, stats.conversions);
+}
+
+Stats Scorer::FinalStats(const PreparedLayout& layout, const std::array<std::int32_t, kStats>& tenths,
+                         std::span<const Conversion> conversions) const {
+  Stats out = layout.stats;
   for (std::size_t s = 0; s < kStats; ++s) {
-    const std::int32_t t = stats.tenths[s];
+    const std::int32_t t = tenths[s];
     // Rounded down, negative sums too.
-    c.*kFields[s] += t >= 0 ? t / 10 : -((-t + 9) / 10);
+    out[s] += t >= 0 ? t / 10 : -((-t + 9) / 10);
   }
-  if (stats.conversions.empty() && layout.own.empty()) {
-    return c;
+  if (conversions.empty() && layout.own.empty()) {
+    return out;
   }
   Stats everything{};
   for (std::size_t s = 0; s < kStats; ++s) {
-    everything[s] = c.*kFields[s] + layout.item_bonuses[s];
+    everything[s] = out[s] + layout.item_bonuses[s];
   }
   const bool has_class = model_->class_max() != Stats{};
-  const Stats gains = Gains(stats.conversions, everything, model_->class_max(), has_class);
+  const Stats gains = Gains(conversions, everything, model_->class_max(), has_class);
   const Stats own = Gains(layout.own, everything, model_->class_max(), has_class);
   for (std::size_t s = 0; s < kStats; ++s) {
-    c.*kFields[s] += gains[s] + own[s];
+    out[s] += gains[s] + own[s];
+  }
+  return out;
+}
+
+Character Scorer::Final(const PreparedLayout& layout, const std::array<std::int32_t, kStats>& tenths,
+                        std::span<const Conversion> conversions) const {
+  return WithStats(layout, FinalStats(layout, tenths, conversions));
+}
+
+Character Scorer::WithStats(const PreparedLayout& layout, const Stats& stats) const {
+  Character c = layout.request.character;
+  for (std::size_t s = 0; s < kStats; ++s) {
+    c.*kFields[s] = stats[s];
   }
   return c;
 }
 
 double Scorer::Score(const PreparedLayout& layout, const Character& character) const {
   const Request& r = layout.request;
-  const BuildNumbers e = EvaluateBuildNumbers(*r.weapon, r.ability, character, r.target, r.assumptions);
+  const BuildNumbers e = EvaluateBuildNumbers(*r.weapon, r.ability, character, r.target, r.assumptions, weights_);
   constexpr double kTieBreak = 1e-6;
   return weights_.weapon * e.weapon_dps + weights_.ability * e.ability_dps + kTieBreak * e.dps;
+}
+
+double Scorer::Weighted(const PreparedLayout& layout, const Character& character) const {
+  const Request& r = layout.request;
+  const BuildNumbers e = EvaluateBuildNumbers(*r.weapon, r.ability, character, r.target, r.assumptions, weights_);
+  return weights_.weapon * e.weapon_dps + weights_.ability * e.ability_dps;
 }
 
 }  // namespace rotmg::search

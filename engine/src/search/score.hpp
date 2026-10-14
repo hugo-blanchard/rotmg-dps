@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <span>
 #include <vector>
 
 #include "../request.hpp"
@@ -19,10 +20,7 @@ namespace rotmg::search {
 
 /// Weapon and ability DPS weighted as asked, plus a millionth of the total
 /// so that ties go to the build with the most damage.
-struct Weights {
-  double weapon = 1;
-  double ability = 1;
-};
+using Weights = DpsWeights;
 
 /// A build's items and the enchantments on each that do more than add
 /// stats, sorted.
@@ -50,6 +48,8 @@ struct PreparedLayout {
   Stats item_bonuses{};
   /// The items' own conversions.
   std::vector<Conversion> own;
+  /// The character's stats in kOptimizerStats order.
+  Stats stats{};
 };
 
 /// The build's layout.
@@ -71,9 +71,24 @@ class Scorer {
   /// stat's conversions from those totals, summed and rounded down, the
   /// items' own conversions apart from the enchantments'.
   Character Final(const PreparedLayout& layout, const EnchantStats& stats) const;
+  /// The same from flat sums in tenths and the conversions, without
+  /// gathering them first.
+  Character Final(const PreparedLayout& layout, const std::array<std::int32_t, kStats>& tenths,
+                  std::span<const Conversion> conversions) const;
+  /// Just the stats, in kOptimizerStats order: no allocation, for loops
+  /// over many sums.
+  Stats FinalStats(const PreparedLayout& layout, const std::array<std::int32_t, kStats>& tenths,
+                   std::span<const Conversion> conversions) const;
+  /// The layout's character with these stats.
+  Character WithStats(const PreparedLayout& layout, const Stats& stats) const;
 
   /// The build's sustained score.
   double Score(const PreparedLayout& layout, const Character& character) const;
+  /// The score without the millionth that breaks ties: what the weights
+  /// ask for.
+  double Weighted(const PreparedLayout& layout, const Character& character) const;
+
+  const Weights& weights() const { return weights_; }
 
  private:
   const Model* model_;
