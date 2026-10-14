@@ -126,6 +126,103 @@ class StaticIndex {
   Nodes nodes_;
 };
 
+// "Does some point cover x?" over a fixed set, as fast as the dimension
+// count allows: for 1 the maximum; for 2 the points sorted by the first
+// dimension, largest first, with the running maximum of the second (one
+// binary search); for 3 a table of the most of the third over the ranks of
+// the first two (two binary searches and a lookup) while the table stays
+// small; otherwise StaticIndex.
+template <std::size_t D>
+class SnapshotIndex {
+ public:
+  explicit SnapshotIndex(const std::vector<Point<D>>& points) {
+    if constexpr (D == 1) {
+      for (const Point<D>& p : points) most_ = std::max(most_, p[0]);
+    } else if constexpr (D == 2) {
+      std::vector<Point<D>> sorted = points;
+      std::ranges::sort(sorted, std::greater<>{});
+      for (const Point<D>& p : sorted) {
+        firsts_.push_back(p[0]);
+        most_second_.push_back(most_second_.empty() ? p[1] : std::max(most_second_.back(), p[1]));
+      }
+    } else if constexpr (D == 3) {
+      for (const Point<D>& p : points) {
+        firsts_.push_back(p[0]);
+        seconds_.push_back(p[1]);
+      }
+      for (auto* values : {&firsts_, &seconds_}) {
+        std::ranges::sort(*values, std::greater<>{});
+        values->erase(std::unique(values->begin(), values->end()), values->end());
+      }
+      if (firsts_.size() * seconds_.size() > kMostCells) {
+        UseStaticIndex(points);
+        return;
+      }
+      // table_[i][j]: the most of the third dimension over points with at
+      // least the i-th largest first value and the j-th largest second.
+      const std::size_t n1 = seconds_.size();
+      table_.assign(firsts_.size() * n1, std::numeric_limits<std::int32_t>::min());
+      for (const Point<D>& p : points) {
+        const std::size_t i = Rank(firsts_, p[0]) - 1;
+        const std::size_t j = Rank(seconds_, p[1]) - 1;
+        table_[i * n1 + j] = std::max(table_[i * n1 + j], p[2]);
+      }
+      for (std::size_t i = 0; i < firsts_.size(); ++i) {
+        for (std::size_t j = 0; j < n1; ++j) {
+          std::int32_t& cell = table_[i * n1 + j];
+          if (i > 0) cell = std::max(cell, table_[(i - 1) * n1 + j]);
+          if (j > 0) cell = std::max(cell, table_[i * n1 + j - 1]);
+        }
+      }
+    } else {
+      UseStaticIndex(points);
+    }
+  }
+
+  bool Covers(const Point<D>& x) const {
+    if (index_) {
+      return index_->Covers(x);
+    }
+    if constexpr (D == 1) {
+      return most_ >= x[0];
+    } else if constexpr (D == 2) {
+      const std::size_t n = Rank(firsts_, x[0]);
+      return n > 0 && most_second_[n - 1] >= x[1];
+    } else if constexpr (D == 3) {
+      const std::size_t i = Rank(firsts_, x[0]);
+      const std::size_t j = Rank(seconds_, x[1]);
+      return i > 0 && j > 0 && table_[(i - 1) * seconds_.size() + j - 1] >= x[2];
+    } else {
+      return false;
+    }
+  }
+
+ private:
+  static constexpr std::size_t kMostCells = std::size_t{1} << 18;
+
+  void UseStaticIndex(const std::vector<Point<D>>& points) {
+    points_ = points;
+    std::vector<const Point<D>*> pointers;
+    pointers.reserve(points_.size());
+    for (const Point<D>& p : points_) pointers.push_back(&p);
+    index_ = std::make_unique<StaticIndex<D>>(pointers);
+  }
+
+  // How many of the values, largest first, are at least v.
+  static std::size_t Rank(const std::vector<std::int32_t>& values, std::int32_t v) {
+    return static_cast<std::size_t>(std::upper_bound(values.begin(), values.end(), v, std::greater<>{}) -
+                                    values.begin());
+  }
+
+  std::int32_t most_ = std::numeric_limits<std::int32_t>::min();
+  std::vector<std::int32_t> firsts_;
+  std::vector<std::int32_t> seconds_;
+  std::vector<std::int32_t> most_second_;
+  std::vector<std::int32_t> table_;
+  std::vector<Point<D>> points_;
+  std::unique_ptr<StaticIndex<D>> index_;
+};
+
 // The same question over a set that grows: static indexes of 16, 32, 64,
 // ... points, merged and rebuilt like binary carries (the logarithmic
 // method), and a buffer of the newest points searched one by one.

@@ -8,12 +8,14 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "../parallel.hpp"
 #include "frontier.hpp"
 #include "rotmg/enchant.hpp"
 #include "rotmg/evaluate.hpp"
@@ -177,6 +179,13 @@ struct FlatSet {
   Tenths tenths{};
 };
 
+// An item's flat sets, with the most and least of each stat over them.
+struct FlatSets {
+  std::vector<FlatSet> sets;
+  Tenths most{};
+  Tenths least{};
+};
+
 // A final the search reached: its stats and how it's made.
 struct Final {
   Stats stats{};
@@ -184,20 +193,36 @@ struct Final {
   std::array<const FlatSet*, kSlots> flat{};
 };
 
-// Final stats already reached, asked "does any have at least these?".
+// Final stats already reached, asked "does any have at least these?" far
+// more often than it grows: a snapshot index rebuilt by Settle, plus the
+// few finals added since, checked one by one.
 class Reached {
  public:
   virtual ~Reached() = default;
   virtual bool Covers(const Stats& stats) const = 0;
   virtual void Add(const Stats& stats) = 0;
+  virtual void Settle() = 0;
 };
 
 template <std::size_t D>
 class ReachedOn : public Reached {
  public:
   explicit ReachedOn(std::vector<std::size_t> read) : read_(std::move(read)) {}
-  bool Covers(const Stats& stats) const override { return index_.Covers(Pick(stats)); }
-  void Add(const Stats& stats) override { index_.Add(Pick(stats)); }
+
+  bool Covers(const Stats& stats) const override {
+    const Point<D> p = Pick(stats);
+    if (snapshot_ && snapshot_->Covers(p)) return true;
+    return std::ranges::any_of(recent_, [&](const Point<D>& q) { return search::Covers(q, p); });
+  }
+
+  void Add(const Stats& stats) override { recent_.push_back(Pick(stats)); }
+
+  void Settle() override {
+    if (recent_.empty()) return;
+    all_.insert(all_.end(), recent_.begin(), recent_.end());
+    recent_.clear();
+    snapshot_ = std::make_unique<SnapshotIndex<D>>(all_);
+  }
 
  private:
   Point<D> Pick(const Stats& stats) const {
@@ -206,7 +231,9 @@ class ReachedOn : public Reached {
     return p;
   }
   std::vector<std::size_t> read_;
-  GrowingIndex<D> index_;
+  std::vector<Point<D>> all_;
+  std::vector<Point<D>> recent_;
+  std::unique_ptr<SnapshotIndex<D>> snapshot_;
 };
 
 std::unique_ptr<Reached> MakeReached(const std::vector<std::size_t>& read) {
@@ -238,13 +265,18 @@ class Search {
   void FindReadStats();
   bool ReadStatsHold(const PreparedLayout& layout);
   void CompileOptions();
-  const std::vector<FlatSet>& FlatSets(std::size_t slot, const std::vector<std::size_t>& open, int room);
+  const FlatSets& SetsOf(std::size_t slot, const std::vector<std::size_t>& open, int room);
   Profile& ProfileFor(const std::array<std::vector<std::size_t>, kSlots>& specials);
   void FindFinals(Profile& profile);
   void Directions(std::span<const Conversion> conversions, const PreparedLayout& layout, Mask& up,
                   Mask& down) const;
   template <std::size_t D>
-  void Merge(Profile& profile, const Assignment& a, Reached& reached);
+  std::vector<Final> Merge(const Profile& profile, const Assignment& a, const Reached& reached) const;
+  template <std::size_t D>
+  const std::vector<std::uint16_t>& OwnFrontier(const std::vector<FlatSet>& sets, const Assignment& a,
+                                                std::uint32_t signature) const;
+  std::vector<Final> FinalsOf(const Profile& profile, const std::array<std::size_t, kSlots>& conv,
+                              const Reached& reached) const;
   bool CanBeat(const PreparedLayout& layout, const std::vector<const Final*>& group, double best) const;
   std::size_t Widest(const std::vector<const Final*>& group) const;
   bool AnyBeats(const PreparedLayout& layout, std::vector<const Final*> group, double best) const;
@@ -274,8 +306,13 @@ class Search {
   Mask down_{};
   std::vector<std::size_t> read_list_;
   std::array<ItemOptions, kSlots> options_;
-  std::map<std::tuple<std::size_t, int, std::vector<std::size_t>>, std::unique_ptr<std::vector<FlatSet>>> flat_sets_;
+  std::map<std::tuple<std::size_t, int, std::vector<std::size_t>>, std::unique_ptr<FlatSets>> flat_sets_;
   std::map<std::vector<std::int64_t>, std::unique_ptr<Profile>> profiles_;
+  // Frontiers of an item's flat sets by the stats compared, shared by the
+  // threads.
+  mutable std::mutex own_mu_;
+  mutable std::map<std::pair<const std::vector<FlatSet>*, std::uint32_t>, std::unique_ptr<std::vector<std::uint16_t>>>
+      own_frontiers_;
   double best_ = 0;
   std::optional<EnchantResult> found_;
   // The finals of the layout with no specials, once found.
@@ -288,7 +325,7 @@ struct Search::Profile {
   std::array<std::vector<std::size_t>, kSlots> open;
   std::array<int, kSlots> room{};
   std::array<std::vector<Pick>, kSlots> conversions;
-  std::array<std::vector<const std::vector<FlatSet>*>, kSlots> flats;
+  std::array<std::vector<const FlatSets*>, kSlots> flats;
   // What the specials add.
   Tenths fixed{};
   std::vector<Conversion> fixed_conversions;
@@ -579,7 +616,7 @@ void Search::CompileOptions() {
   }
 }
 
-const std::vector<FlatSet>& Search::FlatSets(std::size_t slot, const std::vector<std::size_t>& open, int room) {
+const FlatSets& Search::SetsOf(std::size_t slot, const std::vector<std::size_t>& open, int room) {
   auto key = std::tuple{slot, room, open};
   if (auto it = flat_sets_.find(key); it != flat_sets_.end()) {
     return *it->second;
@@ -601,8 +638,16 @@ const std::vector<FlatSet>& Search::FlatSets(std::size_t slot, const std::vector
   for (std::size_t i = 0; i < sets.size(); ++i) {
     for (std::size_t k = 0; k < dims.size(); ++k) points[i][k] = dims[k].second * sets[i].tenths[dims[k].first];
   }
-  auto kept = std::make_unique<std::vector<FlatSet>>();
-  for (const std::size_t i : Frontier(points)) kept->push_back(std::move(sets[i]));
+  auto kept = std::make_unique<FlatSets>();
+  kept->most.fill(std::numeric_limits<std::int32_t>::min() / 4);
+  kept->least.fill(std::numeric_limits<std::int32_t>::max() / 4);
+  for (const std::size_t i : Frontier(points)) {
+    for (std::size_t k = 0; k < kStats; ++k) {
+      kept->most[k] = std::max(kept->most[k], sets[i].tenths[k]);
+      kept->least[k] = std::min(kept->least[k], sets[i].tenths[k]);
+    }
+    kept->sets.push_back(std::move(sets[i]));
+  }
   return *flat_sets_.emplace(std::move(key), std::move(kept)).first->second;
 }
 
@@ -668,7 +713,7 @@ void Search::FindFinals(Profile& profile) {
   profile.found = true;
   ++counts_.profiles;
   const PreparedLayout& layout = *profile.layout;
-  static const std::vector<FlatSet> kNothing = {FlatSet{}};
+  static const FlatSets kNothing = {{FlatSet{}}, {}, {}};
   for (std::size_t slot = 0; slot < kSlots; ++slot) {
     const ItemOptions& item = options_[slot];
     if (!item.present || profile.room[slot] == 0) {
@@ -687,7 +732,7 @@ void Search::FindFinals(Profile& profile) {
       for (const std::size_t id : flat) {
         if (std::ranges::none_of(pick.ids, [&](std::size_t o) { return item.Clash(o, id); })) open.push_back(id);
       }
-      profile.flats[slot].push_back(&FlatSets(slot, open, profile.room[slot] - static_cast<int>(pick.ids.size())));
+      profile.flats[slot].push_back(&SetsOf(slot, open, profile.room[slot] - static_cast<int>(pick.ids.size())));
     }
   }
   // Items that can swap conversion choices without changing anything: the
@@ -760,13 +805,8 @@ void Search::FindFinals(Profile& profile) {
         for (std::size_t s = 0; s < kStats; ++s) {
           tenths[s] += pick.tenths[s];
           bounded = bounded && !(up[s] && down[s]);
-          std::int32_t top = std::numeric_limits<std::int32_t>::min() / 4;
-          std::int32_t low = std::numeric_limits<std::int32_t>::max() / 4;
-          for (const FlatSet& f : *profile.flats[slot][conv[slot]]) {
-            top = std::max(top, f.tenths[s]);
-            low = std::min(low, f.tenths[s]);
-          }
-          tenths[s] += down[s] && !up[s] ? low : top;
+          const FlatSets& sets = *profile.flats[slot][conv[slot]];
+          tenths[s] += down[s] && !up[s] ? sets.least[s] : sets.most[s];
         }
       }
       Planned plan{conv, scorer_.FinalStats(layout, tenths, conversions), 0, bounded};
@@ -782,47 +822,29 @@ void Search::FindFinals(Profile& profile) {
   }
   std::ranges::stable_sort(planned, std::greater<>{}, &Planned::order);
 
+  // Assignments go in rounds. Each round's run at once, every one checked
+  // against the finals reached before the round, so what each finds
+  // doesn't depend on the threads; the round's finals then join in order.
+  constexpr std::size_t kRound = 256;
   const std::unique_ptr<Reached> reached = MakeReached(read_list_);
-  for (const Planned& plan : planned) {
-    if (plan.bounded && reached->Covers(plan.best)) continue;
-    ++counts_.assignments;
-    Assignment a;
-    a.conv = plan.conv;
-    a.fixed = profile.fixed;
-    a.conversions = profile.fixed_conversions;
-    for (std::size_t slot = 0; slot < kSlots; ++slot) {
-      const Pick& pick = profile.conversions[slot][plan.conv[slot]];
-      for (std::size_t s = 0; s < kStats; ++s) a.fixed[s] += pick.tenths[s];
-      a.conversions.insert(a.conversions.end(), pick.conversions.begin(), pick.conversions.end());
+  std::size_t next = 0;
+  while (next < planned.size()) {
+    std::vector<std::size_t> round;
+    for (; next < planned.size() && round.size() < kRound; ++next) {
+      if (!(planned[next].bounded && reached->Covers(planned[next].best))) round.push_back(next);
     }
-    Mask up{};
-    Mask down{};
-    Directions(a.conversions, layout, up, down);
-    for (const std::size_t s : read_list_) a.dims.emplace_back(s, 1);
-    for (std::size_t s = 0; s < kStats; ++s) {
-      if (up[s] && !read_[s]) a.dims.emplace_back(s, 1);
+    std::vector<std::vector<Final>> found(round.size());
+    ParallelFor(round.size(), [&](std::size_t i) { found[i] = FinalsOf(profile, planned[round[i]].conv, *reached); });
+    for (std::vector<Final>& list : found) {
+      for (const Final& f : list) {
+        if (!reached->Covers(f.stats)) {
+          reached->Add(f.stats);
+          profile.finals.push_back(f);
+        }
+      }
     }
-    for (std::size_t s = 0; s < kStats; ++s) {
-      if (down[s]) a.dims.emplace_back(s, -1);
-      a.mixed = a.mixed || (up[s] && down[s]);
-    }
-    const std::size_t width = a.dims.size();
-    switch (width) {
-      case 1: Merge<1>(profile, a, *reached); break;
-      case 2: Merge<2>(profile, a, *reached); break;
-      case 3: Merge<3>(profile, a, *reached); break;
-      case 4: Merge<4>(profile, a, *reached); break;
-      case 5: Merge<5>(profile, a, *reached); break;
-      case 6: Merge<6>(profile, a, *reached); break;
-      case 7: Merge<7>(profile, a, *reached); break;
-      case 8: Merge<8>(profile, a, *reached); break;
-      case 9: Merge<9>(profile, a, *reached); break;
-      case 10: Merge<10>(profile, a, *reached); break;
-      case 11: Merge<11>(profile, a, *reached); break;
-      case 12: Merge<12>(profile, a, *reached); break;
-      default:
-        throw std::runtime_error("too many stats to compare: " + std::to_string(width));
-    }
+    reached->Settle();
+    counts_.assignments += round.size();
   }
   // Finals added early may be beaten by later ones.
   std::vector<Point<kStats>> points(profile.finals.size());
@@ -837,8 +859,70 @@ void Search::FindFinals(Profile& profile) {
   counts_.finals += profile.finals.size();
 }
 
+std::vector<Final> Search::FinalsOf(const Profile& profile, const std::array<std::size_t, kSlots>& conv,
+                                   const Reached& reached) const {
+  const PreparedLayout& layout = *profile.layout;
+  Assignment a;
+  a.conv = conv;
+  a.fixed = profile.fixed;
+  a.conversions = profile.fixed_conversions;
+  for (std::size_t slot = 0; slot < kSlots; ++slot) {
+    const Pick& pick = profile.conversions[slot][conv[slot]];
+    for (std::size_t s = 0; s < kStats; ++s) a.fixed[s] += pick.tenths[s];
+    a.conversions.insert(a.conversions.end(), pick.conversions.begin(), pick.conversions.end());
+  }
+  Mask up{};
+  Mask down{};
+  Directions(a.conversions, layout, up, down);
+  for (const std::size_t s : read_list_) a.dims.emplace_back(s, 1);
+  for (std::size_t s = 0; s < kStats; ++s) {
+    if (up[s] && !read_[s]) a.dims.emplace_back(s, 1);
+  }
+  for (std::size_t s = 0; s < kStats; ++s) {
+    if (down[s]) a.dims.emplace_back(s, -1);
+    a.mixed = a.mixed || (up[s] && down[s]);
+  }
+  switch (a.dims.size()) {
+    case 1: return Merge<1>(profile, a, reached);
+    case 2: return Merge<2>(profile, a, reached);
+    case 3: return Merge<3>(profile, a, reached);
+    case 4: return Merge<4>(profile, a, reached);
+    case 5: return Merge<5>(profile, a, reached);
+    case 6: return Merge<6>(profile, a, reached);
+    case 7: return Merge<7>(profile, a, reached);
+    case 8: return Merge<8>(profile, a, reached);
+    case 9: return Merge<9>(profile, a, reached);
+    case 10: return Merge<10>(profile, a, reached);
+    case 11: return Merge<11>(profile, a, reached);
+    case 12: return Merge<12>(profile, a, reached);
+    default:
+      throw std::runtime_error("too many stats to compare: " + std::to_string(a.dims.size()));
+  }
+}
+
 template <std::size_t D>
-void Search::Merge(Profile& profile, const Assignment& a, Reached& reached) {
+const std::vector<std::uint16_t>& Search::OwnFrontier(const std::vector<FlatSet>& sets, const Assignment& a,
+                                                       std::uint32_t signature) const {
+  const auto key = std::pair{&sets, signature};
+  {
+    std::lock_guard lock(own_mu_);
+    if (auto it = own_frontiers_.find(key); it != own_frontiers_.end()) return *it->second;
+  }
+  std::vector<Point<D>> points;
+  points.reserve(sets.size());
+  for (const FlatSet& f : sets) {
+    Point<D> p{};
+    for (std::size_t k = 0; k < D; ++k) p[k] = a.dims[k].second * f.tenths[a.dims[k].first];
+    points.push_back(p);
+  }
+  auto kept = std::make_unique<std::vector<std::uint16_t>>();
+  for (const std::size_t i : Frontier(points)) kept->push_back(static_cast<std::uint16_t>(i));
+  std::lock_guard lock(own_mu_);
+  return *own_frontiers_.try_emplace(key, std::move(kept)).first->second;
+}
+
+template <std::size_t D>
+std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, const Reached& reached) const {
   static_assert(D <= kMaxCompared);
   const PreparedLayout& layout = *profile.layout;
   struct Sum {
@@ -852,14 +936,15 @@ void Search::Merge(Profile& profile, const Assignment& a, Reached& reached) {
     for (std::size_t k = 0; k < D; ++k) p[k] = a.dims[k].second * f.tenths[a.dims[k].first];
     return p;
   };
-  // Each item's sets that nothing else of its own matches or beats here.
+  // Each item's sets that nothing else of its own matches or beats on
+  // these stats. They depend only on the item's sets and the stats, so
+  // they're kept for other assignments.
+  std::uint32_t signature = 0;
+  for (const auto& [stat, sign] : a.dims) signature |= 1u << (stat + (sign < 0 ? kStats : 0));
   std::array<std::vector<std::pair<Point<D>, std::uint16_t>>, kSlots> own;
   for (std::size_t slot = 0; slot < kSlots; ++slot) {
-    const std::vector<FlatSet>& sets = *profile.flats[slot][a.conv[slot]];
-    std::vector<Point<D>> points;
-    points.reserve(sets.size());
-    for (const FlatSet& f : sets) points.push_back(point_of(f));
-    for (const std::size_t i : Frontier(points)) own[slot].emplace_back(points[i], static_cast<std::uint16_t>(i));
+    const std::vector<FlatSet>& sets = profile.flats[slot][a.conv[slot]]->sets;
+    for (const std::uint16_t i : OwnFrontier<D>(sets, a, signature)) own[slot].emplace_back(point_of(sets[i]), i);
   }
   // The most the items after each can add to each compared stat.
   std::array<Point<D>, kSlots> rest{};
@@ -895,16 +980,53 @@ void Search::Merge(Profile& profile, const Assignment& a, Reached& reached) {
     for (std::size_t k = 0; k < D; ++k) best[k] += rest[slot][k];
     return reached.Covers(final_of(best));
   };
+  // The most of every coordinate over a range.
+  const auto corner = [](auto first, auto last, auto point) {
+    Point<D> c;
+    c.fill(std::numeric_limits<std::int32_t>::min() / 4);
+    for (auto it = first; it != last; ++it) {
+      for (std::size_t k = 0; k < D; ++k) c[k] = std::max(c[k], point(*it)[k]);
+    }
+    return c;
+  };
+  std::vector<Final> out;
   std::vector<Sum> sums = {Sum{}};
   for (std::size_t slot = 0; slot < kSlots; ++slot) {
     std::vector<Sum> grown;
     grown.reserve(sums.size() * own[slot].size());
-    for (const auto& [p, i] : own[slot]) {
-      for (const Sum& x : sums) {
-        Sum next = x;
-        for (std::size_t k = 0; k < D; ++k) next.at[k] += p[k];
-        next.pick[slot] = i;
-        if (!hopeless(next.at, slot)) grown.push_back(next);
+    // Sums and the item's sets in blocks of nearby points. Pairs from two
+    // blocks are all hopeless when the blocks' corners add to a hopeless
+    // point, since the bound only grows; then each sum with the sets'
+    // corner; then each pair.
+    constexpr std::size_t kSumBlock = 16;
+    constexpr std::size_t kSetBlock = 8;
+    auto& sets = own[slot];
+    std::ranges::sort(sets, std::greater<>{}, [](const auto& o) { return o.first; });
+    std::ranges::sort(sums, std::greater<>{}, [](const Sum& x) { return x.at; });
+    for (std::size_t ob = 0; ob < sets.size(); ob += kSetBlock) {
+      const auto oe = std::min(sets.size(), ob + kSetBlock);
+      const Point<D> sets_corner = corner(sets.begin() + static_cast<std::ptrdiff_t>(ob),
+                                          sets.begin() + static_cast<std::ptrdiff_t>(oe),
+                                          [](const auto& o) -> const Point<D>& { return o.first; });
+      for (std::size_t sb = 0; sb < sums.size(); sb += kSumBlock) {
+        const auto se = std::min(sums.size(), sb + kSumBlock);
+        Point<D> both = corner(sums.begin() + static_cast<std::ptrdiff_t>(sb),
+                               sums.begin() + static_cast<std::ptrdiff_t>(se),
+                               [](const Sum& x) -> const Point<D>& { return x.at; });
+        for (std::size_t k = 0; k < D; ++k) both[k] += sets_corner[k];
+        if (hopeless(both, slot)) continue;
+        for (std::size_t xi = sb; xi < se; ++xi) {
+          const Sum& x = sums[xi];
+          Point<D> with_corner = x.at;
+          for (std::size_t k = 0; k < D; ++k) with_corner[k] += sets_corner[k];
+          if (hopeless(with_corner, slot)) continue;
+          for (std::size_t oi = ob; oi < oe; ++oi) {
+            Sum next = x;
+            for (std::size_t k = 0; k < D; ++k) next.at[k] += sets[oi].first[k];
+            next.pick[slot] = sets[oi].second;
+            if (!hopeless(next.at, slot)) grown.push_back(next);
+          }
+        }
       }
     }
     if (slot + 1 < kSlots) {
@@ -932,12 +1054,12 @@ void Search::Merge(Profile& profile, const Assignment& a, Reached& reached) {
       f.stats = finals[i];
       f.conv = a.conv;
       for (std::size_t s = 0; s < kSlots; ++s) {
-        f.flat[s] = &(*profile.flats[s][a.conv[s]])[grown[i].pick[s]];
+        f.flat[s] = &profile.flats[s][a.conv[s]]->sets[grown[i].pick[s]];
       }
-      profile.finals.push_back(f);
-      reached.Add(finals[i]);
+      out.push_back(f);
     }
   }
+  return out;
 }
 
 // Whether a build among the group's finals could score above `best`: the
