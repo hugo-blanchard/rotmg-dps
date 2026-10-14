@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "fixture.hpp"
+#include "rotmg/build.hpp"
 #include "rotmg/enchant.hpp"
 #include "rotmg/evaluate.hpp"
 #include "rotmg/fire_rate.hpp"
@@ -135,6 +136,34 @@ TEST_CASE("damage and fire rate enchantments never lower the projectiles' DPS") 
           const double better = projectiles(enchanted);
           INFO(w.name << " with " << e->name << ", ATT " << att << ", DEF " << def);
           CHECK(better >= plain);
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("more of any stat never lowers a build's sustained DPS") {
+  // What the optimizer relies on to drop a build that has less of every
+  // stat than another. Every weapon with every ability, and with none.
+  constexpr std::array<int rotmg::Character::*, 8> kStats = {
+      &rotmg::Character::attack,  &rotmg::Character::dexterity, &rotmg::Character::speed,
+      &rotmg::Character::wisdom,  &rotmg::Character::vitality,  &rotmg::Character::defense,
+      &rotmg::Character::max_hit_points, &rotmg::Character::max_magic_points};
+  std::vector<const rotmg::Ability*> abilities = {nullptr};
+  for (const rotmg::Ability& a : Data().abilities) abilities.push_back(&a);
+  for (const rotmg::Weapon& w : Data().weapons) {
+    for (const rotmg::Ability* a : abilities) {
+      for (int rotmg::Character::*stat : kStats) {
+        rotmg::Character c{.attack = 50, .dexterity = 50, .wisdom = 50, .vitality = 40, .defense = 25, .speed = 50,
+                           .max_hit_points = 700, .max_magic_points = 400};
+        double previous = 0;
+        for (int extra = 0; extra <= 150; ++extra) {
+          rotmg::Character more = c;
+          more.*stat += extra;
+          const double dps = rotmg::EvaluateBuild(w, a, more, {.defense = 30}, {}).dps;
+          INFO(w.name << " with " << (a ? a->name : "no ability") << ", +" << extra);
+          CHECK(dps >= previous * (1 - 1e-12));
+          previous = dps;
         }
       }
     }
