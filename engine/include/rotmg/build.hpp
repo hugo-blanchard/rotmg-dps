@@ -35,6 +35,16 @@ struct BuildBreakdown {
 BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const Character& character,
                              const Target& target, const Assumptions& assumptions);
 
+/// EvaluateBuild's three numbers, the same to the last bit, without its
+/// explanation. For searches that score many builds.
+struct BuildNumbers {
+  double dps = 0;
+  double weapon_dps = 0;
+  double ability_dps = 0;
+};
+BuildNumbers EvaluateBuildNumbers(const Weapon& weapon, const Ability* ability, const Character& character,
+                                  const Target& target, const Assumptions& assumptions);
+
 /// A target that can only be hurt in short windows, like a boss that's
 /// vulnerable for a moment every few seconds.
 struct BurstWindow {

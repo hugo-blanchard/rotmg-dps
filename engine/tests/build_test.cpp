@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <utility>
+#include <vector>
 
 #include "fixture.hpp"
 #include "rotmg/build.hpp"
@@ -225,4 +226,22 @@ TEST_CASE("MP given back in a burst window pays toward the next window's casts")
   CHECK(b.window_casts == 2);
   CHECK(b.paid_casts == Approx(77.0 / 60));
   CHECK(b.casts == Approx(77.0 / 60));
+}
+
+TEST_CASE("a build's numbers alone match its full evaluation exactly") {
+  std::vector<const rotmg::Ability*> abilities = {nullptr};
+  for (const rotmg::Ability& a : Data().abilities) abilities.push_back(&a);
+  for (const rotmg::Weapon& w : Data().weapons) {
+    for (const rotmg::Ability* a : abilities) {
+      for (const int wisdom : {0, 40, 75}) {
+        const rotmg::Character c{.attack = 60, .dexterity = 55, .wisdom = wisdom};
+        const rotmg::Target t{.defense = 20};
+        const rotmg::BuildBreakdown full = EvaluateBuild(w, a, c, t, {});
+        const rotmg::BuildNumbers numbers = rotmg::EvaluateBuildNumbers(w, a, c, t, {});
+        CHECK(numbers.dps == full.dps);
+        CHECK(numbers.weapon_dps == full.weapon_dps);
+        CHECK(numbers.ability_dps == (full.ability ? full.ability->dps : 0.0));
+      }
+    }
+  }
 }

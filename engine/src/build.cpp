@@ -102,6 +102,44 @@ double MixedDps(const Weapon& weapon, const Character& character, const Target& 
 void WithAbility(BuildBreakdown& out, const Weapon& weapon, const Character& with_ability_gear, const Target& target,
                  const Assumptions& assumptions, const std::vector<ChanceBoost>& boosts);
 
+// The weapon's DPS averaged over a cast cycle of the ability, with its
+// buffs up for their part of each cycle and `no_buffs` for the rest.
+double CycleWeaponDps(const AbilityBreakdown& a, double no_buffs, const Weapon& weapon,
+                      const Character& with_ability_gear, const Target& target, const Assumptions& assumptions,
+                      const std::vector<ChanceBoost>& boosts) {
+  if (a.buffs.empty() || a.casts_per_second <= 0) {
+    return no_buffs;
+  }
+  const double period = 1 / a.casts_per_second;
+  std::vector<double> lasts;
+  for (const Buff& b : a.buffs) {
+    lasts.push_back(std::clamp(b.duration_s, 0.0, period));
+  }
+  std::vector<double> ends = lasts;
+  std::ranges::sort(ends);
+  ends.erase(std::unique(ends.begin(), ends.end()), ends.end());
+
+  double start = 0;
+  double weighted = 0;
+  for (double end : ends) {
+    if (end <= start) {
+      continue;
+    }
+    std::vector<const Buff*> active;
+    for (std::size_t i = 0; i < a.buffs.size(); ++i) {
+      if (lasts[i] >= end) {
+        active.push_back(&a.buffs[i]);
+      }
+    }
+    weighted += (end - start) * MixedDps(weapon, with_ability_gear, target, assumptions, active, boosts);
+    start = end;
+  }
+  if (start < period) {
+    weighted += (period - start) * no_buffs;
+  }
+  return weighted / period;
+}
+
 }  // namespace
 
 BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const Character& character,
@@ -151,6 +189,38 @@ BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const
   return out;
 }
 
+BuildNumbers EvaluateBuildNumbers(const Weapon& weapon, const Ability* ability, const Character& character,
+                                  const Target& target, const Assumptions& assumptions) {
+  const Character with_ability_gear = ability ? character.With(ability->stat_bonuses) : character;
+  const Breakdown alone = EvaluateWeaponNumbers(weapon, with_ability_gear, target, assumptions);
+  double shots_per_second = 0;
+  for (const SubattackResult& s : alone.subattacks) {
+    shots_per_second = std::max(shots_per_second, s.volleys_per_second);
+  }
+  const std::vector<ChanceBoost> boosts = ChanceBoosts(weapon, character.worn, shots_per_second);
+  const double weapon_dps =
+      boosts.empty() ? alone.dps : MixedDps(weapon, with_ability_gear, target, assumptions, {}, boosts);
+  if (ability == nullptr) {
+    return {weapon_dps, weapon_dps, 0};
+  }
+  // As EvaluateBuild: cast as soon as possible, or held back when that does
+  // more.
+  const Character caster = character.With(weapon.stat_bonuses).With(WhileShooting(weapon));
+  const auto cast_at = [&](const AbilityBreakdown& a) {
+    const double cycle = CycleWeaponDps(a, weapon_dps, weapon, with_ability_gear, target, assumptions, boosts);
+    return BuildNumbers{cycle + a.dps, cycle, a.dps};
+  };
+  const AbilityBreakdown asap = EvaluateAbility(*ability, caster, target, assumptions, 0);
+  BuildNumbers out = cast_at(asap);
+  for (const double rate : HeldCastRates(asap)) {
+    const BuildNumbers held = cast_at(EvaluateAbility(*ability, caster, target, assumptions, rate));
+    if (held.dps > out.dps * (1 + 1e-12)) {
+      out = held;
+    }
+  }
+  return out;
+}
+
 namespace {
 
 // Adds the ability's DPS and its buffs' effect on the weapon to `out`.
@@ -161,38 +231,11 @@ void WithAbility(BuildBreakdown& out, const Weapon& weapon, const Character& wit
   if (a.buffs.empty() || a.casts_per_second <= 0) {
     return;
   }
-  const double no_buffs = out.weapon_dps;
-
   const double period = 1 / a.casts_per_second;
-  std::vector<double> lasts;
   for (const Buff& b : a.buffs) {
-    const double up = std::clamp(b.duration_s, 0.0, period);
-    lasts.push_back(up);
-    out.uptimes.push_back({b, up / period});
+    out.uptimes.push_back({b, std::clamp(b.duration_s, 0.0, period) / period});
   }
-  std::vector<double> ends = lasts;
-  std::ranges::sort(ends);
-  ends.erase(std::unique(ends.begin(), ends.end()), ends.end());
-
-  double start = 0;
-  double weighted = 0;
-  for (double end : ends) {
-    if (end <= start) {
-      continue;
-    }
-    std::vector<const Buff*> active;
-    for (std::size_t i = 0; i < a.buffs.size(); ++i) {
-      if (lasts[i] >= end) {
-        active.push_back(&a.buffs[i]);
-      }
-    }
-    weighted += (end - start) * MixedDps(weapon, with_ability_gear, target, assumptions, active, boosts);
-    start = end;
-  }
-  if (start < period) {
-    weighted += (period - start) * no_buffs;
-  }
-  out.weapon_dps = weighted / period;
+  out.weapon_dps = CycleWeaponDps(a, out.weapon_dps, weapon, with_ability_gear, target, assumptions, boosts);
   out.dps = out.weapon_dps + a.dps;
   out.assumptions.push_back(
       "every cast's buffs and debuffs start together and run their full duration, and a new cast doesn't extend "
