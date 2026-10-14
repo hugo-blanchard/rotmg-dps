@@ -154,7 +154,7 @@ std::vector<double> HeldCastRates(const AbilityBreakdown& asap) {
     // CastShare's blocked casts: casting exactly n times per cooldown
     // blocks n - 1.
     const int blocked = static_cast<int>(std::ceil(cooldown * asap.casts_per_second - 1e-9)) - 1;
-    for (int n = blocked; n >= std::max(1, blocked - 2); --n) {
+    for (int n = blocked; n >= 1; --n) {
       const double rate = n / cooldown;
       if (rate > 0 && rate < asap.casts_per_second) {
         out.push_back(rate);

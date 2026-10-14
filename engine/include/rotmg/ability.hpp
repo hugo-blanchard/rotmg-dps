@@ -148,8 +148,9 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
                                  const Assumptions& assumptions, double held_casts_per_second = 0);
 
 /// Slower cast rates worth trying than `asap`'s: for each item effect it
-/// blocks on some casts, the fastest rates that block it on one cast fewer,
-/// then two, then three. Fastest first.
+/// blocks on some casts, every rate at which it's blocked on fewer. The
+/// best build is at one of them or at `asap`, since between two of them
+/// casting faster only helps. Fastest first.
 std::vector<double> HeldCastRates(const AbilityBreakdown& asap);
 
 }  // namespace rotmg
