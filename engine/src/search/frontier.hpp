@@ -322,4 +322,46 @@ std::vector<std::size_t> Frontier(const std::vector<Point<D>>& points) {
   return kept;
 }
 
+// Frontier for points whose dimension count is only known at run time, as
+// rows of `dims` values: for paths that aren't hot, where instantiating a
+// template for every count isn't worth it. Kept points are checked in
+// blocks, skipping a block whose maxima can't cover the point.
+inline std::vector<std::size_t> FrontierOfRows(const std::vector<std::int32_t>& rows, std::size_t dims) {
+  const std::size_t n = dims == 0 ? 0 : rows.size() / dims;
+  const auto row = [&](std::size_t i) { return rows.begin() + static_cast<std::ptrdiff_t>(i * dims); };
+  std::vector<std::size_t> order(n);
+  std::iota(order.begin(), order.end(), std::size_t{0});
+  std::ranges::sort(order, [&](std::size_t x, std::size_t y) {
+    const auto mismatch = std::mismatch(row(x), row(x) + static_cast<std::ptrdiff_t>(dims), row(y));
+    return mismatch.first != row(x) + static_cast<std::ptrdiff_t>(dims) ? *mismatch.first > *mismatch.second : x < y;
+  });
+  constexpr std::size_t kBlock = 32;
+  std::vector<std::size_t> kept;
+  std::vector<std::int32_t> block_most;
+  for (const std::size_t i : order) {
+    bool covered = false;
+    for (std::size_t b = 0; b * kBlock < kept.size() && !covered; ++b) {
+      bool may = true;
+      for (std::size_t d = 0; d < dims && may; ++d) may = block_most[b * dims + d] >= row(i)[static_cast<std::ptrdiff_t>(d)];
+      if (!may) continue;
+      for (std::size_t k = b * kBlock; k < std::min(kept.size(), (b + 1) * kBlock) && !covered; ++k) {
+        bool all = true;
+        for (std::size_t d = 0; d < dims && all; ++d) {
+          all = row(kept[k])[static_cast<std::ptrdiff_t>(d)] >= row(i)[static_cast<std::ptrdiff_t>(d)];
+        }
+        covered = all;
+      }
+    }
+    if (covered) continue;
+    if (kept.size() % kBlock == 0) block_most.insert(block_most.end(), row(i), row(i) + static_cast<std::ptrdiff_t>(dims));
+    const std::size_t b = kept.size() / kBlock;
+    for (std::size_t d = 0; d < dims; ++d) {
+      block_most[b * dims + d] = std::max(block_most[b * dims + d], row(i)[static_cast<std::ptrdiff_t>(d)]);
+    }
+    kept.push_back(i);
+  }
+  std::ranges::sort(kept);
+  return kept;
+}
+
 }  // namespace rotmg::search

@@ -117,9 +117,10 @@ void Sets(const ItemOptions& item, const std::vector<std::size_t>& ids, int most
 
 // Whether mutator `a` does at least what `x` does, in a way that can't
 // lower the score: higher damage and fire rate multipliers, a lower MP cost,
-// a stronger chance boost of the same stat (on-shoot boosts never lower
-// DPS when stronger, property-tested), more of a flat stat unless more of
-// it can lower a read stat (`down`); anything else only when it's the same.
+// a stronger chance boost of the same stat, more of a flat stat unless more
+// of it can lower a read stat (`down`); anything else only when it's the
+// same. That these never lower the score is an assumption, checked by the
+// property tests and by AssumptionsFor's audit.
 bool AtLeast(const Mutator& a, const Mutator& x, const Mask& down) {
   if (a.tag != x.tag || a.text != x.text) return false;
   const auto same_except = [&](std::initializer_list<std::string_view> keys) {
@@ -142,6 +143,14 @@ bool AtLeast(const Mutator& a, const Mutator& x, const Mask& down) {
     return m.attributes.Number(key).value_or(fallback);
   };
   if (a.tag == "AddOnPlayerShootActivate" && a.text == "StatBoostSelf") {
+    // Of chance boosts of a stat in a channel that doesn't stack, the
+    // engine counts the one with the most amount, then duration, then
+    // chance, which isn't always the one doing the most: a stronger one can
+    // displace a better one on another item. Those only compare as equal.
+    const bool chance = number(x, "proc", 1) < 1;
+    if (chance && x.attributes.Text("channel").starts_with("noStack")) {
+      return a.number == x.number && same_except({});
+    }
     return number(a, "amount", 0) >= number(x, "amount", 0) && number(a, "duration", 0) >= number(x, "duration", 0) &&
            number(a, "proc", 1) >= number(x, "proc", 1) && number(a, "cooldown", 0) <= number(x, "cooldown", 0) &&
            same_except({"amount", "duration", "proc", "cooldown"});
@@ -256,6 +265,7 @@ class Search {
       : model_(model), scorer_(scorer), items_(items), settings_(settings), counts_(counts) {}
 
   std::optional<EnchantResult> Run(double incumbent);
+  EnchantAssumptions Assume();
 
  private:
   struct Profile;
@@ -317,6 +327,7 @@ class Search {
   std::optional<EnchantResult> found_;
   // The finals of the layout with no specials, once found.
   const std::vector<Final>* open_finals_ = nullptr;
+  EnchantAssumptions assumed_;
 };
 
 struct Search::Profile {
@@ -516,7 +527,11 @@ void Search::CompileOptions() {
           counts = true;
         }
       }
-      if (counts) stats.push_back(std::move(o));
+      if (counts) {
+        stats.push_back(std::move(o));
+      } else {
+        assumed_.ignored[slot].push_back(id);
+      }
     }
     // A special is never needed when another can take its place (they
     // can't share the item, and the other clashes with nothing it doesn't)
@@ -535,12 +550,16 @@ void Search::CompileOptions() {
       };
       std::vector<std::int32_t> kept;
       for (const std::int32_t x : item.specials) {
-        const bool beaten = std::ranges::any_of(item.specials, [&](std::int32_t a) {
+        const auto by = std::ranges::find_if(item.specials, [&](std::int32_t a) {
           if (a == x || !StrongerEffects(model_.enchantment(a), model_.enchantment(x), down_)) return false;
           const bool equal = StrongerEffects(model_.enchantment(x), model_.enchantment(a), down_);
           return (!equal || a < x) && covers_clashes(a, x);
         });
-        if (!beaten) kept.push_back(x);
+        if (by == item.specials.end()) {
+          kept.push_back(x);
+        } else {
+          assumed_.replaced[slot].emplace_back(x, *by);
+        }
       }
       item.specials = std::move(kept);
     }
@@ -590,9 +609,15 @@ void Search::CompileOptions() {
     };
     std::vector<std::size_t> keep;
     for (std::size_t x = 0; x < stats.size(); ++x) {
-      bool beaten = false;
-      for (std::size_t a = 0; a < stats.size() && !beaten; ++a) beaten = replaces(a, x);
-      if (!beaten) keep.push_back(x);
+      std::size_t by = stats.size();
+      for (std::size_t a = 0; a < stats.size() && by == stats.size(); ++a) {
+        if (replaces(a, x)) by = a;
+      }
+      if (by == stats.size()) {
+        keep.push_back(x);
+      } else {
+        assumed_.replaced[slot].emplace_back(stats[x].enchantment, stats[by].enchantment);
+      }
     }
     for (const std::size_t x : keep) item.stats.push_back(std::move(stats[x]));
     // The clash rows again over what's left.
@@ -634,14 +659,15 @@ const FlatSets& Search::SetsOf(std::size_t slot, const std::vector<std::size_t>&
   for (std::size_t s = 0; s < kStats; ++s) {
     if (down_[s]) dims.emplace_back(s, -1);
   }
-  std::vector<Point<2 * kStats>> points(sets.size());
-  for (std::size_t i = 0; i < sets.size(); ++i) {
-    for (std::size_t k = 0; k < dims.size(); ++k) points[i][k] = dims[k].second * sets[i].tenths[dims[k].first];
+  std::vector<std::int32_t> rows;
+  rows.reserve(sets.size() * dims.size());
+  for (const FlatSet& set : sets) {
+    for (const auto& [stat, sign] : dims) rows.push_back(sign * set.tenths[stat]);
   }
   auto kept = std::make_unique<FlatSets>();
   kept->most.fill(std::numeric_limits<std::int32_t>::min() / 4);
   kept->least.fill(std::numeric_limits<std::int32_t>::max() / 4);
-  for (const std::size_t i : Frontier(points)) {
+  for (const std::size_t i : FrontierOfRows(rows, dims.size())) {
     for (std::size_t k = 0; k < kStats; ++k) {
       kept->most[k] = std::max(kept->most[k], sets[i].tenths[k]);
       kept->least[k] = std::min(kept->least[k], sets[i].tenths[k]);
@@ -847,14 +873,12 @@ void Search::FindFinals(Profile& profile) {
     counts_.assignments += round.size();
   }
   // Finals added early may be beaten by later ones.
-  std::vector<Point<kStats>> points(profile.finals.size());
-  for (std::size_t i = 0; i < profile.finals.size(); ++i) {
-    for (std::size_t k = 0; k < kStats; ++k) {
-      points[i][k] = k < read_list_.size() ? profile.finals[i].stats[read_list_[k]] : 0;
-    }
+  std::vector<std::int32_t> rows;
+  for (const Final& f : profile.finals) {
+    for (const std::size_t s : read_list_) rows.push_back(f.stats[s]);
   }
   std::vector<Final> kept;
-  for (const std::size_t i : Frontier(points)) kept.push_back(profile.finals[i]);
+  for (const std::size_t i : FrontierOfRows(rows, read_list_.size())) kept.push_back(profile.finals[i]);
   profile.finals = std::move(kept);
   counts_.finals += profile.finals.size();
 }
@@ -1040,15 +1064,14 @@ std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, co
     }
     // Nothing comes after the last item: compare final stats.
     std::vector<Stats> finals;
-    std::vector<Point<kStats>> points;
+    std::vector<std::int32_t> rows;
     finals.reserve(grown.size());
+    rows.reserve(grown.size() * read_list_.size());
     for (const Sum& x : grown) {
       finals.push_back(final_of(x.at));
-      Point<kStats> p{};
-      for (std::size_t k = 0; k < read_list_.size(); ++k) p[k] = finals.back()[read_list_[k]];
-      points.push_back(p);
+      for (const std::size_t s : read_list_) rows.push_back(finals.back()[s]);
     }
-    for (const std::size_t i : Frontier(points)) {
+    for (const std::size_t i : FrontierOfRows(rows, read_list_.size())) {
       if (reached.Covers(finals[i])) continue;
       Final f;
       f.stats = finals[i];
@@ -1173,6 +1196,23 @@ void Search::ScoreLayout(const PreparedLayout& layout, const std::array<std::vec
   search(all);
 }
 
+EnchantAssumptions Search::Assume() {
+  const Dataset& d = model_.dataset();
+  weapon_counts_ = scorer_.weights().weapon > 0;
+  worn_ = model_.base().wearing;
+  if (items_[kArmor] >= 0) worn_.push_back(d.armors[static_cast<std::size_t>(items_[kArmor])].type);
+  if (items_[kRing] >= 0) worn_.push_back(d.rings[static_cast<std::size_t>(items_[kRing])].type);
+  worn_.push_back(d.weapons[static_cast<std::size_t>(items_[kWeapon])].type);
+  if (items_[kAbility] >= 0) worn_.push_back(d.abilities[static_cast<std::size_t>(items_[kAbility])].type);
+  FindObtainable();
+  read_ = {};
+  FindReadStats();
+  assumed_ = {};
+  CompileOptions();
+  assumed_.read = read_;
+  return assumed_;
+}
+
 std::optional<EnchantResult> Search::Run(double incumbent) {
   const Dataset& d = model_.dataset();
   weapon_counts_ = scorer_.weights().weapon > 0;
@@ -1187,6 +1227,7 @@ std::optional<EnchantResult> Search::Run(double incumbent) {
   while (true) {
     boost_read_ = {};
     FindReadStats();
+    assumed_ = {};
     CompileOptions();
     read_list_.clear();
     for (std::size_t s = 0; s < kStats; ++s) {
@@ -1250,6 +1291,13 @@ std::optional<EnchantResult> BestEnchantments(const Model& model, Scorer& scorer
   SearchCounts ignored;
   Search search(model, scorer, items, settings, counts != nullptr ? *counts : ignored);
   return search.Run(incumbent);
+}
+
+EnchantAssumptions AssumptionsFor(const Model& model, Scorer& scorer, const std::array<std::int32_t, kSlots>& items,
+                                  const EnchantSettings& settings) {
+  SearchCounts counts;
+  Search search(model, scorer, items, settings, counts);
+  return search.Assume();
 }
 
 }  // namespace rotmg::search

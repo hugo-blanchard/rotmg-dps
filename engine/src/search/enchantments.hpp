@@ -7,6 +7,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <utility>
+#include <vector>
 
 #include "model.hpp"
 #include "score.hpp"
@@ -41,14 +43,29 @@ struct SearchCounts {
 /// the weapon must be there), or nothing when no build scores above
 /// `incumbent`.
 ///
-/// Exact as long as more of a stat the score reads never lowers it and a
-/// stronger on-shoot boost never does either, both property-tested. With a
-/// weight at 0, that part of the build only reaches the score through the
-/// millionth that breaks ties, and the search leaves it out: it's exact up
-/// to that tie-break.
+/// Exact as long as what AssumptionsFor lists holds: more of a stat the
+/// score reads never lowers it, no other stat changes it, the enchantments
+/// it ignores can't change it, and each one it drops for a stronger one
+/// never does better. The property tests check these on the fixture; an
+/// audit checks them on real data. With a weight at 0, that part of the
+/// build only reaches the score through the millionth that breaks ties,
+/// and the search leaves it out: it's exact up to that tie-break.
+/// What the search takes for granted about a set of items, so it can be
+/// checked: the stats the score reads, the enchantments it never puts on an
+/// item because they can't change the score, and the ones it drops for a
+/// stronger one that fits wherever they do (weaker, stronger).
+struct EnchantAssumptions {
+  std::array<bool, kStats> read{};
+  std::array<std::vector<std::int32_t>, kSlots> ignored;
+  std::array<std::vector<std::pair<std::int32_t, std::int32_t>>, kSlots> replaced;
+};
+
 std::optional<EnchantResult> BestEnchantments(const Model& model, Scorer& scorer,
                                               const std::array<std::int32_t, kSlots>& items,
                                               const EnchantSettings& settings, double incumbent,
                                               SearchCounts* counts = nullptr);
+
+EnchantAssumptions AssumptionsFor(const Model& model, Scorer& scorer, const std::array<std::int32_t, kSlots>& items,
+                                  const EnchantSettings& settings);
 
 }  // namespace rotmg::search

@@ -4,6 +4,10 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
+#include <string>
+#include <vector>
+
 #include "fixture.hpp"
 #include "rotmg/build.hpp"
 #include "rotmg/enchant.hpp"
@@ -193,6 +197,111 @@ TEST_CASE("more of any stat never lowers a build's weighted DPS") {
             INFO(w.name << " with " << a.name << ", +" << extra);
             CHECK(weighted >= previous * (1 - 1e-12));
             previous = weighted;
+          }
+        }
+      }
+    }
+  }
+}
+
+namespace {
+
+// The DPS a search counts under `weights`.
+double Weighted(const rotmg::Weapon& w, const rotmg::Ability* a, const rotmg::DpsWeights& weights) {
+  const rotmg::Character c{.attack = 55, .dexterity = 55, .wisdom = 55, .vitality = 40, .defense = 25, .speed = 50,
+                           .max_hit_points = 700, .max_magic_points = 400};
+  const rotmg::BuildNumbers n = rotmg::EvaluateBuildNumbers(w, a, c, {.defense = 30}, {}, weights);
+  return weights.weapon * n.weapon_dps + weights.ability * n.ability_dps;
+}
+
+std::vector<const rotmg::Ability*> AbilitiesAndNone() {
+  std::vector<const rotmg::Ability*> out = {nullptr};
+  for (const rotmg::Ability& a : Data().abilities) out.push_back(&a);
+  return out;
+}
+
+constexpr std::array<rotmg::DpsWeights, 3> kWeights = {rotmg::DpsWeights{1, 1}, rotmg::DpsWeights{1, 0},
+                                                       rotmg::DpsWeights{0, 1}};
+
+}  // namespace
+
+TEST_CASE("a stronger stacking chance boost never lowers a build's DPS") {
+  // What the exact search relies on to drop a weaker boost for a stronger
+  // one: more amount, duration or chance, or less cooldown.
+  struct Sweep {
+    const char* key;
+    double from;
+    double to;
+    double step;
+  };
+  const Sweep sweeps[] = {{"amount", 0, 30, 3}, {"duration", 0.5, 6, 0.5}, {"proc", 0.05, 0.95, 0.05},
+                          {"cooldown", 10, 0, -1}};
+  for (const rotmg::DpsWeights& weights : kWeights) {
+    for (const rotmg::Weapon& w : Data().weapons) {
+      for (const rotmg::Ability* a : AbilitiesAndNone()) {
+        for (const char* stat : {"ATT", "DEX"}) {
+          for (const Sweep& sweep : sweeps) {
+            double previous = 0;
+            for (double v = sweep.from; sweep.step > 0 ? v <= sweep.to + 1e-9 : v >= sweep.to - 1e-9; v += sweep.step) {
+              rotmg::Activate boost;
+              boost.type = "StatBoostSelf";
+              boost.params = {{"stat", std::string(stat)}, {"amount", 10.0}, {"duration", 3.0}, {"proc", 0.2},
+                              {"cooldown", 4.0}};
+              boost.params[sweep.key] = v;
+              rotmg::Weapon boosted = w;
+              boosted.on_shoot.push_back(boost);
+              const double dps = Weighted(boosted, a, weights);
+              INFO(w.name << " with " << (a ? a->name : "no ability") << ", " << stat << " " << sweep.key << " " << v);
+              CHECK(dps >= previous * (1 - 1e-12));
+              previous = dps;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("a lower MP cost never lowers a build's DPS") {
+  for (const rotmg::DpsWeights& weights : kWeights) {
+    for (const rotmg::Weapon& w : Data().weapons) {
+      for (const rotmg::Ability& a : Data().abilities) {
+        if (!a.mp_cost) continue;
+        double previous = 0;
+        for (double share = 1.5; share >= 0.3; share -= 0.05) {
+          rotmg::Ability cheaper = a;
+          cheaper.mp_cost = *a.mp_cost * share;
+          const double dps = Weighted(w, &cheaper, weights);
+          INFO(w.name << " with " << a.name << ", MP cost x" << share);
+          CHECK(dps >= previous * (1 - 1e-12));
+          previous = dps;
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("higher damage and fire rate multipliers never lower a build's DPS") {
+  // The build as a whole, procs and chance boosts included.
+  for (const char* tag : {"MultiplyMinDamage", "MultiplyMaxDamage", "MultiplyRateOfFire"}) {
+    for (const rotmg::DpsWeights& weights : kWeights) {
+      for (const rotmg::Weapon& w : Data().weapons) {
+        for (const rotmg::Ability* a : AbilitiesAndNone()) {
+          double previous = 0;
+          for (double factor = 0.6; factor <= 1.6 + 1e-9; factor += 0.05) {
+            rotmg::Enchantment e;
+            e.id = "Test";
+            e.name = "Test";
+            rotmg::Mutator m;
+            m.tag = tag;
+            m.number = factor;
+            m.attributes.params.emplace(tag == std::string("MultiplyRateOfFire") ? "subAttackIndex" : "projectileId",
+                                        -1.0);
+            e.mutators.push_back(m);
+            const double dps = Weighted(rotmg::Enchant(w, {&e}).weapon, a, weights);
+            INFO(w.name << " with " << (a ? a->name : "no ability") << ", " << tag << " " << factor);
+            CHECK(dps >= previous * (1 - 1e-12));
+            previous = dps;
           }
         }
       }
