@@ -14,6 +14,7 @@
     OptimizeResponse,
     OptimizedBuild,
     BurstWindow,
+    DpsWeights,
   } from "./engine";
   import { isBurstWindow } from "./engine";
   import { itemIcon, type Sprites } from "./sprites";
@@ -27,6 +28,7 @@
     items = $bindable(),
     enchants = $bindable(),
     burst = $bindable(),
+    castWeights = $bindable(),
   }: {
     engine: Engine | null;
     /** The current build, which the search starts from. */
@@ -38,6 +40,8 @@
     enchants: Record<Slot, string[]>;
     /** The burst window, shared with the numbers. */
     burst: BurstWindow;
+    /** How the page times casts, set to the search's weights when one of its builds is taken. */
+    castWeights: DpsWeights | undefined;
   } = $props();
 
   const slotNames: Record<Slot, string> = { weapon: "Weapon", ability: "Ability", armor: "Armor", ring: "Ring" };
@@ -69,7 +73,11 @@
   let searched: OptimizeOptions | null = null;
   const enchantmentName = (id: string) => (dataset.enchantments ?? []).find((e) => e.id === id)?.name ?? id;
   // The build before the last one taken, for undo.
-  let previous = $state<{ items: Record<Slot, string>; enchants: Record<Slot, string[]> } | null>(null);
+  let previous = $state<{
+    items: Record<Slot, string>;
+    enchants: Record<Slot, string[]>;
+    castWeights: DpsWeights | undefined;
+  } | null>(null);
 
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
   const usableSlots = $derived(slots.filter((s) => itemsFor(dataset, cls, s).length > 0));
@@ -85,12 +93,19 @@
   ];
 
   const weights = (t: number) => ({ weapon: Math.min(1, 2 * (1 - t)), ability: Math.min(1, 2 * t) });
+  const balances = [0, 0.25, 0.5, 0.75, 1];
   const balanceText: Record<number, string> = {
     0: "Weapon only",
     0.25: "Weapon, plus half the ability",
     0.5: "Weapon and ability",
     0.75: "Ability, plus half the weapon",
     1: "Ability only",
+  };
+  const castText: Record<number, string> = {
+    0: "the weapon's DPS",
+    0.25: "the weapon's DPS plus half the ability's",
+    0.75: "the ability's DPS plus half the weapon's",
+    1: "the ability's DPS",
   };
   // What a gain on the start's score is in, for the search shown.
   const scoreUnit = $derived.by(() => {
@@ -203,8 +218,22 @@
   });
   const shown = $derived(found ?? asResponse(progress));
 
+  // The balance whose weights the page times casts by, when not the total.
+  const castBalance = $derived(
+    castWeights &&
+      balances.find((t) => weights(t).weapon === castWeights!.weapon && weights(t).ability === castWeights!.ability),
+  );
+
   function take(b: OptimizedBuild) {
-    previous = { items: { ...items }, enchants: structuredClone($state.snapshot(enchants)) };
+    previous = {
+      items: { ...items },
+      enchants: structuredClone($state.snapshot(enchants)),
+      castWeights: $state.snapshot(castWeights),
+    };
+    // The page shows the build at the casting rhythm the search scored it
+    // at. A burst search casts as often as it can in each window, so the
+    // sustained numbers keep the total's rhythm.
+    castWeights = rankedBy.burst || rankedBy.balance === 0.5 ? undefined : weights(rankedBy.balance);
     items = { weapon: b.weapon, ability: b.ability, armor: b.armor, ring: b.ring };
     enchants = Object.fromEntries(
       slots.map((s) => [s, [0, 1, 2, 3].map((i) => b.enchantments[s][i] ?? "")]),
@@ -215,6 +244,7 @@
     if (!previous) return;
     items = previous.items;
     enchants = previous.enchants;
+    castWeights = previous.castWeights;
     previous = null;
   }
 
@@ -235,6 +265,13 @@
       <button type="button" onclick={undo}>Undo</button>
     {/if}
   </div>
+  {#if castWeights}
+    <p class="hint">
+      The ability is cast as often as helps {castBalance === undefined ? "the weighted DPS" : castText[castBalance]},
+      which the search ranked this build by.
+      <button type="button" onclick={() => (castWeights = undefined)}>Cast for the total DPS</button>
+    </p>
+  {/if}
   {#if open}
     <div class="panel">
       <fieldset>

@@ -57,6 +57,13 @@ export interface EvaluateRequest {
   hitCurve?: { from: number; to: number; step: number };
   /** Adds the damage in a burst window like this one. */
   burst?: BurstWindow;
+  /** What the weapon's and ability's DPS count for when choosing how often to cast; 1 each unless set. */
+  weights?: DpsWeights;
+}
+
+export interface DpsWeights {
+  weapon: number;
+  ability: number;
 }
 
 export type Source = "wiki" | "client-data" | "geometric-estimate" | "curated" | "user" | "assumed";

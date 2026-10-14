@@ -3,7 +3,7 @@
   import Optimizer from "./Optimizer.svelte";
   import SavedBuilds from "./SavedBuilds.svelte";
   import { itemsFor, maxStats, slots, type Dataset, type Slot } from "./dataset";
-  import type { BurstWindow, Engine, EvaluateRequest, PlayerStatus, Target, WornSet } from "./engine";
+  import type { BurstWindow, DpsWeights, Engine, EvaluateRequest, PlayerStatus, Target, WornSet } from "./engine";
   import type { Sprites } from "./sprites";
 
   let {
@@ -20,6 +20,7 @@
     distance = $bindable(),
     radius = $bindable(),
     burst = $bindable(),
+    castWeights = $bindable(),
     link,
     dps,
     onopen,
@@ -40,6 +41,7 @@
     distance: number;
     radius: number;
     burst: BurstWindow;
+    castWeights: DpsWeights | undefined;
     /** The build's link query, for saving it. */
     link: string;
     dps: number | undefined;
@@ -118,7 +120,7 @@
   <fieldset>
     <legend>Build</legend>
     <EquipmentPanel {dataset} {sprites} {engine} {request} bind:classId bind:items bind:enchants />
-    <Optimizer {engine} {request} {dataset} {cls} {sprites} bind:items bind:enchants bind:burst />
+    <Optimizer {engine} {request} {dataset} {cls} {sprites} bind:items bind:enchants bind:burst bind:castWeights />
     <SavedBuilds {link} {dps} {onopen} suggestedName="{classId}: {items.weapon}" />
   </fieldset>
 

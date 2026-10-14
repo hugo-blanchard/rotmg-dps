@@ -23,6 +23,7 @@
     Engine,
     isBurstWindow,
     type BurstWindow,
+    type DpsWeights,
     type EvaluateRequest,
     type EvaluateResponse,
     type PlayerStatus,
@@ -61,6 +62,9 @@
   // The burst window the numbers show and the optimizer starts from.
   const defaultBurst: BurstWindow = { window: 1, every: 10 };
   let burst = $state<BurstWindow>({ ...defaultBurst });
+  // How casts are timed: for the total DPS unless a build was taken from a
+  // search that ranked by one part more.
+  let castWeights = $state<DpsWeights | undefined>(undefined);
 
   let simOptions = $state<SimOptions>({ ...defaultSimOptions });
   // A build pinned to compare with in the simulation.
@@ -135,6 +139,7 @@
     class: classId,
     hitsPerVolley: [...hitOverrides],
     hitModel: { distance: hitDistance, radius: Math.max(0.05, Number(radius) || 0.5) },
+    weights: castWeights,
   });
 
   // Hits typed in for one weapon don't carry over to the next, nor past an
@@ -307,6 +312,7 @@
       bind:distance
       bind:radius
       bind:burst
+      bind:castWeights
       link={buildLink}
       dps={result?.build.dps}
       onopen={(link) => dataset && open(link, dataset)}
