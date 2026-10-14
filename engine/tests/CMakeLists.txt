@@ -24,8 +24,11 @@ add_executable(rotmg_engine_tests
   sim_outputs_test.cpp
   ability_test.cpp
   build_test.cpp
-  sets_test.cpp)
+  sets_test.cpp
+  search_score_test.cpp)
 target_link_libraries(rotmg_engine_tests PRIVATE rotmg_engine rotmg_warnings Catch2::Catch2WithMain
                                                  nlohmann_json::nlohmann_json)
+# The search's internals are tested directly.
+target_include_directories(rotmg_engine_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(rotmg_engine_tests PRIVATE ROTMG_FIXTURES_DIR="${PROJECT_SOURCE_DIR}/../fixtures")
 catch_discover_tests(rotmg_engine_tests)
