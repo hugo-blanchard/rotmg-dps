@@ -11,6 +11,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "rotmg/build.hpp"
 #include "rotmg/damage.hpp"
 #include "rotmg/dataset.hpp"
 #include "rotmg/enchant.hpp"
@@ -41,6 +42,9 @@ struct Request {
   std::vector<std::string> gear_unsupported;
   // Stats the items' relative on-equip effects add.
   std::vector<StatBonus> item_stats;
+  // How much the weapon's and ability's DPS count, which decides the
+  // rhythm the ability is cast at.
+  DpsWeights weights;
 };
 
 // What a request asks for, as read from its JSON, before anything is looked
@@ -62,6 +66,7 @@ struct RequestSpec {
   // "armor" and "ring"; missing ones aren't asked about.
   std::optional<std::vector<std::string>> enchantments;
   std::optional<std::map<std::string, std::vector<std::string>, std::less<>>> gear_enchantments;
+  DpsWeights weights;
 };
 
 // What a request's items and enchantments decide, whatever its base stats.

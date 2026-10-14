@@ -36,7 +36,8 @@
 //    "hitModel": {"distance": 4, "radius": 0.5},
 //    "curve": {"from": 0, "to": 150, "step": 5},
 //    "hitCurve": {"from": 0.5, "to": 10, "step": 0.25},
-//    "burst": {"window": 1, "every": 10}}
+//    "burst": {"window": 1, "every": 10},
+//    "weights": {"weapon": 1, "ability": 1}}
 // Only "weapon" is required. "armor" and "ring" name the armor and ring worn:
 // their stats add to the character's, and they count for sets and for what
 // on-shoot effects need. "wearing" lists the item types of other gear worn
@@ -50,7 +51,10 @@
 // request unchanged. "hitCurve" adds the geometric estimate's total hits
 // per volley at each distance. "burst" adds the damage dealt in a window of
 // that many seconds (0 for a single moment) every so many seconds, as
-// EvaluateBurst works it out.
+// EvaluateBurst works it out. "weights" say how much the weapon's and the
+// ability's DPS count when choosing how often to cast (both 1 by default),
+// so a build found by a search that only counts one of them shows at the
+// rhythm that search scored.
 //
 // Response:
 //   {"ok": true, "breakdown": {...the weapon on its own...},
@@ -380,7 +384,7 @@ std::string Api::Evaluate(std::string_view request_json) const {
     const json req = json::parse(request_json);
     const Request r = ParseRequest(req, *dataset_);
     const auto& [weapon, ability, unknown_ability, character, target, assumptions, sets, enchanted, enchanted_ability,
-                 enchantment_stats, notes, armor, ring, gear_unsupported, item_stats] = r;
+                 enchantment_stats, notes, armor, ring, gear_unsupported, item_stats, weights] = r;
     if (weapon == nullptr) {
       return Error("no weapon named \"" + req.at("weapon").get<std::string>() + "\"").dump();
     }
@@ -388,7 +392,7 @@ std::string Api::Evaluate(std::string_view request_json) const {
       return Error("no ability named \"" + req.at("ability").get<std::string>() + "\"").dump();
     }
 
-    const BuildBreakdown build = EvaluateBuild(*weapon, ability, character, target, assumptions);
+    const BuildBreakdown build = EvaluateBuild(*weapon, ability, character, target, assumptions, weights);
     json res = {{"ok", true}, {"breakdown", ToJson(build.weapon)}, {"build", ToJson(build)}};
     json& listed = res["breakdown"]["unsupported"];
     for (const std::string& tag : gear_unsupported) {
@@ -423,7 +427,8 @@ std::string Api::Evaluate(std::string_view request_json) const {
       for (int def = from; def <= to; def += step) {
         Target t = target;
         t.defense = def;
-        curve.push_back({{"defense", def}, {"dps", EvaluateBuild(*weapon, ability, character, t, assumptions).dps}});
+        curve.push_back(
+            {{"defense", def}, {"dps", EvaluateBuild(*weapon, ability, character, t, assumptions, weights).dps}});
       }
       res["curve"] = curve;
     }
@@ -482,7 +487,7 @@ std::string Api::EvaluateChoices(std::string_view request_json) const {
       try {
         const Request p = ParseRequest(r, *dataset_);
         if (p.weapon != nullptr && !p.unknown_ability) {
-          return EvaluateBuild(*p.weapon, p.ability, p.character, p.target, p.assumptions).dps;
+          return EvaluateBuild(*p.weapon, p.ability, p.character, p.target, p.assumptions, p.weights).dps;
         }
       } catch (const std::exception&) {
         // Rejected, like an enchantment the item can't hold.
@@ -919,8 +924,10 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
       const std::optional<Prepared> p = prepare(b);
       return p ? std::optional<Request>(finish(*p, extra)) : std::nullopt;
     };
-    const auto evaluate = [](const Request& p) {
-      return EvaluateBuild(*p.weapon, p.ability, p.character, p.target, p.assumptions);
+    // Cast at the rhythm that does the most for what the search counts.
+    const DpsWeights search_weights{weapon_weight, ability_weight};
+    const auto evaluate = [&](const Request& p) {
+      return EvaluateBuild(*p.weapon, p.ability, p.character, p.target, p.assumptions, search_weights);
     };
     const auto evaluate_burst = [&](const Request& p) {
       return EvaluateBurst(*p.weapon, p.ability, p.character, p.target, p.assumptions, *burst);

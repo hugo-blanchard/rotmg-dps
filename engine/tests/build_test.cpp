@@ -232,16 +232,18 @@ TEST_CASE("MP given back in a burst window pays toward the next window's casts")
 TEST_CASE("a build's numbers alone match its full evaluation exactly") {
   std::vector<const rotmg::Ability*> abilities = {nullptr};
   for (const rotmg::Ability& a : Data().abilities) abilities.push_back(&a);
-  for (const rotmg::Weapon& w : Data().weapons) {
-    for (const rotmg::Ability* a : abilities) {
-      for (const int wisdom : {0, 40, 75}) {
-        const rotmg::Character c{.attack = 60, .dexterity = 55, .wisdom = wisdom};
-        const rotmg::Target t{.defense = 20};
-        const rotmg::BuildBreakdown full = EvaluateBuild(w, a, c, t, {});
-        const rotmg::BuildNumbers numbers = rotmg::EvaluateBuildNumbers(w, a, c, t, {});
-        CHECK(numbers.dps == full.dps);
-        CHECK(numbers.weapon_dps == full.weapon_dps);
-        CHECK(numbers.ability_dps == (full.ability ? full.ability->dps : 0.0));
+  for (const rotmg::DpsWeights weights : {rotmg::DpsWeights{1, 1}, rotmg::DpsWeights{1, 0}, rotmg::DpsWeights{0, 1}}) {
+    for (const rotmg::Weapon& w : Data().weapons) {
+      for (const rotmg::Ability* a : abilities) {
+        for (const int wisdom : {0, 40, 75}) {
+          const rotmg::Character c{.attack = 60, .dexterity = 55, .wisdom = wisdom};
+          const rotmg::Target t{.defense = 20};
+          const rotmg::BuildBreakdown full = EvaluateBuild(w, a, c, t, {}, weights);
+          const rotmg::BuildNumbers numbers = rotmg::EvaluateBuildNumbers(w, a, c, t, {}, weights);
+          CHECK(numbers.dps == full.dps);
+          CHECK(numbers.weapon_dps == full.weapon_dps);
+          CHECK(numbers.ability_dps == (full.ability ? full.ability->dps : 0.0));
+        }
       }
     }
   }
@@ -266,4 +268,10 @@ TEST_CASE("an ability that weakens its caster is only cast as often as helps") {
     REQUIRE(b.ability.has_value());
     CHECK(b.ability->casts_per_second < 1e-6);
   }
+  // Counting only the ability's own damage, which Weak doesn't touch, the
+  // cloak is cast as soon as it can be.
+  const auto ability_only = EvaluateBuild(Sword(), &cloak, kChar, {}, {}, {.weapon = 0, .ability = 1});
+  REQUIRE(ability_only.ability.has_value());
+  CHECK(ability_only.ability->casts_per_second > 0);
+  CHECK(ability_only.dps < weapon_alone);
 }

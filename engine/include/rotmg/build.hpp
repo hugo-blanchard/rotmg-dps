@@ -28,25 +28,25 @@ struct BuildBreakdown {
   std::vector<std::string> assumptions;
 };
 
-/// A weapon and, optionally, an ability. Each cast's buffs and debuffs start
-/// together and run for their duration, capped at the time until the next
-/// cast. The cycle is split where they end, and the weapon's DPS is worked
-/// out for each piece with whatever is up.
-BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const Character& character,
-                             const Target& target, const Assumptions& assumptions);
-
 /// How much the weapon's and the ability's DPS count.
 struct DpsWeights {
   double weapon = 1;
   double ability = 1;
 };
 
-/// EvaluateBuild's three numbers without its explanation, for searches that
-/// score many builds. With equal weights they're EvaluateBuild's to the last
-/// bit. Otherwise the ability is held back when that does more for the
-/// weighted DPS rather than the total, as a player after ability damage
-/// would time their casts; that keeps the weighted DPS from ever falling
-/// when a stat rises.
+/// A weapon and, optionally, an ability. Each cast's buffs and debuffs start
+/// together and run for their duration, capped at the time until the next
+/// cast. The cycle is split where they end, and the weapon's DPS is worked
+/// out for each piece with whatever is up. The ability is cast at the
+/// rhythm that does the most for `weights`: by default the most total DPS,
+/// and for a search that only counts the weapon or the ability, the most of
+/// that, as a player after it would time their casts. More of a stat then
+/// never lowers the weighted DPS.
+BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const Character& character,
+                             const Target& target, const Assumptions& assumptions, const DpsWeights& weights = {});
+
+/// EvaluateBuild's three numbers without its explanation, to the last bit,
+/// for searches that score many builds.
 struct BuildNumbers {
   double dps = 0;
   double weapon_dps = 0;

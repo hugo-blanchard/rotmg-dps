@@ -142,52 +142,97 @@ double CycleWeaponDps(const AbilityBreakdown& a, double no_buffs, const Weapon& 
 
 }  // namespace
 
+namespace {
+
+// What every evaluation of a build shares: the character with the
+// ability's own stat bonuses, the weapon's chance boosts at its fire rate,
+// and its DPS with them, before the ability's effects.
+struct Shooting {
+  Character with_ability_gear;
+  std::vector<ChanceBoost> boosts;
+  double weapon_dps = 0;
+};
+
+Shooting ShootingOf(const Weapon& weapon, const Character& with_ability_gear, const Character& character,
+                    const Target& target, const Assumptions& assumptions, const Breakdown& alone) {
+  Shooting out{with_ability_gear, {}, alone.dps};
+  double shots_per_second = 0;
+  for (const SubattackResult& s : alone.subattacks) {
+    shots_per_second = std::max(shots_per_second, s.volleys_per_second);
+  }
+  out.boosts = ChanceBoosts(weapon, character.worn, shots_per_second);
+  if (!out.boosts.empty()) {
+    out.weapon_dps = MixedDps(weapon, with_ability_gear, target, assumptions, {}, out.boosts);
+  }
+  return out;
+}
+
+// The ability sees the weapon's stat bonuses too, as in game, and its
+// on-shoot stat changes, since the weapon is firing.
+Character CasterOf(const Weapon& weapon, const Character& character) {
+  return character.With(weapon.stat_bonuses).With(WhileShooting(weapon));
+}
+
+// The rate the ability is cast at (0 for as soon as possible) and the
+// build's numbers at it. It's the rhythm that does the most for `weights`,
+// never faster than MP and its cooldown allow: as soon as it can be, held
+// back when an item's effect on casting would be blocked on one more cast,
+// or less often when its own effects cost more damage than they add
+// (Mirror Cloak's Weak). With equal weights, comparing the weighted DPS
+// orders rates as the total does.
+struct Rhythm {
+  double rate = 0;
+  BuildNumbers numbers;
+};
+
+Rhythm ChooseRhythm(const Weapon& weapon, const Ability& ability, const Character& caster, const Target& target,
+                    const Assumptions& assumptions, const Shooting& shooting, const DpsWeights& weights) {
+  const auto at = [&](const AbilityBreakdown& a) {
+    const double cycle = CycleWeaponDps(a, shooting.weapon_dps, weapon, shooting.with_ability_gear, target,
+                                        assumptions, shooting.boosts);
+    return BuildNumbers{cycle + a.dps, cycle, a.dps};
+  };
+  const bool equal = weights.weapon == weights.ability;
+  const auto worth = [&](const BuildNumbers& n) {
+    return equal ? n.dps : weights.weapon * n.weapon_dps + weights.ability * n.ability_dps;
+  };
+  const AbilityBreakdown asap = EvaluateAbility(ability, caster, target, assumptions, 0);
+  Rhythm out{0, at(asap)};
+  for (const double rate : CastRates(asap)) {
+    const BuildNumbers held = at(EvaluateAbility(ability, caster, target, assumptions, rate));
+    if (worth(held) > worth(out.numbers) * (1 + 1e-12)) {
+      out = {rate, held};
+    }
+  }
+  return out;
+}
+
+}  // namespace
+
 BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const Character& character,
-                             const Target& target, const Assumptions& assumptions) {
+                             const Target& target, const Assumptions& assumptions, const DpsWeights& weights) {
   BuildBreakdown out;
   const Character with_ability_gear = ability ? character.With(ability->stat_bonuses) : character;
   out.weapon = EvaluateWeapon(weapon, with_ability_gear, target, assumptions);
-  double shots_per_second = 0;
-  for (const SubattackResult& s : out.weapon.subattacks) {
-    shots_per_second = std::max(shots_per_second, s.volleys_per_second);
-  }
-  const std::vector<ChanceBoost> boosts = ChanceBoosts(weapon, character.worn, shots_per_second);
-  for (const ChanceBoost& b : boosts) {
+  const Shooting shooting = ShootingOf(weapon, with_ability_gear, character, target, assumptions, out.weapon);
+  for (const ChanceBoost& b : shooting.boosts) {
     out.uptimes.push_back({{Buff::On::kPlayer, b.bonus.stat, b.bonus.amount, b.duration_s}, b.share});
   }
-  if (!boosts.empty()) {
+  if (!shooting.boosts.empty()) {
     out.assumptions.push_back(
         "an on-shoot boost's cooldown starts when it goes off, and boosts go off independently of each other, with "
         "ones of the same stat counting once");
   }
-  out.weapon_dps =
-      boosts.empty() ? out.weapon.dps : MixedDps(weapon, with_ability_gear, target, assumptions, {}, boosts);
+  out.weapon_dps = shooting.weapon_dps;
   out.dps = out.weapon_dps;
   if (ability == nullptr) {
     return out;
   }
-
-  // The ability sees the weapon's stat bonuses too, as in game, and its
-  // on-shoot stat changes, since the weapon is firing. It's cast at the
-  // rhythm that does the most, never faster than MP and its cooldown allow:
-  // as soon as it can be, or held back when an item's effect on casting
-  // would be blocked on one more cast, or less often when its own effects
-  // cost more damage than they add (Mirror Cloak's Weak).
-  const Character caster = character.With(weapon.stat_bonuses).With(WhileShooting(weapon));
-  const BuildBreakdown without_ability = out;
-  const auto cast_at = [&](double held) {
-    BuildBreakdown b = without_ability;
-    b.ability = EvaluateAbility(*ability, caster, target, assumptions, held);
-    WithAbility(b, weapon, with_ability_gear, target, assumptions, boosts);
-    return b;
-  };
-  out = cast_at(0);
-  for (const double rate : CastRates(*out.ability)) {
-    BuildBreakdown held = cast_at(rate);
-    if (held.dps > out.dps * (1 + 1e-12)) {
-      out = std::move(held);
-    }
-  }
+  // The explanation is written once, at the rhythm the numbers chose.
+  const Character caster = CasterOf(weapon, character);
+  const Rhythm rhythm = ChooseRhythm(weapon, *ability, caster, target, assumptions, shooting, weights);
+  out.ability = EvaluateAbility(*ability, caster, target, assumptions, rhythm.rate);
+  WithAbility(out, weapon, with_ability_gear, target, assumptions, shooting.boosts);
   return out;
 }
 
@@ -195,36 +240,11 @@ BuildNumbers EvaluateBuildNumbers(const Weapon& weapon, const Ability* ability, 
                                   const Target& target, const Assumptions& assumptions, const DpsWeights& weights) {
   const Character with_ability_gear = ability ? character.With(ability->stat_bonuses) : character;
   const Breakdown alone = EvaluateWeaponNumbers(weapon, with_ability_gear, target, assumptions);
-  double shots_per_second = 0;
-  for (const SubattackResult& s : alone.subattacks) {
-    shots_per_second = std::max(shots_per_second, s.volleys_per_second);
-  }
-  const std::vector<ChanceBoost> boosts = ChanceBoosts(weapon, character.worn, shots_per_second);
-  const double weapon_dps =
-      boosts.empty() ? alone.dps : MixedDps(weapon, with_ability_gear, target, assumptions, {}, boosts);
+  const Shooting shooting = ShootingOf(weapon, with_ability_gear, character, target, assumptions, alone);
   if (ability == nullptr) {
-    return {weapon_dps, weapon_dps, 0};
+    return {shooting.weapon_dps, shooting.weapon_dps, 0};
   }
-  // As EvaluateBuild: cast at the rhythm that does the most. With equal
-  // weights, comparing the weighted DPS orders rates as the total does.
-  const Character caster = character.With(weapon.stat_bonuses).With(WhileShooting(weapon));
-  const auto cast_at = [&](const AbilityBreakdown& a) {
-    const double cycle = CycleWeaponDps(a, weapon_dps, weapon, with_ability_gear, target, assumptions, boosts);
-    return BuildNumbers{cycle + a.dps, cycle, a.dps};
-  };
-  const bool equal = weights.weapon == weights.ability;
-  const auto worth = [&](const BuildNumbers& n) {
-    return equal ? n.dps : weights.weapon * n.weapon_dps + weights.ability * n.ability_dps;
-  };
-  const AbilityBreakdown asap = EvaluateAbility(*ability, caster, target, assumptions, 0);
-  BuildNumbers out = cast_at(asap);
-  for (const double rate : CastRates(asap)) {
-    const BuildNumbers held = cast_at(EvaluateAbility(*ability, caster, target, assumptions, rate));
-    if (worth(held) > worth(out) * (1 + 1e-12)) {
-      out = held;
-    }
-  }
-  return out;
+  return ChooseRhythm(weapon, *ability, CasterOf(weapon, character), target, assumptions, shooting, weights).numbers;
 }
 
 namespace {

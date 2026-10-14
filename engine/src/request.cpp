@@ -62,6 +62,10 @@ RequestSpec ReadSpec(const json& req) {
   }
   spec.wearing = req.value("wearing", std::vector<int>{});
   spec.artifacts = req.value("artifacts", true);
+  if (auto it = req.find("weights"); it != req.end()) {
+    spec.weights.weapon = std::max(0.0, it->value("weapon", 1.0));
+    spec.weights.ability = std::max(0.0, it->value("ability", 1.0));
+  }
   if (auto it = req.find("enchantments"); it != req.end()) {
     spec.enchantments = it->get<std::vector<std::string>>();
   }
@@ -84,6 +88,7 @@ Prepared Prepare(const RequestSpec& spec, const Dataset& dataset) {
   }
   r.target = spec.target;
   r.assumptions = spec.assumptions;
+  r.weights = spec.weights;
   // The armor and ring add their stats like the weapon and ability do.
   std::vector<int> worn = spec.wearing;
   for (const auto& [key, list, into, name] : {std::tuple{"armor", &dataset.armors, &r.armor, &spec.armor},
