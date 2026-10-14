@@ -190,7 +190,7 @@ BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const
 }
 
 BuildNumbers EvaluateBuildNumbers(const Weapon& weapon, const Ability* ability, const Character& character,
-                                  const Target& target, const Assumptions& assumptions) {
+                                  const Target& target, const Assumptions& assumptions, const DpsWeights& weights) {
   const Character with_ability_gear = ability ? character.With(ability->stat_bonuses) : character;
   const Breakdown alone = EvaluateWeaponNumbers(weapon, with_ability_gear, target, assumptions);
   double shots_per_second = 0;
@@ -204,17 +204,22 @@ BuildNumbers EvaluateBuildNumbers(const Weapon& weapon, const Ability* ability, 
     return {weapon_dps, weapon_dps, 0};
   }
   // As EvaluateBuild: cast as soon as possible, or held back when that does
-  // more.
+  // more. With equal weights, comparing the weighted DPS orders rates as
+  // the total does.
   const Character caster = character.With(weapon.stat_bonuses).With(WhileShooting(weapon));
   const auto cast_at = [&](const AbilityBreakdown& a) {
     const double cycle = CycleWeaponDps(a, weapon_dps, weapon, with_ability_gear, target, assumptions, boosts);
     return BuildNumbers{cycle + a.dps, cycle, a.dps};
   };
+  const bool equal = weights.weapon == weights.ability;
+  const auto worth = [&](const BuildNumbers& n) {
+    return equal ? n.dps : weights.weapon * n.weapon_dps + weights.ability * n.ability_dps;
+  };
   const AbilityBreakdown asap = EvaluateAbility(*ability, caster, target, assumptions, 0);
   BuildNumbers out = cast_at(asap);
   for (const double rate : HeldCastRates(asap)) {
     const BuildNumbers held = cast_at(EvaluateAbility(*ability, caster, target, assumptions, rate));
-    if (held.dps > out.dps * (1 + 1e-12)) {
+    if (worth(held) > worth(out) * (1 + 1e-12)) {
       out = held;
     }
   }

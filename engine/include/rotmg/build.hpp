@@ -35,15 +35,26 @@ struct BuildBreakdown {
 BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const Character& character,
                              const Target& target, const Assumptions& assumptions);
 
-/// EvaluateBuild's three numbers, the same to the last bit, without its
-/// explanation. For searches that score many builds.
+/// How much the weapon's and the ability's DPS count.
+struct DpsWeights {
+  double weapon = 1;
+  double ability = 1;
+};
+
+/// EvaluateBuild's three numbers without its explanation, for searches that
+/// score many builds. With equal weights they're EvaluateBuild's to the last
+/// bit. Otherwise the ability is held back when that does more for the
+/// weighted DPS rather than the total, as a player after ability damage
+/// would time their casts; that keeps the weighted DPS from ever falling
+/// when a stat rises.
 struct BuildNumbers {
   double dps = 0;
   double weapon_dps = 0;
   double ability_dps = 0;
 };
 BuildNumbers EvaluateBuildNumbers(const Weapon& weapon, const Ability* ability, const Character& character,
-                                  const Target& target, const Assumptions& assumptions);
+                                  const Target& target, const Assumptions& assumptions,
+                                  const DpsWeights& weights = {});
 
 /// A target that can only be hurt in short windows, like a boss that's
 /// vulnerable for a moment every few seconds.

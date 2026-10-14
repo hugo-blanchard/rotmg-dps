@@ -169,3 +169,33 @@ TEST_CASE("more of any stat never lowers a build's sustained DPS") {
     }
   }
 }
+
+TEST_CASE("more of any stat never lowers a build's weighted DPS") {
+  // The same for searches that only count the weapon or only the ability:
+  // the cast is timed for what's counted, so more of a stat can't move it
+  // to a rhythm that counts less.
+  constexpr std::array<int rotmg::Character::*, 8> kStats = {
+      &rotmg::Character::attack,  &rotmg::Character::dexterity, &rotmg::Character::speed,
+      &rotmg::Character::wisdom,  &rotmg::Character::vitality,  &rotmg::Character::defense,
+      &rotmg::Character::max_hit_points, &rotmg::Character::max_magic_points};
+  for (const rotmg::DpsWeights weights : {rotmg::DpsWeights{1, 0}, rotmg::DpsWeights{0, 1}}) {
+    for (const rotmg::Weapon& w : Data().weapons) {
+      for (const rotmg::Ability& a : Data().abilities) {
+        for (int rotmg::Character::*stat : kStats) {
+          rotmg::Character c{.attack = 50, .dexterity = 50, .wisdom = 50, .vitality = 40, .defense = 25,
+                             .speed = 50, .max_hit_points = 700, .max_magic_points = 400};
+          double previous = 0;
+          for (int extra = 0; extra <= 150; extra += 3) {
+            rotmg::Character more = c;
+            more.*stat += extra;
+            const rotmg::BuildNumbers n = rotmg::EvaluateBuildNumbers(w, &a, more, {.defense = 30}, {}, weights);
+            const double weighted = weights.weapon * n.weapon_dps + weights.ability * n.ability_dps;
+            INFO(w.name << " with " << a.name << ", +" << extra);
+            CHECK(weighted >= previous * (1 - 1e-12));
+            previous = weighted;
+          }
+        }
+      }
+    }
+  }
+}
