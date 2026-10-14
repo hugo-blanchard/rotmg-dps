@@ -168,9 +168,11 @@ BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const
   }
 
   // The ability sees the weapon's stat bonuses too, as in game, and its
-  // on-shoot stat changes, since the weapon is firing. It's cast as soon as
-  // it can be, unless holding it back a moment does more: an item effect
-  // on casting that a slightly faster rhythm blocks on one more cast.
+  // on-shoot stat changes, since the weapon is firing. It's cast at the
+  // rhythm that does the most, never faster than MP and its cooldown allow:
+  // as soon as it can be, or held back when an item's effect on casting
+  // would be blocked on one more cast, or less often when its own effects
+  // cost more damage than they add (Mirror Cloak's Weak).
   const Character caster = character.With(weapon.stat_bonuses).With(WhileShooting(weapon));
   const BuildBreakdown without_ability = out;
   const auto cast_at = [&](double held) {
@@ -180,7 +182,7 @@ BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const
     return b;
   };
   out = cast_at(0);
-  for (const double rate : HeldCastRates(*out.ability)) {
+  for (const double rate : CastRates(*out.ability)) {
     BuildBreakdown held = cast_at(rate);
     if (held.dps > out.dps * (1 + 1e-12)) {
       out = std::move(held);
@@ -203,9 +205,8 @@ BuildNumbers EvaluateBuildNumbers(const Weapon& weapon, const Ability* ability, 
   if (ability == nullptr) {
     return {weapon_dps, weapon_dps, 0};
   }
-  // As EvaluateBuild: cast as soon as possible, or held back when that does
-  // more. With equal weights, comparing the weighted DPS orders rates as
-  // the total does.
+  // As EvaluateBuild: cast at the rhythm that does the most. With equal
+  // weights, comparing the weighted DPS orders rates as the total does.
   const Character caster = character.With(weapon.stat_bonuses).With(WhileShooting(weapon));
   const auto cast_at = [&](const AbilityBreakdown& a) {
     const double cycle = CycleWeaponDps(a, weapon_dps, weapon, with_ability_gear, target, assumptions, boosts);
@@ -217,7 +218,7 @@ BuildNumbers EvaluateBuildNumbers(const Weapon& weapon, const Ability* ability, 
   };
   const AbilityBreakdown asap = EvaluateAbility(*ability, caster, target, assumptions, 0);
   BuildNumbers out = cast_at(asap);
-  for (const double rate : HeldCastRates(asap)) {
+  for (const double rate : CastRates(asap)) {
     const BuildNumbers held = cast_at(EvaluateAbility(*ability, caster, target, assumptions, rate));
     if (worth(held) > worth(out) * (1 + 1e-12)) {
       out = held;

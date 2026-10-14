@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -243,5 +244,26 @@ TEST_CASE("a build's numbers alone match its full evaluation exactly") {
         CHECK(numbers.ability_dps == (full.ability ? full.ability->dps : 0.0));
       }
     }
+  }
+}
+
+TEST_CASE("an ability that weakens its caster is only cast as often as helps") {
+  // Like Mirror Cloak: Weak for 7 s on every cast. Casting it costs damage,
+  // so the best rhythm is not casting it, and more WIS can't change that.
+  rotmg::Ability cloak = *Find("War Helm");
+  cloak.activates.clear();
+  rotmg::Activate weak;
+  weak.type = "ConditionEffectSelf";
+  weak.params = {{"effect", std::string("Weak")}, {"duration", 7.0}};
+  cloak.activates.push_back(weak);
+  const double weapon_alone = EvaluateBuild(Sword(), nullptr, kChar, {}, {}).dps;
+  for (int wisdom = 30; wisdom <= 150; wisdom += 10) {
+    rotmg::Character c = kChar;
+    c.wisdom = wisdom;
+    const auto b = EvaluateBuild(Sword(), &cloak, c, {}, {});
+    INFO("WIS " << wisdom);
+    CHECK(b.dps == Approx(weapon_alone).epsilon(1e-6));
+    REQUIRE(b.ability.has_value());
+    CHECK(b.ability->casts_per_second < 1e-6);
   }
 }

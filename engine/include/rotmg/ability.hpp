@@ -153,4 +153,14 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
 /// casting faster only helps. Fastest first.
 std::vector<double> HeldCastRates(const AbilityBreakdown& asap);
 
+/// Every cast rate below `asap`'s worth trying, fastest first: the held
+/// rates, the rates at which each buff lasts exactly the time between
+/// casts, and casting practically never. Between two of them a build's DPS
+/// changes in a straight line, so the best rhythm is at one of them or at
+/// `asap`, and casting faster than that never helps.
+std::vector<double> CastRates(const AbilityBreakdown& asap);
+
+/// A rate low enough to count as not casting: once in about 30 years.
+inline constexpr double kRarelyCasts = 1e-9;
+
 }  // namespace rotmg

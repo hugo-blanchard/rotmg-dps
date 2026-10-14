@@ -166,6 +166,21 @@ std::vector<double> HeldCastRates(const AbilityBreakdown& asap) {
   return out;
 }
 
+std::vector<double> CastRates(const AbilityBreakdown& asap) {
+  std::vector<double> out = HeldCastRates(asap);
+  for (const Buff& b : asap.buffs) {
+    if (b.duration_s > 0 && 1 / b.duration_s < asap.casts_per_second) {
+      out.push_back(1 / b.duration_s);
+    }
+  }
+  if (kRarelyCasts < asap.casts_per_second) {
+    out.push_back(kRarelyCasts);
+  }
+  std::ranges::sort(out, std::greater<>());
+  out.erase(std::unique(out.begin(), out.end()), out.end());
+  return out;
+}
+
 double CastShare(double chance, double cooldown_s, double casts_per_second) {
   if (casts_per_second <= 0 || chance <= 0) {
     return 0;
@@ -249,7 +264,8 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   if (held_casts_per_second > 0 && held_casts_per_second < out.casts_per_second) {
     out.casts_per_second = held_casts_per_second;
     out.mp_refund_per_cast = refund_at(held_casts_per_second);
-    assume("the ability is held back a moment so an item's effect on casting isn't blocked by its own cooldown");
+    assume("the ability is cast only as often as helps the damage: held back so an item's effect on casting "
+           "isn't blocked by its own cooldown, or less often when its own effects hurt more than they help");
   }
 
   // One effect of a cast. An item's effect that goes off on only a share of
