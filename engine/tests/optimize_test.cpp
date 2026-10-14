@@ -394,3 +394,61 @@ TEST_CASE("the plans stack whatever stat the builds scale with") {
   REQUIRE(found.has_value());
   CHECK(found->builds[0].first == Catch::Approx(best));
 }
+
+TEST_CASE("the search tries damage enchantments on a weapon that only hits with more range") {
+  // Short Bow does nothing until Range lets it reach the target, so Heavy
+  // only shows what it adds on top of Range.
+  Dataset d;
+  const auto item = [](auto& list, const std::string& name, std::vector<std::string> labels) {
+    auto& x = list.emplace_back();
+    x.id = name;
+    x.name = name;
+    x.labels = std::move(labels);
+    x.enchanting = {4, "Pool"};
+  };
+  item(d.weapons, "Short Bow", {"EQUIPMENT", "WEAPON"});
+  item(d.abilities, "Battle Cry", {"EQUIPMENT", "ABILITY"});
+  item(d.armors, "Mail", {"EQUIPMENT", "ARMOR"});
+  item(d.rings, "Band", {"EQUIPMENT", "RING"});
+  const auto weapon_only = [](const std::string& id, const std::string& tag, const std::string& label) {
+    Enchantment e;
+    e.id = id;
+    e.name = id;
+    e.compatible = {"WEAPON"};
+    e.labels = {label};
+    e.incompatible_labels = {label};
+    rotmg::Mutator m;
+    m.tag = tag;
+    m.number = 1.5;
+    e.mutators.push_back(m);
+    return e;
+  };
+  d.enchantments = {weapon_only("Range", "MultiplyLifetimeMS", "WEAPONRANGE"),
+                    weapon_only("Heavy", "MultiplyMinDamage", "WEAPONDAMAGE"),
+                    Stat("Attack", {{"ATT", 8}}, {"SINGLESTAT"})};
+  for (const Enchantment& e : d.enchantments) {
+    d.enchantment_pools["Pool"].insert(e.id);
+  }
+  OptimizerProblem p;
+  p.candidates = {{{"Short Bow"}, {"Battle Cry"}, {"Mail"}, {"Band"}}};
+  p.start.items = {"Short Bow", "Battle Cry", "Mail", "Band"};
+  p.enchantments = OptimizerProblem::Enchantments::kBest;
+  p.per_item = 2;
+  p.score = [](const OptimizerBuild& b, const std::array<int, 8>& extra) -> std::optional<double> {
+    const auto has = [&](const std::string& id) { return std::ranges::find(b.enchants[0], id) != b.enchants[0].end(); };
+    if (!has("Range")) {
+      return 0.0;
+    }
+    double attack = 50 + extra[0];
+    for (const auto& list : b.enchants) {
+      attack += 8 * static_cast<double>(std::ranges::count(list, std::string("Attack")));
+    }
+    return (attack / 10 + 1) * 100 * (has("Heavy") ? 1.5 : 1);
+  };
+  const auto found = rotmg::SearchBuilds(d, p);
+  REQUIRE(found.has_value());
+  const auto& weapon = found->builds[0].second.enchants[0];
+  CHECK(std::ranges::find(weapon, "Heavy") != weapon.end());
+  // Range and Heavy on the bow, Attack on the other three items.
+  CHECK(found->builds[0].first == Catch::Approx(((50.0 + 3 * 8) / 10 + 1) * 100 * 1.5));
+}

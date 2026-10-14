@@ -153,6 +153,7 @@ class BuildSearch {
   std::vector<std::optional<double>> ScoreAll(const std::vector<Build>& builds, const Stats& extra = {});
   Rates StatRates(const Build& b);
   Mask Sensitive(const Build& b);
+  const Enchantment* Enabler(const Build& b, std::size_t slot);
   std::vector<const Enchantment*> Relevant(const Build& b, std::size_t slot);
   std::vector<const Enchantment*> Shortlist(Build& b, std::size_t slot);
   double Fill(Build& b, std::size_t slot);
@@ -221,6 +222,8 @@ class BuildSearch {
   std::map<std::tuple<std::size_t, std::string, const Enchantment*>, bool> tested_;
   // Relevant's answers, by slot, the items worn and which stats matter.
   std::map<std::pair<std::size_t, std::string>, std::vector<const Enchantment*>> relevant_;
+  // Enabler's answers, by slot and the items worn.
+  std::map<std::pair<std::size_t, std::string>, const Enchantment*> enablers_;
   // Guards the caches above, which the search's threads share. Each is
   // looked up and filled under it, and worked out outside it; two threads
   // may work out the same thing, which only costs time.
@@ -404,6 +407,61 @@ Mask BuildSearch::Sensitive(const Build& b) {
   return out;
 }
 
+// When the items alone do no damage, like a weapon that doesn't reach the
+// target without more range, nothing else on the slot shows what it adds
+// until something makes the build hit. The enchantment that does the most
+// on its own then stays on the slot while the others are tried. It's chosen
+// on the items alone, so every build with these items gets the same one.
+const Enchantment* BuildSearch::Enabler(const Build& b, std::size_t slot) {
+  Build items = b;
+  for (auto& list : items.enchants) list.clear();
+  const auto key = std::pair{slot, Key(items)};
+  {
+    std::lock_guard lock(mu_);
+    if (auto it = enablers_.find(key); it != enablers_.end()) {
+      return it->second;
+    }
+  }
+  const Enchantment* best = nullptr;
+  if (!b.items[slot].empty() && Score(items).value_or(0) <= 0) {
+    std::vector<const Enchantment*> tried;
+    for (const Enchantment* e : Fits(slot, b.items[slot]).options) {
+      if (!effects_.at(e).by_stats) {
+        tried.push_back(e);
+      }
+    }
+    std::vector<Build> ones(tried.size(), items);
+    for (std::size_t i = 0; i < tried.size(); ++i) {
+      ones[i].enchants[slot] = {tried[i]->id};
+    }
+    const std::vector<std::optional<double>> scored = ScoreAll(ones);
+    double most = 0;
+    for (std::size_t i = 0; i < tried.size(); ++i) {
+      if (scored[i] && *scored[i] > most) {
+        most = *scored[i];
+        best = tried[i];
+      }
+    }
+  }
+  std::lock_guard lock(mu_);
+  return enablers_.try_emplace(key, best).first->second;
+}
+
+namespace {
+
+// The slot's enchantments to try e with: e and the slot's enabler, when
+// there is one and they can share the item, or e alone.
+std::vector<std::string> WithEnabler(const Enchantment* enabler, const Enchantment* e) {
+  if (enabler != nullptr && enabler != e && !Conflict(*enabler, *e)) {
+    std::vector<std::string> ids = {enabler->id, e->id};
+    std::ranges::sort(ids);
+    return ids;
+  }
+  return {e->id};
+}
+
+}  // namespace
+
 // The enchantments worth trying on the slot's item in this build. One that
 // only adds stats counts when it raises a stat the build's DPS depends on,
 // so +DEF counts once something scales with DEF. Of those that only add
@@ -411,8 +469,12 @@ Mask BuildSearch::Sensitive(const Build& b) {
 // much of every stat that matters makes the other pointless (Attack Bonus
 // IV over III). Anything else counts when it changes the DPS on its own.
 std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_t slot) {
+  const Enchantment* enabler = Enabler(b, slot);
   Build bare = b;
   bare.enchants[slot].clear();
+  if (enabler != nullptr) {
+    bare.enchants[slot] = {enabler->id};
+  }
   const Mask matters = Sensitive(bare);
   unsigned bits = 0;
   for (std::size_t i = 0; i < matters.size(); ++i) {
@@ -430,7 +492,18 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
       return it->second;
     }
   }
-  const double without = Score(items).value_or(0);
+  Build reference = items;
+  if (enabler != nullptr) {
+    reference.enchants[slot] = {enabler->id};
+  }
+  const double alone = Score(items).value_or(0);
+  const double with_enabler = Score(reference).value_or(0);
+  // Whether e changes the DPS of what it's tried with.
+  const auto changes_it = [&](const Enchantment* e, const std::optional<double>& s) {
+    const std::vector<std::string> ids = WithEnabler(enabler, e);
+    const double without = ids.size() > 1 ? with_enabler : alone;
+    return s && std::abs(*s - without) > without * 1e-9;
+  };
   // Enchantments that do more than add stats, each on its own, at once.
   {
     std::vector<const Enchantment*> untested;
@@ -445,13 +518,12 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
     }
     std::vector<Build> ones(untested.size(), items);
     for (std::size_t i = 0; i < untested.size(); ++i) {
-      ones[i].enchants[slot] = {untested[i]->id};
+      ones[i].enchants[slot] = WithEnabler(enabler, untested[i]);
     }
     const std::vector<std::optional<double>> scored = ScoreAll(ones);
     std::lock_guard lock(mu_);
     for (std::size_t i = 0; i < untested.size(); ++i) {
-      const auto& s = scored[i];
-      tested_.try_emplace(std::tuple{slot, context, untested[i]}, s && std::abs(*s - without) > without * 1e-9);
+      tested_.try_emplace(std::tuple{slot, context, untested[i]}, changes_it(untested[i], scored[i]));
     }
   }
   std::vector<const Enchantment*> out;
@@ -477,9 +549,8 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
     }
     if (!changes) {
       Build one = items;
-      one.enchants[slot] = {e->id};
-      const auto s = Score(one);
-      changes = s && std::abs(*s - without) > without * 1e-9;
+      one.enchants[slot] = WithEnabler(enabler, e);
+      changes = changes_it(e, Score(one));
       std::lock_guard lock(mu_);
       tested_.try_emplace(key, *changes);
     }
@@ -525,15 +596,20 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
 // without evaluating it.
 std::vector<const Enchantment*> BuildSearch::Shortlist(Build& b, std::size_t slot) {
   b.enchants[slot].clear();
-  const double bare = Score(b).value_or(0);
+  const Enchantment* enabler = Enabler(b, slot);
+  Build base = b;
+  if (enabler != nullptr) {
+    base.enchants[slot] = {enabler->id};
+  }
+  const double bare = Score(base).value_or(0);
   std::vector<const Enchantment*> options = Relevant(b, slot);
   const std::size_t extra = p_.thorough ? 24 : 12;
-  const Rates rates = StatRates(b);
+  const Rates rates = StatRates(base);
   std::vector<Build> ones;
   for (const Enchantment* e : options) {
     if (!effects_.at(e).flat_only) {
       ones.push_back(b);
-      ones.back().enchants[slot] = {e->id};
+      ones.back().enchants[slot] = WithEnabler(enabler, e);
     }
   }
   const std::vector<std::optional<double>> scored = ScoreAll(ones);
