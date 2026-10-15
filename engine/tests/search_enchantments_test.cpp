@@ -235,3 +235,26 @@ TEST_CASE("a stronger boost that doesn't stack replaces a weaker one unless a ri
     MatchesBruteForce(d, spec, items, 1);
   }
 }
+
+TEST_CASE("projectile speed is ignored only where it can't change the hits") {
+  // Plain Sword's shots reach 3.5 tiles. A target 4.3 tiles away with a
+  // 0.5 tile radius is hit only with 20% more speed; one 2 tiles away is
+  // hit either way.
+  const rotmg::Dataset d = WithEnchantments({{{"type", 903},
+                                              {"id", "Speed_Test"},
+                                              {"compatible", {"WEAPON"}},
+                                              {"labels", {"PROJSPEED"}},
+                                              {"incompatibleLabels", {"PROJSPEED"}},
+                                              {"mutators", {{{"tag", "MultiplySpeed"}, {"value", 1.2}}}}}});
+  const std::array<std::int32_t, kSlots> items = {NamedIndex(d.weapons, "Plain Sword"), -1, -1, -1};
+  for (const double distance : {2.0, 4.3}) {
+    const rotmg::RequestSpec spec = Swordsman(d, distance);
+    const rotmg::search::Model model(d, spec);
+    rotmg::search::Scorer scorer(model, {1, 1});
+    const auto assumed = rotmg::search::AssumptionsFor(model, scorer, items, {.per_item = 2});
+    const bool ignored = std::ranges::find(assumed.ignored[0], EnchantmentIndex(d, "Speed_Test")) != assumed.ignored[0].end();
+    INFO("distance " << distance);
+    CHECK(ignored == (distance < 3));
+    MatchesBruteForce(d, spec, items, 2);
+  }
+}

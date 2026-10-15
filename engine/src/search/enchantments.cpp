@@ -19,6 +19,7 @@
 #include "frontier.hpp"
 #include "rotmg/enchant.hpp"
 #include "rotmg/evaluate.hpp"
+#include "rotmg/hits.hpp"
 
 // How the search works. An item's enchantments fall in three kinds: ones
 // that only add stats, specials (anything else the engine models, like a
@@ -297,6 +298,7 @@ class Search {
   void FindReadStats();
   bool ReadStatsHold(const PreparedLayout& layout);
   void CompileOptions();
+  bool RangeCanMatter(const std::vector<std::int32_t>& range, const std::vector<std::int32_t>& shaping);
   const FlatSets& SetsOf(std::size_t slot, const std::vector<std::size_t>& open, int room);
   Profile& ProfileFor(const std::array<std::vector<std::size_t>, kSlots>& specials);
   void FindFinals(Profile& profile);
@@ -571,6 +573,25 @@ void Search::CompileOptions() {
         assumed_.ignored[slot].push_back(id);
       }
     }
+    if (slot == kWeapon) {
+      const auto ranged = [](const Mutator& m) { return m.tag == "MultiplySpeed" || m.tag == "MultiplyLifetimeMS"; };
+      std::vector<std::int32_t> range;
+      std::vector<std::int32_t> shaping;
+      for (const std::int32_t id : item.specials) {
+        const auto& mutators = model_.enchantment(id).mutators;
+        if (std::ranges::all_of(mutators, ranged)) {
+          range.push_back(id);
+        } else if (std::ranges::any_of(mutators, [&](const Mutator& m) {
+                     return ranged(m) || m.tag == "SetSubAttack" || m.tag == "AddSubAttack";
+                   })) {
+          shaping.push_back(id);
+        }
+      }
+      if (!range.empty() && !RangeCanMatter(range, shaping)) {
+        std::erase_if(item.specials, [&](std::int32_t id) { return std::ranges::find(range, id) != range.end(); });
+        assumed_.ignored[slot].insert(assumed_.ignored[slot].end(), range.begin(), range.end());
+      }
+    }
     // A special is never needed when another can take its place (they
     // can't share the item, and the other clashes with nothing it doesn't)
     // and does at least as much. Equal ones keep the first.
@@ -677,6 +698,62 @@ void Search::CompileOptions() {
       item.most_stats = std::max(item.most_stats, static_cast<int>(p.ids.size()));
     });
   }
+}
+
+// Whether a weapon special that only changes projectile speed or lifetime
+// (`range`) can change the score. The engine reads those only through the
+// hit estimate (HitsPerVolley), so it can't when, with every clash-free set
+// of the specials that change the weapon's shots (`shaping`), every set of
+// `range` leaves each subattack's hits per volley as they were.
+bool Search::RangeCanMatter(const std::vector<std::int32_t>& range, const std::vector<std::int32_t>& shaping) {
+  const Assumptions& assumptions = model_.base().assumptions;
+  if (!assumptions.distance) return false;
+  const auto hits = [&](std::vector<std::int32_t> on_weapon) -> std::optional<std::vector<int>> {
+    Layout key;
+    key.items = items_;
+    std::ranges::sort(on_weapon);
+    key.specials[kWeapon] = std::move(on_weapon);
+    const PreparedLayout* layout = scorer_.Prepare(key);
+    if (layout == nullptr) return std::nullopt;
+    const Weapon& w = *layout->request.weapon;
+    std::vector<int> out;
+    for (const Subattack& s : w.subattacks) {
+      out.push_back(HitsPerVolley(w, s, *assumptions.distance, assumptions.target_radius));
+    }
+    return out;
+  };
+  const auto fits = [&](const std::vector<std::int32_t>& set, std::int32_t id) {
+    return std::cmp_less(set.size(), room_[kWeapon]) && std::ranges::none_of(set, [&](std::int32_t o) {
+             return Conflict(model_.enchantment(o), model_.enchantment(id));
+           });
+  };
+  // Past this many sets, it's assumed to matter rather than checked.
+  constexpr std::size_t kMostTried = 4096;
+  std::size_t tried = 0;
+  bool matters = false;
+  std::vector<std::int32_t> set;
+  std::function<void(std::size_t, const std::vector<int>&)> add_range = [&](std::size_t from,
+                                                                             const std::vector<int>& before) {
+    for (std::size_t k = from; k < range.size() && !matters; ++k) {
+      if (!fits(set, range[k])) continue;
+      set.push_back(range[k]);
+      const auto now = hits(set);
+      matters = ++tried > kMostTried || (now && *now != before);
+      add_range(k + 1, before);
+      set.pop_back();
+    }
+  };
+  std::function<void(std::size_t)> add_shaping = [&](std::size_t from) {
+    if (const auto before = hits(set)) add_range(0, *before);
+    for (std::size_t k = from; k < shaping.size() && !matters; ++k) {
+      if (!fits(set, shaping[k])) continue;
+      set.push_back(shaping[k]);
+      add_shaping(k + 1);
+      set.pop_back();
+    }
+  };
+  add_shaping(0);
+  return matters;
 }
 
 const FlatSets& Search::SetsOf(std::size_t slot, const std::vector<std::size_t>& open, int room) {
