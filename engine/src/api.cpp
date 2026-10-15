@@ -680,8 +680,9 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 //                "thorough": false, "results": 5}
 // "lock" keeps the request's items in those slots. "pools" says which other
 // items may be tried: tiered ones, set pieces, and the rest (untiered).
-// Reskins and unobtainable items are never tried, but the request's own
-// stay unless something beats them.
+// Reskins and unobtainable items are never tried, and a variant only with an
+// enchantment its base can't take, but the request's own stay unless
+// something beats them.
 // "enchantments" keeps the request's where they still fit, removes them, or
 // fills up to "slots" per item (2 unless set, at most 4), and no more than
 // the item has, with the best ones. "artifacts" lets it use enchantments
@@ -859,6 +860,21 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
                                             : OptimizerProblem::Enchantments::kKeep;
     problem.per_item = max_slots;
     problem.artifacts = artifacts;
+    // A variant only stands for its base's builds when the base is tried.
+    for (std::size_t i = 0; i < kSlots.size(); ++i) {
+      const auto base_of = [&](const std::string& name) -> std::string {
+        const auto pick = [&](const auto& list) {
+          const auto it = std::ranges::find(list, name, [](const auto& x) { return x.name; });
+          return it == list.end() ? std::string() : it->variant_of;
+        };
+        return i == 0 ? pick(d.weapons) : i == 1 ? pick(d.abilities) : i == 2 ? pick(d.armors) : pick(d.rings);
+      };
+      for (auto& [name, own] : VariantEnchantments(d, static_cast<int>(i), artifacts)) {
+        if (std::ranges::find(problem.candidates[i], base_of(name)) != problem.candidates[i].end()) {
+          problem.variants[i].emplace(name, std::move(own));
+        }
+      }
+    }
     problem.results = results;
     problem.thorough = opt.value("thorough", false);
     const std::string around = opt.value("around", std::string("every stat"));

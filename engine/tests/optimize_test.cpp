@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "rotmg/enchant.hpp"
 #include "rotmg/optimize.hpp"
 
 // The search on a small made-up world with a known DPS formula, checked
@@ -94,7 +95,7 @@ std::optional<double> Dps(const Dataset& d, const OptimizerBuild& b, const std::
       }
     }
   }
-  const double weapon = (stats["ATT"] / 10 + 1) * (stats["DEX"] / 10 + 1) * (b.items[0] == "Blade" ? 100 : 90);
+  const double weapon = (stats["ATT"] / 10 + 1) * (stats["DEX"] / 10 + 1) * (b.items[0] == "Blade" || b.items[0] == "Gem Blade" ? 100 : 90);
   const double ability = b.items[1] == "Rampart" ? 8 * std::pow(std::max(0.0, stats["DEF"] - 50), 2)
                          : b.items[1] == "Battle Cry" ? 50 + 2 * stats["ATT"]
                                                       : 0;
@@ -451,4 +452,63 @@ TEST_CASE("the search tries damage enchantments on a weapon that only hits with 
   CHECK(std::ranges::find(weapon, "Heavy") != weapon.end());
   // Range and Heavy on the bow, Attack on the other three items.
   CHECK(found->builds[0].first == Catch::Approx(((50.0 + 3 * 8) / 10 + 1) * 100 * 1.5));
+}
+
+namespace {
+
+// The world with Gem Blade, which plays like Blade but also takes Gem Edge.
+Dataset WithGemBlade() {
+  Dataset d = World();
+  d.weapons[0].type = 1;
+  rotmg::Weapon gem = d.weapons[0];
+  gem.id = gem.name = "Gem Blade";
+  gem.type = 2;
+  gem.variant_of = "Blade";
+  gem.labels.push_back("GEM");
+  d.weapons.push_back(gem);
+  d.enchantments.push_back(Stat("Gem_Edge", {{"DEX", 10}}, {"GEMEDGE"}, {"WEAPON", "GEM"}));
+  d.enchantment_pools["Pool"].insert("Gem_Edge");
+  return d;
+}
+
+bool Holds(const OptimizerBuild& b, const std::string& id) {
+  return std::ranges::find(b.enchants[0], id) != b.enchants[0].end();
+}
+
+}  // namespace
+
+TEST_CASE("a variant's own enchantments are the ones its base can't take") {
+  Dataset d = WithGemBlade();
+  auto variants = rotmg::VariantEnchantments(d, 0, true);
+  REQUIRE(variants.size() == 1);
+  CHECK(variants.at("Gem Blade") == std::vector<std::string>{"Gem_Edge"});
+  // Without the label Gem Edge needs, it takes nothing Blade can't.
+  d.weapons.back().labels.pop_back();
+  variants = rotmg::VariantEnchantments(d, 0, true);
+  REQUIRE(variants.contains("Gem Blade"));
+  CHECK(variants.at("Gem Blade").empty());
+}
+
+TEST_CASE("the search tries a variant only with an enchantment its base can't take") {
+  const Dataset d = WithGemBlade();
+  for (const auto mode : {OptimizerProblem::Enchantments::kNone, OptimizerProblem::Enchantments::kBest}) {
+    OptimizerProblem open = Problem(d, 2);
+    open.candidates[0].push_back("Gem Blade");
+    open.enchantments = mode;
+    OptimizerProblem p = open;
+    p.variants[0] = rotmg::VariantEnchantments(d, 0, true);
+    const auto found = rotmg::SearchBuilds(d, p);
+    const auto unrestricted = rotmg::SearchBuilds(d, open);
+    REQUIRE(found.has_value());
+    REQUIRE(unrestricted.has_value());
+    INFO("enchantments mode " << static_cast<int>(mode));
+    // Nothing is lost: Blade's builds are Gem Blade's without Gem Edge.
+    CHECK(found->builds[0].first == Catch::Approx(unrestricted->builds[0].first));
+    for (const auto& [score, b] : found->builds) {
+      if (b.items[0] == "Gem Blade") {
+        CHECK(mode == OptimizerProblem::Enchantments::kBest);
+        CHECK(Holds(b, "Gem_Edge"));
+      }
+    }
+  }
 }

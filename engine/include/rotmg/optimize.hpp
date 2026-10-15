@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -53,6 +54,11 @@ struct OptimizerProblem {
   /// search starts again from every ability. For checking the normal search.
   bool thorough = false;
   std::size_t results = 5;
+  /// Items in each slot that play like another candidate apart from their
+  /// enchantments, by name, with the ones only they can take (see
+  /// VariantEnchantments). A build holding one without any of them is the
+  /// other item's build, so it isn't tried, unless the item is the start's.
+  std::array<std::map<std::string, std::vector<std::string>, std::less<>>, 4> variants;
   /// Called every progress_every_s seconds or so while searching, with how
   /// far along the search is (0 to 1, a rough guess) and the best builds so
   /// far, which are worth keeping if the search is cut short.

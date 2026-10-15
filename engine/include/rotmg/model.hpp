@@ -132,6 +132,9 @@ struct Weapon {
   Enchanting enchanting;
   /// The item this one plays exactly like, when it's a reskin of it.
   std::string reskin_of;
+  /// The item this one plays exactly like apart from the enchantments it
+  /// can take, like Cupid's Bow, which also takes Valentine enchantments.
+  std::string variant_of;
   /// No player can get it any more, like the Tier 8 abilities.
   bool unobtainable = false;
   /// Multiplies every roll, on top of ATT. Enchantments set it.
@@ -169,6 +172,7 @@ struct Ability {
   std::vector<std::string> labels;
   Enchanting enchanting;
   std::string reskin_of;
+  std::string variant_of;
   bool unobtainable = false;
   std::vector<std::string> unsupported;
 
@@ -252,6 +256,7 @@ struct Gear {
   std::map<int, Projectile> created_projectiles;
   Enchanting enchanting;
   std::string reskin_of;
+  std::string variant_of;
   bool unobtainable = false;
   std::vector<std::string> unsupported;
 };

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -42,6 +44,15 @@ enum class Obtained {
 Obtained HowObtained(const Enchantment& enchantment, const Weapon& item, const Dataset& dataset);
 Obtained HowObtained(const Enchantment& enchantment, const Ability& item, const Dataset& dataset);
 Obtained HowObtained(const Enchantment& enchantment, const Gear& item, const Dataset& dataset);
+
+/// The items of a slot (0 weapon, 1 ability, 2 armor, 3 ring) marked
+/// `variant_of` another, by name, each with the enchantments they can take
+/// and it can't, if any. Wearing one without any of them is wearing the item
+/// it plays like, so a search that also tries that item needn't try it.
+/// `artifacts` says whether enchantments only an artifact or an engraving
+/// puts on an item count.
+std::map<std::string, std::vector<std::string>, std::less<>> VariantEnchantments(const Dataset& dataset, int slot,
+                                                                                bool artifacts);
 
 /// For any item of a slot, by the slot's label, as FitsSlot.
 Obtained HowObtainedOnSlot(const Enchantment& enchantment, const std::string& slot_label);

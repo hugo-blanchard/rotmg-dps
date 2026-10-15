@@ -149,6 +149,7 @@ class BuildSearch {
 
   const Fitting& Fits(std::size_t slot, const std::string& item);
   void Adapt(Build& b, std::size_t slot);
+  bool Redundant(const Build& b) const;
   std::optional<double> Score(const Build& b, const Stats& extra = {});
   std::vector<std::optional<double>> ScoreAll(const std::vector<Build>& builds, const Stats& extra = {});
   Rates StatRates(const Build& b);
@@ -305,9 +306,30 @@ void BuildSearch::Adapt(Build& b, std::size_t slot) {
   }
 }
 
+// Whether the build holds an item that differs from another only in the
+// enchantments it alone takes, without any of them: then it's the other
+// item's build, which the search tries anyway. The start's items stay.
+bool BuildSearch::Redundant(const Build& b) const {
+  for (std::size_t slot = 0; slot < b.items.size(); ++slot) {
+    const auto it = p_.variants[slot].find(b.items[slot]);
+    if (it == p_.variants[slot].end() || b.items[slot] == p_.start.items[slot]) {
+      continue;
+    }
+    if (std::ranges::none_of(b.enchants[slot], [&](const std::string& id) {
+          return std::ranges::find(it->second, id) != it->second.end();
+        })) {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::optional<double> BuildSearch::Score(const Build& b, const Stats& extra) {
   if (stopping_) {
     throw Stopped{};
+  }
+  if (Redundant(b)) {
+    return std::nullopt;
   }
   const bool plain = std::ranges::all_of(extra, [](int x) { return x == 0; });
   std::string key = Key(b);
@@ -1396,6 +1418,9 @@ std::optional<double> BuildSearch::Probe(const Build& b, const Stats& extra) {
   if (stopping_) {
     throw Stopped{};
   }
+  if (Redundant(b)) {
+    return std::nullopt;
+  }
   if (p_.progress && !OnHelperThread()) {
     Report();
   }
@@ -1405,6 +1430,9 @@ std::optional<double> BuildSearch::Probe(const Build& b, const Stats& extra) {
 
 // The same at several stat points at once.
 std::vector<std::optional<double>> BuildSearch::ProbeAll(const Build& b, const std::vector<Stats>& extras) {
+  if (Redundant(b)) {
+    return std::vector<std::optional<double>>(extras.size());
+  }
   if (!p_.score_points) {
     std::vector<std::optional<double>> out;
     for (const Stats& extra : extras) out.push_back(Probe(b, extra));

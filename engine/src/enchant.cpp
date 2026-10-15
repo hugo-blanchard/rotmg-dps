@@ -113,6 +113,48 @@ Obtained HowObtainedOnSlot(const Enchantment& e, const std::string& slot_label) 
   return FitsSlot(e, slot_label) && !Legacy(e) ? Obtained::kRolls : Obtained::kNever;
 }
 
+namespace {
+
+template <typename Item>
+std::map<std::string, std::vector<std::string>, std::less<>> VariantsIn(const std::vector<Item>& items,
+                                                                       const Dataset& d, bool artifacts) {
+  std::map<std::string, std::vector<std::string>, std::less<>> out;
+  const auto takes = [&](const Enchantment& e, const Item& item) {
+    const Obtained how = HowObtained(e, item, d);
+    return how == Obtained::kRolls || (artifacts && how == Obtained::kArtifact);
+  };
+  for (const Item& v : items) {
+    if (v.variant_of.empty()) {
+      continue;
+    }
+    const auto base =
+        std::ranges::find_if(items, [&](const Item& b) { return b.name == v.variant_of || b.id == v.variant_of; });
+    if (base == items.end()) {
+      continue;
+    }
+    std::vector<std::string> own;
+    for (const Enchantment& e : d.enchantments) {
+      if (takes(e, v) && !takes(e, *base)) {
+        own.push_back(e.id);
+      }
+    }
+    out.emplace(v.name, std::move(own));
+  }
+  return out;
+}
+
+}  // namespace
+
+std::map<std::string, std::vector<std::string>, std::less<>> VariantEnchantments(const Dataset& d, int slot,
+                                                                                bool artifacts) {
+  switch (slot) {
+    case 0: return VariantsIn(d.weapons, d, artifacts);
+    case 1: return VariantsIn(d.abilities, d, artifacts);
+    case 2: return VariantsIn(d.armors, d, artifacts);
+    default: return VariantsIn(d.rings, d, artifacts);
+  }
+}
+
 // Divine items have 4 slots, the most (RealmEye: Enchanting).
 int EnchantmentSlots(const Enchanting& enchanting, const Dataset& d) {
   return d.enchantment_pools.empty() ? 4 : std::clamp(enchanting.slots, 0, 4);
