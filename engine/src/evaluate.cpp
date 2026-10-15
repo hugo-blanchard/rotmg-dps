@@ -241,13 +241,16 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
   bool unmodelled_on_shoot = false;
   std::vector<int> worn = character.worn;
   worn.push_back(weapon.type);
-  for (const Activate& a : weapon.on_shoot) {
-    const bool harmless = a.type == "ConditionEffectSelf" && kHarmlessSelfEffects.contains(a.Text("effect"));
-    // An effect for gear that isn't worn doesn't go off, so it can't be missing.
-    const bool off = !GearWorn(a, worn);
-    if (!harmless && !off && !IsWhileShooting(a) && !IsPoisonBurst(a) && !IsProcShot(weapon, a) &&
-        !IsChanceBoost(a)) {
-      unmodelled_on_shoot = true;
+  // Only the explanation lists effects that aren't modelled.
+  if (details) {
+    for (const Activate& a : weapon.on_shoot) {
+      const bool harmless = a.type == "ConditionEffectSelf" && kHarmlessSelfEffects.contains(a.Text("effect"));
+      // An effect for gear that isn't worn doesn't go off, so it can't be missing.
+      const bool off = !GearWorn(a, worn);
+      if (!harmless && !off && !IsWhileShooting(a) && !IsPoisonBurst(a) && !IsProcShot(weapon, a) &&
+          !IsChanceBoost(a)) {
+        unmodelled_on_shoot = true;
+      }
     }
   }
   if (details && unmodelled_on_shoot &&
@@ -277,8 +280,7 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
                          "RealmEye: Status Effects"});
   }
 
-  const std::vector<std::string> gaps = HitModelGaps(weapon);
-  const bool estimate = assumptions.distance.has_value() && gaps.empty();
+  const bool estimate = assumptions.distance.has_value() && HitModelFits(weapon);
   bool all_hit_assumed = false;
   bool estimated = false;
   bool has_burst = false;
@@ -403,6 +405,7 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
 
   out.assumptions.push_back("damage after DEF and Curse is not rounded");
   if (all_hit_assumed) {
+    const std::vector<std::string> gaps = HitModelGaps(weapon);
     if (assumptions.distance && !gaps.empty()) {
       std::string list;
       for (const std::string& gap : gaps) {

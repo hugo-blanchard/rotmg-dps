@@ -1,6 +1,7 @@
 #include "rotmg/hits.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <map>
@@ -23,7 +24,9 @@ const std::set<std::string, std::less<>> kMotionTags = {
 
 // Everything a volley's paths depend on (see path.cpp), for remembering
 // estimates. A missing value is NaN, which no real value is.
-std::vector<double> VolleyKey(const Projectile& p, const Subattack& s, double distance, double radius) {
+using Key = std::array<double, 18>;
+
+Key VolleyKey(const Projectile& p, const Subattack& s, double distance, double radius) {
   constexpr double kNone = std::numeric_limits<double>::quiet_NaN();
   const auto [x, y] = s.pos_offset.value_or(std::array<double, 2>{kNone, kNone});
   return {p.speed,
@@ -48,7 +51,7 @@ std::vector<double> VolleyKey(const Projectile& p, const Subattack& s, double di
 
 // Orders keys with NaN equal to NaN, unlike operator<.
 struct KeyLess {
-  bool operator()(const std::vector<double>& a, const std::vector<double>& b) const {
+  bool operator()(const Key& a, const Key& b) const {
     return std::ranges::lexicographical_compare(a, b, [](double x, double y) {
       if (std::isnan(x) || std::isnan(y)) {
         return std::isnan(y) && !std::isnan(x);
@@ -75,6 +78,11 @@ int TraceHits(const Projectile& p, const Subattack& subattack, double distance, 
 
 }  // namespace
 
+bool HitModelFits(const Weapon& weapon) {
+  return std::ranges::none_of(weapon.projectiles, &Projectile::parametric) &&
+         std::ranges::none_of(weapon.unsupported, [](const std::string& tag) { return kMotionTags.contains(tag); });
+}
+
 std::vector<std::string> HitModelGaps(const Weapon& weapon) {
   std::vector<std::string> gaps;
   for (const Projectile& p : weapon.projectiles) {
@@ -100,11 +108,11 @@ int HitsPerVolley(const Weapon& weapon, const Subattack& subattack, double dista
   // Tracing long-lived or circling shots is slow, and the optimizer asks
   // about the same volleys over and over, so estimates are remembered. The
   // answer depends only on the key, so this can't change a result.
-  thread_local std::map<std::vector<double>, int, KeyLess> known;
+  thread_local std::map<Key, int, KeyLess> known;
   if (known.size() > 4096) {
     known.clear();
   }
-  const std::vector<double> key = VolleyKey(*p, subattack, distance, radius);
+  const Key key = VolleyKey(*p, subattack, distance, radius);
   if (const auto it = known.find(key); it != known.end()) {
     return it->second;
   }

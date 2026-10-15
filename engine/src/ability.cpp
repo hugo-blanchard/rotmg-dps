@@ -294,7 +294,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
     if (a.type == "Shoot") {
       // Fires the item's own projectiles at the target, like a weapon volley.
       const double bonus = StatModBonus(a, "statModDamage", c);
-      const bool estimate = assumptions.distance.has_value() && HitModelGaps(shots).empty();
+      const bool estimate = assumptions.distance.has_value() && HitModelFits(shots);
       double damage = 0;
       for (const Subattack& s : shots.subattacks) {
         const Projectile* p = shots.FindProjectile(s.projectile_id);

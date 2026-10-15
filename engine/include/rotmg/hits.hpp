@@ -18,6 +18,9 @@ inline constexpr double kDefaultTargetRadius = 0.5;
 /// Empty when it can. Callers fall back to assuming every projectile hits.
 std::vector<std::string> HitModelGaps(const Weapon& weapon);
 
+/// Whether HitModelGaps is empty, without building it.
+bool HitModelFits(const Weapon& weapon);
+
 /// Projectiles of one volley of `subattack` that hit a target of `radius`
 /// tiles centered `distance` tiles away. Each projectile hits a target at
 /// most once.
