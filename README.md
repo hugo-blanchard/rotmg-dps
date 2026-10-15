@@ -89,11 +89,11 @@ The fields from `abilitySlotType` down were added with abilities and are missing
 
 ### Weapons
 
-An item is a weapon when its `<Class>` is `Equipment`, its `<SlotType>` is some class's weapon slot, and it has at least one `<Projectile>`. Items in test files (`testing/*.xml`, `equipTest.xml`) are left out unless they're admin items, which stay as `unobtainable`, and so are enchantment procs (`equipSubs.xml`). When several items share a name and stats, the one players can get stays.
+An item is a weapon when its `<Class>` is `Equipment`, its `<SlotType>` is some class's weapon slot, and it has at least one `<Projectile>`. Items in test files (`testing/*.xml`, `equipTest.xml`) are left out unless they're admin items, which stay as `unobtainable`, and so are enchantment procs (`equipSubs.xml`) and Shinies: items with the `SHINY` label or a name ending in "Shiny". When several items share a name and stats, the one players can get stays.
 
-Many weapons have Shiny or Retro reskins with the same `<DisplayId>`. A reskin with the same stats as the base item is dropped; a different projectile `<ObjectId>`, or a different `color`, `objectId` or `type` in an on-shoot effect, counts as looks, not stats. One with different stats is kept, with its `id` as its name so names stay unique.
+Many weapons have Retro and other reskins with the same `<DisplayId>`. A reskin with the same stats as the base item is dropped; a different projectile `<ObjectId>`, or a different `color`, `objectId` or `type` in an on-shoot effect, counts as looks, not stats. One with different stats is kept, with its `id` as its name so names stay unique.
 
-A reskin under its own name stays in, with `reskinOf` naming the item it plays like: one of the same kind with every element and attribute the same, apart from looks (texture, sound, description, animation, labels, tier and the like), in the same sets, with as many enchantment slots and the same enchantments it can roll or get by artifact (see Enchantments). Of such a group, the base is the one not labelled `RESKIN` or `SHINY`, then a tiered one, then the lowest `type`.
+A reskin under its own name stays in, with `reskinOf` naming the item it plays like: one of the same kind with every element and attribute the same, apart from looks (texture, sound, description, animation, labels, tier and the like), in the same sets, with as many enchantment slots and the same enchantments it can roll or get by artifact (see Enchantments). Of such a group, the base is the one not labelled `RESKIN`, then a tiered one, then the lowest `type`.
 
 | Field | Client source |
 |---|---|
@@ -149,7 +149,7 @@ Older weapons have no `<Subattack>` and set their firing values on the item itse
 
 ### Abilities
 
-An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is some class's ability slot, and it has `<Usable/>`. Items without it sit in ability slots only to hold a proc's projectiles. Test files and enchantment procs are left out, and reskins are merged, as with weapons.
+An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is some class's ability slot, and it has `<Usable/>`. Items without it sit in ability slots only to hold a proc's projectiles. Test files, enchantment procs and Shinies are left out, and reskins are merged, as with weapons.
 
 | Field | Client source |
 |---|---|
@@ -165,7 +165,7 @@ An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is som
 
 ### Armor and rings
 
-An item is an armor or a ring when its `<Class>` is `Equipment` and its `<SlotType>` is some class's armor or ring slot. Test files are left out, and reskins are merged, as with weapons. So are items without a `<BagType>` or with a `<Projectile>`: they only hold a proc's shots, or stand in for something else, like fishing rods.
+An item is an armor or a ring when its `<Class>` is `Equipment` and its `<SlotType>` is some class's armor or ring slot. Test files and Shinies are left out, and reskins are merged, as with weapons. So are items without a `<BagType>` or with a `<Projectile>`: they only hold a proc's shots, or stand in for something else, like fishing rods.
 
 | Field | Client source |
 |---|---|
