@@ -93,7 +93,7 @@ An item is a weapon when its `<Class>` is `Equipment`, its `<SlotType>` is some 
 
 Many weapons have Retro and other reskins with the same `<DisplayId>`. A reskin with the same stats as the base item is dropped; a different projectile `<ObjectId>`, or a different `color`, `objectId` or `type` in an on-shoot effect, counts as looks, not stats. One with different stats is kept, with its `id` as its name so names stay unique.
 
-A reskin under its own name stays in, with `reskinOf` naming the item it plays like: one of the same kind with every element and attribute the same, apart from looks (texture, sound, description, animation, labels, tier and the like), in the same sets, with as many enchantment slots and the same enchantments it can roll or get by artifact (see Enchantments). Of such a group, the base is the one not labelled `RESKIN`, then a tiered one, then the lowest `type`.
+A reskin under its own name stays in, with `reskinOf` naming the item it plays like: one of the same kind with every element and attribute the same, apart from looks (texture, sound, description, animation, labels, tier and the like), in the same sets, named by the same effects' gear requirements (`mustWear` and the like), with as many enchantment slots and the same enchantments it can roll or get by artifact (see Enchantments). Of such a group, the base is the one not labelled `RESKIN`, then a tiered one, then the lowest `type`.
 
 | Field | Client source |
 |---|---|
@@ -107,7 +107,7 @@ A reskin under its own name stays in, with `reskinOf` naming the item it plays l
 | `enchantmentSlots` | how many enchantments the item can hold: 4 for every item with `<EnchantmentSlots>`, whose `slotChance` is the chance each slot rolls when the item drops. Missing for items without it, which take none |
 | `enchantmentPool` | `<EnchantmentSlots enchantmentList>`, the pool its enchantments roll from, or the default pool when the client doesn't define that list (the Void weapons name ones like "Tiered Flail Table 5") |
 | `reskinOf` | the name of the item this one plays exactly like, when it's a reskin (above) |
-| `variantOf` | the name of the item this one plays like when the only difference is the enchantments it can take, like Cupid's Bow and its Valentine enchantments |
+| `variantOf` | the name of the item this one plays like when the only difference is the enchantments it can take or how many, like Cupid's Bow and its Valentine enchantments |
 | `tooltip` | the game's own lines describing the item's effects, each `{name, text}` from an `<EffectInfo name description>` in `<ExtraTooltipData>`, empty ones left out |
 | `unobtainable` | `true` for admin items (`<AdminOnly>`, or ADMIN in the `id`), for items whose `<ExtraTooltipData>` says "not available to players" or "only available for testing", and for tiered items past T0 without `<EnchantmentSlots>`: every tiered item players can get has slots, and today these are the Tier 8 abilities, which RealmEye lists as unobtainable |
 | `projectiles` | one per `<Projectile>` |
