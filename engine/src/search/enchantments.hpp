@@ -39,6 +39,16 @@ struct SearchCounts {
   std::size_t scored = 0;
 };
 
+/// What the search takes for granted about a set of items, so it can be
+/// checked: the stats the score reads, the enchantments it never puts on an
+/// item because they can't change the score, and the ones it drops for a
+/// stronger one that fits wherever they do (weaker, stronger).
+struct EnchantAssumptions {
+  std::array<bool, kStats> read{};
+  std::array<std::vector<std::int32_t>, kSlots> ignored;
+  std::array<std::vector<std::pair<std::int32_t, std::int32_t>>, kSlots> replaced;
+};
+
 /// The best enchantments for the items in `items` (-1 for an empty slot;
 /// the weapon must be there), or nothing when no build scores above
 /// `incumbent`.
@@ -50,16 +60,6 @@ struct SearchCounts {
 /// audit checks them on real data. With a weight at 0, that part of the
 /// build only reaches the score through the millionth that breaks ties,
 /// and the search leaves it out: it's exact up to that tie-break.
-/// What the search takes for granted about a set of items, so it can be
-/// checked: the stats the score reads, the enchantments it never puts on an
-/// item because they can't change the score, and the ones it drops for a
-/// stronger one that fits wherever they do (weaker, stronger).
-struct EnchantAssumptions {
-  std::array<bool, kStats> read{};
-  std::array<std::vector<std::int32_t>, kSlots> ignored;
-  std::array<std::vector<std::pair<std::int32_t, std::int32_t>>, kSlots> replaced;
-};
-
 std::optional<EnchantResult> BestEnchantments(const Model& model, Scorer& scorer,
                                               const std::array<std::int32_t, kSlots>& items,
                                               const EnchantSettings& settings, double incumbent,
