@@ -429,7 +429,7 @@ void Search::FindReadStats() {
   const Ability* ability = items_[kAbility] < 0 ? nullptr : &d.abilities[static_cast<std::size_t>(items_[kAbility])];
   const Gear* armor = items_[kArmor] < 0 ? nullptr : &d.armors[static_cast<std::size_t>(items_[kArmor])];
   const Gear* ring = items_[kRing] < 0 ? nullptr : &d.rings[static_cast<std::size_t>(items_[kRing])];
-  const auto mark = [](Mask& m, const std::string& stat) {
+  const auto mark = [](Mask& m, std::string_view stat) {
     if (const int i = StatIndex(stat); i >= 0) m[static_cast<std::size_t>(i)] = true;
   };
   if (weapon_counts_) {

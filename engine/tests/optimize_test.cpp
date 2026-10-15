@@ -90,7 +90,7 @@ std::optional<double> Dps(const Dataset& d, const OptimizerBuild& b, const std::
     for (const std::string& id : list) {
       const auto e = std::ranges::find(d.enchantments, id, &Enchantment::id);
       for (const rotmg::Mutator& m : e->mutators) {
-        stats[m.attributes.Text("stat")] += *m.attributes.Number("amount");
+        stats[std::string(m.attributes.Text("stat"))] += *m.attributes.Number("amount");
       }
     }
   }

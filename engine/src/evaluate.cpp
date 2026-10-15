@@ -22,7 +22,7 @@ constexpr double kSlowestShotS = 1 / 1.5;
 const std::set<std::string, std::less<>> kHarmlessSelfEffects = {"Slowed", "Sick"};
 
 bool InCombatOnly(const Activate& a) {
-  const std::string required = a.Text("requiredConditions");
+  const std::string_view required = a.Text("requiredConditions");
   return required.empty() || required == "In Combat";
 }
 
@@ -52,15 +52,46 @@ double ShotsPerCycle(double cooldown_s, double shots_per_second) {
   return std::max(1.0, cooldown_s * shots_per_second + 0.5);
 }
 
-std::vector<int> TypeList(const std::string& list) {
-  std::vector<int> out;
+// A number as strtol reads it with base 0: leading spaces, a sign, then hex
+// after 0x, octal after a leading 0, decimal otherwise, up to the first
+// character that isn't a digit; 0 when there are none.
+int ParseType(std::string_view s) {
+  std::size_t i = 0;
+  while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+  bool negative = false;
+  if (i < s.size() && (s[i] == '+' || s[i] == '-')) negative = s[i++] == '-';
+  int base = 10;
+  if (i + 1 < s.size() && s[i] == '0' && (s[i + 1] == 'x' || s[i + 1] == 'X') && i + 2 < s.size() &&
+      std::isxdigit(static_cast<unsigned char>(s[i + 2]))) {
+    base = 16;
+    i += 2;
+  } else if (i < s.size() && s[i] == '0') {
+    base = 8;
+  }
+  long value = 0;
+  for (; i < s.size(); ++i) {
+    const char c = s[i];
+    const int digit = c >= '0' && c <= '9'   ? c - '0'
+                      : c >= 'a' && c <= 'z' ? c - 'a' + 10
+                      : c >= 'A' && c <= 'Z' ? c - 'A' + 10
+                                             : 99;
+    if (digit >= base) break;
+    value = value * base + digit;
+  }
+  return static_cast<int>(negative ? -value : value);
+}
+
+// Whether `test` holds for every item type in a ';'-separated list (any,
+// with `any`).
+template <typename Test>
+bool EachType(std::string_view list, bool any, const Test& test) {
   std::size_t start = 0;
   while (start < list.size()) {
     const std::size_t end = std::min(list.find(';', start), list.size());
-    out.push_back(static_cast<int>(std::strtol(list.substr(start, end - start).c_str(), nullptr, 0)));
+    if (test(ParseType(list.substr(start, end - start))) == any) return any;
     start = end + 1;
   }
-  return out;
+  return !any;
 }
 
 // Extra shots made at the cursor on every shot past a cooldown, like
@@ -72,9 +103,9 @@ bool IsProcShot(const Weapon& w, const Activate& a) {
       !a.Text("requiredConditions").empty() || a.Number("idMeter") || a.Number("meterCost")) {
     return false;
   }
-  const std::string type = a.Text("type");
+  const std::string_view type = a.Text("type");
   return type.empty() ? !w.projectiles.empty()
-                      : w.created_projectiles.contains(static_cast<int>(std::strtol(type.c_str(), nullptr, 0)));
+                      : w.created_projectiles.contains(ParseType(type));
 }
 
 }  // namespace
@@ -89,11 +120,10 @@ bool IsChanceBoost(const Activate& a) {
 // Set"; the Alien enchantments' boosts need any one Alien item.
 bool GearWorn(const Activate& a, const std::vector<int>& worn) {
   const auto wearing = [&](int type) { return std::ranges::find(worn, type) != worn.end(); };
-  const std::vector<int> any = TypeList(a.Text("mustWearOR"));
-  return std::ranges::all_of(TypeList(a.Text("mustWear")), wearing) &&
-         (any.empty() || std::ranges::any_of(any, wearing)) &&
-         std::ranges::none_of(TypeList(a.Text("mustNotWear")), wearing) &&
-         std::ranges::none_of(TypeList(a.Text("mustNotWearOR")), wearing);
+  const auto not_wearing = [&](int type) { return !wearing(type); };
+  const std::string_view any = a.Text("mustWearOR");
+  return EachType(a.Text("mustWear"), false, wearing) && (any.empty() || EachType(any, true, wearing)) &&
+         EachType(a.Text("mustNotWear"), false, not_wearing) && EachType(a.Text("mustNotWearOR"), false, not_wearing);
 }
 
 OnShootModel ModelOf(const Weapon& weapon, const Activate& a, const std::vector<int>& worn) {
@@ -150,7 +180,7 @@ std::vector<ChanceBoost> ChanceBoosts(const Weapon& weapon, const std::vector<in
     }
     const double duration = *a.Number("duration");
     const double cycle = a.Number("cooldown").value_or(0) + 1 / (*a.Number("proc") * shots_per_second);
-    out.push_back({{a.Text("stat"), static_cast<int>(a.Number("amount").value_or(0))},
+    out.push_back({{std::string(a.Text("stat")), static_cast<int>(a.Number("amount").value_or(0))},
                    duration,
                    std::min(1.0, duration / cycle)});
   }
@@ -161,7 +191,7 @@ std::vector<StatBonus> WhileShooting(const Weapon& weapon) {
   std::vector<StatBonus> out;
   for (const Activate& a : weapon.on_shoot) {
     if (IsWhileShooting(a)) {
-      out.push_back({a.Text("stat"), static_cast<int>(a.Number("amount").value_or(0))});
+      out.push_back({std::string(a.Text("stat")), static_cast<int>(a.Number("amount").value_or(0))});
     }
   }
   return out;
@@ -326,10 +356,10 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
     if (!IsProcShot(weapon, a) || !GearWorn(a, worn) || shots_per_second <= 0) {
       continue;
     }
-    const std::string type = a.Text("type");
+    const std::string_view type = a.Text("type");
     const Projectile& p =
         type.empty() ? weapon.projectiles[0]
-                     : weapon.created_projectiles.at(static_cast<int>(std::strtol(type.c_str(), nullptr, 0)));
+                     : weapon.created_projectiles.at(ParseType(type));
     const double cooldown = a.Number("cooldown").value_or(0);
     const double shots_between = ShotsPerCycle(cooldown, shots_per_second);
     const int count = static_cast<int>(a.Number("numShots").value_or(1)) + StatModCount(a, "statModNumShots", geared);

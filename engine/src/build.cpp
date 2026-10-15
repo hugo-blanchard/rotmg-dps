@@ -48,8 +48,8 @@ std::vector<std::pair<double, Character>> BoostMixes(const Weapon& weapon, const
                                                      const std::vector<ChanceBoost>& all_boosts) {
   std::vector<std::string> read = {"ATT", "DEX"};
   for (const Activate& a : weapon.on_shoot) {
-    if (const std::string stat = a.Text("scalingStat"); !stat.empty() && std::ranges::find(read, stat) == read.end()) {
-      read.push_back(stat);
+    if (const std::string_view stat = a.Text("scalingStat"); !stat.empty() && std::ranges::find(read, stat) == read.end()) {
+      read.emplace_back(stat);
     }
   }
   std::vector<ChanceBoost> boosts;

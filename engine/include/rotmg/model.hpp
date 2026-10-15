@@ -94,7 +94,9 @@ struct Activate {
   std::map<std::string, Value, std::less<>> params;
 
   std::optional<double> Number(std::string_view key) const;
-  std::string Text(std::string_view key) const;
+  /// Empty when the parameter is missing or isn't text. Valid while the
+  /// effect is.
+  std::string_view Text(std::string_view key) const;
   /// False when the parameter is missing or isn't a boolean.
   bool Flag(std::string_view key) const;
 };

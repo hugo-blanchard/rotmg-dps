@@ -46,7 +46,7 @@ double AbilityCooldown(const Ability& ability) {
 namespace {
 
 // Points of `stat` over `threshold`, or 0.
-double Over(const Character& c, const std::string& stat, double threshold) {
+double Over(const Character& c, std::string_view stat, double threshold) {
   return stat.empty() ? 0 : std::max(0.0, c.Stat(stat) - threshold);
 }
 
@@ -78,19 +78,19 @@ int ShockblastTargets(const Activate& a, const Character& c) {
 
 std::optional<Buff> BuffOf(const Activate& a, const Character& c) {
   if (a.type == "ConditionEffectSelf" || a.type == "ConditionEffectAura") {
-    const std::string effect = a.Text("effect");
+    const std::string_view effect = a.Text("effect");
     if (kPlayerStatuses.contains(effect)) {
-      return Buff{Buff::On::kPlayer, effect, 0, Param(a, "duration") + StatModBonus(a, "statModDuration", c)};
+      return Buff{Buff::On::kPlayer, std::string(effect), 0, Param(a, "duration") + StatModBonus(a, "statModDuration", c)};
     }
   } else if (a.type == "StatBoostSelf" || a.type == "StatBoostAura") {
-    const std::string stat = a.Text("stat");
+    const std::string_view stat = a.Text("stat");
     if (stat == "ATT" || stat == "DEX") {
-      return Buff{Buff::On::kPlayer, stat, static_cast<int>(Param(a, "amount")), Param(a, "duration")};
+      return Buff{Buff::On::kPlayer, std::string(stat), static_cast<int>(Param(a, "amount")), Param(a, "duration")};
     }
   } else if (a.type == "EffectBlast") {
     // Duration grows by a second for every wisPerDuration WIS over wisMin
     // (RealmEye: Orbs gives "10 WIS -> +1 second" for wisPerDuration 10).
-    const std::string effect = a.Text("condEffect");
+    const std::string_view effect = a.Text("condEffect");
     if (kTargetStatuses.contains(effect)) {
       double duration = Param(a, "condDuration");
       const double per = Param(a, "wisPerDuration");
@@ -98,7 +98,7 @@ std::optional<Buff> BuffOf(const Activate& a, const Character& c) {
       if (per > 0 && over > 0) {
         duration += over / per;
       }
-      return Buff{Buff::On::kTarget, NormalizeStatus(effect), 0, duration};
+      return Buff{Buff::On::kTarget, NormalizeStatus(std::string(effect)), 0, duration};
     }
   } else if (a.type == "PoisonGrenade" && a.Number("damageBoost").value_or(1) > 1) {
     // RealmEye, Poisons: what you poison takes more damage from you, the
@@ -122,7 +122,7 @@ double PoisonTotal(const Activate& a, const Character& c) {
 }
 
 double StatModBonus(const Activate& effect, std::string_view per_point_key, const Character& character) {
-  const std::string stat = effect.Text("scalingStat");
+  const std::string_view stat = effect.Text("scalingStat");
   const auto per_point = effect.Number(per_point_key);
   if (stat.empty() || !per_point) {
     return 0;
@@ -138,7 +138,7 @@ int StatModCount(const Activate& effect, std::string_view per_point_key, const C
 }
 
 bool GoesOffOnCast(const Activate& a) {
-  const std::string required = a.Text("requiredConditions");
+  const std::string_view required = a.Text("requiredConditions");
   return !a.Number("hpMinThresholdRelative") && !a.Number("idMeter") && !a.Number("minimumMeter") &&
          !a.Number("meterCost") && (required.empty() || required == "In Combat");
 }
@@ -334,8 +334,8 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
       // crosshair" (RealmEye: Wakizashi). Some create another item's
       // projectile, named by `type` as a hex string.
       const Projectile* p = shots.projectiles.empty() ? nullptr : &shots.projectiles[0];
-      if (const std::string type = a.Text("type"); !type.empty()) {
-        const auto it = ability.created_projectiles.find(static_cast<int>(std::strtol(type.c_str(), nullptr, 0)));
+      if (const std::string_view type = a.Text("type"); !type.empty()) {
+        const auto it = ability.created_projectiles.find(static_cast<int>(std::strtol(std::string(type).c_str(), nullptr, 0)));
         if (it == ability.created_projectiles.end()) {
           unsupported("BulletCreate shots of another projectile");
           return;

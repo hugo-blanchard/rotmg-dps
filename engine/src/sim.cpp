@@ -229,10 +229,10 @@ Simulation::Simulation(const Weapon& weapon, const Character& character, const S
   for (const Activate& act : weapon_.on_shoot) {
     Proc proc{&act, ModelOf(weapon_, act, worn), 0, 0, 0};
     if (proc.model == OnShootModel::kExtraShots) {
-      const std::string type = act.Text("type");
+      const std::string_view type = act.Text("type");
       const Projectile& p =
           type.empty() ? weapon_.projectiles[0]
-                       : weapon_.created_projectiles.at(static_cast<int>(std::strtol(type.c_str(), nullptr, 0)));
+                       : weapon_.created_projectiles.at(static_cast<int>(std::strtol(std::string(type).c_str(), nullptr, 0)));
       proc.group = AddGroup(p, act, From::kProc);
     }
     if (proc.model == OnShootModel::kPoisonBurst || proc.model == OnShootModel::kExtraShots ||
@@ -292,8 +292,8 @@ int Simulation::ShotGroup(const Activate& act) {
     return -1;
   }
   const Projectile* p = a.projectiles.empty() ? nullptr : &a.projectiles[0];
-  if (const std::string type = act.Text("type"); !type.empty()) {
-    const auto it = a.created_projectiles.find(static_cast<int>(std::strtol(type.c_str(), nullptr, 0)));
+  if (const std::string_view type = act.Text("type"); !type.empty()) {
+    const auto it = a.created_projectiles.find(static_cast<int>(std::strtol(std::string(type).c_str(), nullptr, 0)));
     p = it == a.created_projectiles.end() ? nullptr : &it->second;
   }
   return p == nullptr ? -1 : static_cast<int>(AddGroup(*p, act, From::kAbility));
@@ -644,8 +644,8 @@ void Simulation::Cast() {
       }
       e.chance = 0;
     }
-    const std::string channel = act.Text("channel");
-    CastEffect(act, e.group, channel.starts_with("noStack") ? channel : "on use " + std::to_string(i));
+    const std::string_view channel = act.Text("channel");
+    CastEffect(act, e.group, channel.starts_with("noStack") ? std::string(channel) : "on use " + std::to_string(i));
     e.ready_ms = now + act.Number("cooldown").value_or(0) * 1000;
   }
 }
@@ -838,9 +838,9 @@ void Simulation::OnShoot() {
       }
       // Only one boost of a stat on a noStack channel is set up (see
       // CountsAsChanceBoost); any others stack.
-      const std::string channel = act.Text("channel");
-      Boost(act.Text("stat"), static_cast<int>(act.Number("amount").value_or(0)), act.Number("duration").value_or(0),
-            channel.starts_with("noStack") ? channel : "proc " + std::to_string(i));
+      const std::string_view channel = act.Text("channel");
+      Boost(std::string(act.Text("stat")), static_cast<int>(act.Number("amount").value_or(0)), act.Number("duration").value_or(0),
+            channel.starts_with("noStack") ? std::string(channel) : "proc " + std::to_string(i));
     } else if (proc.model == OnShootModel::kPoisonBurst) {
       // Nothing aims it, so it bursts around the player.
       pending_.push_back({Pending::Kind::kPoisonLands, now + act.Number("throwTime").value_or(0) * 1000,
@@ -895,13 +895,13 @@ void Simulation::RunPending() {
       }
       const Point at = world_.targets[p.source].position;
       const double bonus = StatModBonus(act, "statModBombDamage", base_);
-      const std::string effect = act.Text("bombCondEffect");
+      const std::string_view effect = act.Text("bombCondEffect");
       for (std::size_t t = 0; t < world_.targets.size(); ++t) {
         if (Alive(t) && Distance(at, world_.targets[t].position) <= p.radius + world_.targets[t].radius) {
           Damage(t, AbilityHit(0, 0, act.Number("bombDamage").value_or(0) + bonus, t, false), p.from);
           if (!effect.empty()) {
             const double extra = StatModBonus(act, "statModBombCondDuration", base_);
-            Debuff(t, effect, act.Number("bombCondEffectDuration").value_or(0) + extra);
+            Debuff(t, std::string(effect), act.Number("bombCondEffectDuration").value_or(0) + extra);
           }
         }
       }
@@ -940,8 +940,8 @@ void Simulation::RunPending() {
         if (const auto boost = BuffOf(act, base_)) {
           Debuff(t, boost->effect, boost->duration_s, 0, boost->factor);
         }
-        if (const std::string effect = act.Text("condEffect"); !effect.empty()) {
-          Debuff(t, effect, act.Number("condDuration").value_or(0));
+        if (const std::string_view effect = act.Text("condEffect"); !effect.empty()) {
+          Debuff(t, std::string(effect), act.Number("condDuration").value_or(0));
         }
       }
       poisons_.push_back(std::move(poison));
@@ -999,7 +999,7 @@ void Simulation::Explode(const Trap& trap) {
   const Activate& act = *trap.activate;
   const int damage = static_cast<int>(act.Number("totalDamage").value_or(0));
   const double bonus = StatModBonus(act, "statModTrapDamage", base_);
-  const std::string effect = act.Text("condEffect");
+  const std::string_view effect = act.Text("condEffect");
   std::vector<std::pair<double, std::size_t>> caught;
   for (std::size_t t = 0; t < world_.targets.size(); ++t) {
     const double d = Distance(world_.targets[t].position, trap.at);
@@ -1007,7 +1007,7 @@ void Simulation::Explode(const Trap& trap) {
       caught.push_back({d, t});
       Damage(t, AbilityHit(damage, damage, bonus, t, act.Flag("armorPierce")), From::kAbility);
       if (!effect.empty()) {
-        Debuff(t, effect, act.Number("condDuration").value_or(0) + StatModBonus(act, "statModTrapCondDuration", base_));
+        Debuff(t, std::string(effect), act.Number("condDuration").value_or(0) + StatModBonus(act, "statModTrapCondDuration", base_));
       }
     }
   }

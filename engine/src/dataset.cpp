@@ -404,15 +404,15 @@ std::optional<double> Activate::Number(std::string_view key) const {
   return std::nullopt;
 }
 
-std::string Activate::Text(std::string_view key) const {
+std::string_view Activate::Text(std::string_view key) const {
   auto it = params.find(key);
   if (it == params.end()) {
-    return "";
+    return {};
   }
   if (const std::string* v = std::get_if<std::string>(&it->second)) {
     return *v;
   }
-  return "";
+  return {};
 }
 
 bool Activate::Flag(std::string_view key) const {

@@ -22,7 +22,7 @@ bool Targets(const Mutator& m, const char* key, int index) {
 // order: its container has only subattack 0 and the text says 1. The
 // container's projectile joins the weapon under a fresh id.
 bool TakeSubattack(Weapon& w, const Enchantment& e, const Mutator& m) {
-  const auto c = e.containers.find(m.attributes.Text("subAttackObject"));
+  const auto c = e.containers.find(std::string(m.attributes.Text("subAttackObject")));
   const auto from = static_cast<std::size_t>(m.attributes.Number("subAttackIndex").value_or(0));
   if (c == e.containers.end() || from >= c->second.subattacks.size()) {
     return false;
