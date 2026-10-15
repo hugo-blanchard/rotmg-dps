@@ -196,10 +196,10 @@ Rhythm ChooseRhythm(const Weapon& weapon, const Ability& ability, const Characte
   const auto worth = [&](const BuildNumbers& n) {
     return equal ? n.dps : weights.weapon * n.weapon_dps + weights.ability * n.ability_dps;
   };
-  const AbilityBreakdown asap = EvaluateAbility(ability, caster, target, assumptions, 0);
+  const AbilityBreakdown asap = EvaluateAbility(ability, caster, target, assumptions, 0, false);
   Rhythm out{0, at(asap)};
   for (const double rate : CastRates(asap)) {
-    const BuildNumbers held = at(EvaluateAbility(ability, caster, target, assumptions, rate));
+    const BuildNumbers held = at(EvaluateAbility(ability, caster, target, assumptions, rate, false));
     if (worth(held) > worth(out.numbers) * (1 + 1e-12)) {
       out = {rate, held};
     }

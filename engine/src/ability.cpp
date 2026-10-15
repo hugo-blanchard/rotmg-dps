@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <optional>
 #include <set>
 #include <string>
 
@@ -192,19 +193,29 @@ double CastShare(double chance, double cooldown_s, double casts_per_second) {
 }
 
 AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& character, const Target& target,
-                                 const Assumptions& assumptions, double held_casts_per_second) {
+                                 const Assumptions& assumptions, double held_casts_per_second, bool details) {
   AbilityBreakdown out;
-  out.unsupported = ability.unsupported;
+  if (details) {
+    out.unsupported = ability.unsupported;
+  }
   const Character c = character.With(ability.stat_bonuses);
-  const Weapon shots = ability.AsWeapon();
-  const auto unsupported = [&out](std::string what) {
-    if (std::ranges::find(out.unsupported, what) == out.unsupported.end()) {
-      out.unsupported.push_back(std::move(what));
+  // The ability's own projectiles as a weapon, made only for effects that
+  // fire them.
+  std::optional<Weapon> made;
+  const auto shots = [&]() -> const Weapon& {
+    if (!made) {
+      made = ability.AsWeapon();
+    }
+    return *made;
+  };
+  const auto unsupported = [&out, details](std::string_view what) {
+    if (details && std::ranges::find(out.unsupported, what) == out.unsupported.end()) {
+      out.unsupported.emplace_back(what);
     }
   };
-  const auto assume = [&out](std::string what) {
-    if (std::ranges::find(out.assumptions, what) == out.assumptions.end()) {
-      out.assumptions.push_back(std::move(what));
+  const auto assume = [&out, details](std::string_view what) {
+    if (details && std::ranges::find(out.assumptions, what) == out.assumptions.end()) {
+      out.assumptions.emplace_back(what);
     }
   };
 
@@ -276,7 +287,9 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   double cooldown = 0;
   std::string prefix;
   const auto add_part = [&](AbilityPart p) {
-    p.name = prefix + p.name;
+    if (details) {
+      p.name = prefix + p.name;
+    }
     p.damage *= share;
     p.share = share;
     p.chance = chance;
@@ -294,14 +307,14 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
     if (a.type == "Shoot") {
       // Fires the item's own projectiles at the target, like a weapon volley.
       const double bonus = StatModBonus(a, "statModDamage", c);
-      const bool estimate = assumptions.distance.has_value() && HitModelFits(shots);
+      const bool estimate = assumptions.distance.has_value() && HitModelFits(shots());
       double damage = 0;
-      for (const Subattack& s : shots.subattacks) {
-        const Projectile* p = shots.FindProjectile(s.projectile_id);
+      for (const Subattack& s : shots().subattacks) {
+        const Projectile* p = shots().FindProjectile(s.projectile_id);
         if (p == nullptr) {
           continue;
         }
-        const int hits = estimate ? HitsPerVolley(shots, s, *assumptions.distance, assumptions.target_radius)
+        const int hits = estimate ? HitsPerVolley(shots(), s, *assumptions.distance, assumptions.target_radius)
                                   : s.num_projectiles;
         damage += hits * ExpectedAbilityDamage(p->min_damage, p->max_damage - 1, bonus, target, p->armor_piercing);
         if (hits > 0) {
@@ -317,7 +330,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
     } else if (a.type == "BulletNova") {
       // Spells burst on the cursor; aimed at the target's center, every shot
       // starts inside it and hits once.
-      const Projectile* p = shots.projectiles.empty() ? nullptr : &shots.projectiles[0];
+      const Projectile* p = ability.projectiles.empty() ? nullptr : &ability.projectiles[0];
       if (p == nullptr) {
         unsupported("BulletNova without a projectile");
         return;
@@ -327,13 +340,13 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
           ExpectedAbilityDamage(p->min_damage, p->max_damage - 1, StatModBonus(a, "statModDamage", c), target,
                                 p->armor_piercing);
       assume("spells are aimed at the target's center, so every shot hits");
-      add_part({"Spell burst, " + std::to_string(count) + " shots", count * each, "RealmEye: Spells"});
+      add_part({details ? "Spell burst, " + std::to_string(count) + " shots" : "", count * each, "RealmEye: Spells"});
     } else if (a.type == "BulletCreate") {
       // Shots made around the cursor rather than fired from the player. On
       // wakizashis, the most common, the slash "is centered on the
       // crosshair" (RealmEye: Wakizashi). Some create another item's
       // projectile, named by `type` as a hex string.
-      const Projectile* p = shots.projectiles.empty() ? nullptr : &shots.projectiles[0];
+      const Projectile* p = ability.projectiles.empty() ? nullptr : &ability.projectiles[0];
       if (const std::string_view type = a.Text("type"); !type.empty()) {
         const auto it = ability.created_projectiles.find(static_cast<int>(std::strtol(std::string(type).c_str(), nullptr, 0)));
         if (it == ability.created_projectiles.end()) {
@@ -358,14 +371,14 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
         }
       }
       assume("shots made at the cursor (like a wakizashi's slash) pass through the target, so every shot hits");
-      add_part({"Shots at the cursor, " + std::to_string(count), count * each, "RealmEye: Wakizashi"});
+      add_part({details ? "Shots at the cursor, " + std::to_string(count) : "", count * each, "RealmEye: Wakizashi"});
     } else if (a.type == "DamageNova") {
       const int count = static_cast<int>(Param(a, "activationCount")) + StatModCount(a, "statModActivationCount", c);
       const double each = ExpectedAbilityDamage(static_cast<int>(Param(a, "minDamage")),
                                                 static_cast<int>(Param(a, "maxDamage")),
                                                 StatModBonus(a, "statModDamage", c), target, false);
       assume("damage novas are aimed at the target and DEF applies to them");
-      add_part({"Damage nova, " + std::to_string(count) + " blasts", count * each, "RealmEye: Tomes"});
+      add_part({details ? "Damage nova, " + std::to_string(count) + " blasts" : "", count * each, "RealmEye: Tomes"});
     } else if (a.type == "Lightning") {
       const double damage = LightningDamage(a, c);
       const double first = ExpectedAbilityDamage(0, 0, damage, target, false);
@@ -466,10 +479,12 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   }
   out.dps = out.damage_per_cast * out.casts_per_second;
 
-  out.terms.push_back({"MP cost", out.mp_cost, Source::kClientData, "ability"});
-  out.terms.push_back({"MP per second", out.mp_per_second, Source::kWiki, "RealmEye: Character Stats"});
-  out.terms.push_back({"Cooldown", out.cooldown_s, ability.cooldown ? Source::kClientData : Source::kAssumed, ""});
-  out.terms.push_back({"Casts per second", out.casts_per_second, Source::kWiki, "RealmEye: Character Stats"});
+  if (details) {
+    out.terms.push_back({"MP cost", out.mp_cost, Source::kClientData, "ability"});
+    out.terms.push_back({"MP per second", out.mp_per_second, Source::kWiki, "RealmEye: Character Stats"});
+    out.terms.push_back({"Cooldown", out.cooldown_s, ability.cooldown ? Source::kClientData : Source::kAssumed, ""});
+    out.terms.push_back({"Casts per second", out.casts_per_second, Source::kWiki, "RealmEye: Character Stats"});
+  }
   return out;
 }
 

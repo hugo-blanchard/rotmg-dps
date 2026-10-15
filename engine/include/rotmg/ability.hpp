@@ -144,8 +144,10 @@ double CastShare(double chance, double cooldown_s, double casts_per_second);
 /// gear they need is in `character.worn`.
 /// Cast as often as MP and the cooldown allow, or at `held_casts_per_second`
 /// when that's above 0 and slower: the player holding the cast back.
+/// Without `details`, the numbers only: no names, terms, assumptions or
+/// unsupported effects, for searches that evaluate many builds.
 AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& character, const Target& target,
-                                 const Assumptions& assumptions, double held_casts_per_second = 0);
+                                 const Assumptions& assumptions, double held_casts_per_second = 0, bool details = true);
 
 /// Slower cast rates worth trying than `asap`'s: for each item effect it
 /// blocks on some casts, every rate at which it's blocked on fewer. The
