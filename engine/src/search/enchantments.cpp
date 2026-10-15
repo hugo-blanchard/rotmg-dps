@@ -115,13 +115,25 @@ void Sets(const ItemOptions& item, const std::vector<std::size_t>& ids, int most
   grow(0);
 }
 
+// Whether boost `a` is at least as strong as `x` in every way.
+bool StrongerBoost(const Activate& a, const Activate& x) {
+  const auto n = [](const Activate& b, std::string_view key, double fallback) { return b.Number(key).value_or(fallback); };
+  return n(a, "amount", 0) >= n(x, "amount", 0) && n(a, "duration", 0) >= n(x, "duration", 0) &&
+         n(a, "proc", 1) >= n(x, "proc", 1) && n(a, "cooldown", 0) <= n(x, "cooldown", 0);
+}
+
+bool NoStackChanceBoost(const Activate& a) {
+  return IsChanceBoost(a) && a.Text("channel").starts_with("noStack");
+}
+
 // Whether mutator `a` does at least what `x` does, in a way that can't
 // lower the score: higher damage and fire rate multipliers, a lower MP cost,
 // a stronger chance boost of the same stat, more of a flat stat unless more
 // of it can lower a read stat (`down`); anything else only when it's the
 // same. That these never lower the score is an assumption, checked by the
-// property tests and by AssumptionsFor's audit.
-bool AtLeast(const Mutator& a, const Mutator& x, const Mask& down) {
+// property tests and by AssumptionsFor's audit. `rivals` are the chance
+// boosts that don't stack which any of the items can have.
+bool AtLeast(const Mutator& a, const Mutator& x, const Mask& down, std::span<const Activate> rivals) {
   if (a.tag != x.tag || a.text != x.text) return false;
   const auto same_except = [&](std::initializer_list<std::string_view> keys) {
     for (const auto& [k, v] : x.attributes.params) {
@@ -143,17 +155,27 @@ bool AtLeast(const Mutator& a, const Mutator& x, const Mask& down) {
     return m.attributes.Number(key).value_or(fallback);
   };
   if (a.tag == "AddOnPlayerShootActivate" && a.text == "StatBoostSelf") {
-    // Of chance boosts of a stat in a channel that doesn't stack, the
-    // engine counts the one with the most amount, then duration, then
-    // chance, which isn't always the one doing the most: a stronger one can
-    // displace a better one on another item. Those only compare as equal.
-    const bool chance = number(x, "proc", 1) < 1;
-    if (chance && x.attributes.Text("channel").starts_with("noStack")) {
-      return a.number == x.number && same_except({});
+    // Specials' boosts all have the gear they need, so what they need
+    // doesn't matter.
+    if (!StrongerBoost(a.attributes, x.attributes) ||
+        !same_except({"amount", "duration", "proc", "cooldown", "mustWear", "mustWearOR", "mustNotWear",
+                      "mustNotWearOR"})) {
+      return false;
     }
-    return number(a, "amount", 0) >= number(x, "amount", 0) && number(a, "duration", 0) >= number(x, "duration", 0) &&
-           number(a, "proc", 1) >= number(x, "proc", 1) && number(a, "cooldown", 0) <= number(x, "cooldown", 0) &&
-           same_except({"amount", "duration", "proc", "cooldown"});
+    Activate boost = x.attributes;
+    boost.type = x.text;
+    if (!NoStackChanceBoost(boost)) return true;
+    // Of chance boosts of a stat that don't stack, the engine counts one: the
+    // highest by amount, then duration, then chance, the first on a tie
+    // (CountsAsChanceBoost). Swapping `x` for `a` can make `a` count instead
+    // of a rival ranked between them, so `a` must beat each of those too.
+    const auto rank = [](const Activate& b) {
+      return std::tuple{b.Number("amount").value_or(0), b.Number("duration").value_or(0), b.Number("proc").value_or(0)};
+    };
+    return std::ranges::all_of(rivals, [&](const Activate& y) {
+      return y.Text("stat") != x.attributes.Text("stat") || rank(y) < rank(x.attributes) ||
+             rank(a.attributes) < rank(y) || StrongerBoost(a.attributes, y);
+    });
   }
   if (a.tag == "ActivateOnEquip" && a.text == "IncrementStat") {
     const int stat = StatIndex(a.attributes.Text("stat"));
@@ -166,13 +188,13 @@ bool AtLeast(const Mutator& a, const Mutator& x, const Mask& down) {
 
 // Whether special `a`'s effects match `x`'s one for one, each at least as
 // strong.
-bool StrongerEffects(const Enchantment& a, const Enchantment& x, const Mask& down) {
+bool StrongerEffects(const Enchantment& a, const Enchantment& x, const Mask& down, std::span<const Activate> rivals) {
   if (a.mutators.size() != x.mutators.size()) return false;
   std::vector<bool> used(a.mutators.size(), false);
   for (const Mutator& mx : x.mutators) {
     bool matched = false;
     for (std::size_t i = 0; i < a.mutators.size() && !matched; ++i) {
-      if (!used[i] && AtLeast(a.mutators[i], mx, down)) {
+      if (!used[i] && AtLeast(a.mutators[i], mx, down, rivals)) {
         used[i] = true;
         matched = true;
       }
@@ -314,6 +336,7 @@ class Search {
   // stat: more of them can lower the score, so they're only compared for
   // being equal.
   Mask down_{};
+  std::vector<Activate> rivals_;
   std::vector<std::size_t> read_list_;
   std::array<ItemOptions, kSlots> options_;
   std::map<std::tuple<std::size_t, int, std::vector<std::size_t>>, std::unique_ptr<FlatSets>> flat_sets_;
@@ -495,11 +518,26 @@ void Search::CompileOptions() {
   // The items' own conversions read their sources too.
   for (std::size_t s = 0; s < kStats; ++s) useful_[s] = read_[s] || sources[s];
   down_ = {};
+  rivals_.clear();
   if (const PreparedLayout* open = scorer_.Prepare(Layout{items_, {}})) {
     for (const Conversion& c : open->stats.own) {
       if (!read_[c.to]) continue;
       useful_[c.from] = true;
       if (c.percent < 0) down_[c.from] = true;
+    }
+    // The weapon's on-shoot effects, with the other items' joined.
+    for (const Activate& a : open->request.weapon->on_shoot) {
+      if (NoStackChanceBoost(a)) rivals_.push_back(a);
+    }
+  }
+  for (std::size_t slot = 0; slot < kSlots; ++slot) {
+    for (const std::int32_t id : obtainable_[slot]) {
+      for (const Mutator& m : model_.enchantment(id).mutators) {
+        if (m.tag != "AddOnPlayerShootActivate") continue;
+        Activate a = m.attributes;
+        a.type = m.text;
+        if (NoStackChanceBoost(a)) rivals_.push_back(std::move(a));
+      }
     }
   }
   for (std::size_t slot = 0; slot < kSlots; ++slot) {
@@ -551,8 +589,8 @@ void Search::CompileOptions() {
       std::vector<std::int32_t> kept;
       for (const std::int32_t x : item.specials) {
         const auto by = std::ranges::find_if(item.specials, [&](std::int32_t a) {
-          if (a == x || !StrongerEffects(model_.enchantment(a), model_.enchantment(x), down_)) return false;
-          const bool equal = StrongerEffects(model_.enchantment(x), model_.enchantment(a), down_);
+          if (a == x || !StrongerEffects(model_.enchantment(a), model_.enchantment(x), down_, rivals_)) return false;
+          const bool equal = StrongerEffects(model_.enchantment(x), model_.enchantment(a), down_, rivals_);
           return (!equal || a < x) && covers_clashes(a, x);
         });
         if (by == item.specials.end()) {

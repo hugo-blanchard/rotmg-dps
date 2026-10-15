@@ -100,6 +100,10 @@ struct Breakdown {
 /// the mustWearOR ones if it lists any, none of the mustNotWear ones.
 bool GearWorn(const Activate& effect, const std::vector<int>& worn);
 
+/// A stat boost with a chance per shot and a cooldown, like the OnShoot
+/// boost enchantments. Ones that need HP or a status aren't modelled.
+bool IsChanceBoost(const Activate& effect);
+
 /// Stat changes a weapon's on-shoot effects keep up while it fires, like
 /// Valor's -10 ATT. Only the ones the engine can model.
 std::vector<StatBonus> WhileShooting(const Weapon& weapon);

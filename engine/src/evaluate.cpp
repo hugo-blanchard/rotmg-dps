@@ -63,14 +63,6 @@ std::vector<int> TypeList(const std::string& list) {
   return out;
 }
 
-// A stat boost with a chance per shot and a cooldown, like the OnShoot
-// boost enchantments. Ones that need HP or a status aren't modelled.
-bool IsChanceBoost(const Activate& a) {
-  const double proc = a.Number("proc").value_or(1);
-  return a.type == "StatBoostSelf" && proc > 0 && proc < 1 && a.Number("duration").value_or(0) > 0 &&
-         InCombatOnly(a) && !a.Number("hpRequiredRelative") && !a.Number("hpMinThresholdRelative");
-}
-
 // Extra shots made at the cursor on every shot past a cooldown, like
 // Marionette Ravager's or a Syndicate Gear ring's. Novas around the player
 // (Wand of Geb), meter-gated ones (Staff of Esben) and ones that need a
@@ -86,6 +78,12 @@ bool IsProcShot(const Weapon& w, const Activate& a) {
 }
 
 }  // namespace
+
+bool IsChanceBoost(const Activate& a) {
+  const double proc = a.Number("proc").value_or(1);
+  return a.type == "StatBoostSelf" && proc > 0 && proc < 1 && a.Number("duration").value_or(0) > 0 &&
+         InCombatOnly(a) && !a.Number("hpRequiredRelative") && !a.Number("hpMinThresholdRelative");
+}
 
 // Wand of Geb's needs all four set pieces, matching its tooltip's "With Full
 // Set"; the Alien enchantments' boosts need any one Alien item.
