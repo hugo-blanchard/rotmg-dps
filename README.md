@@ -165,7 +165,7 @@ An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is som
 
 ### Armor and rings
 
-An item is an armor or a ring when its `<Class>` is `Equipment` and its `<SlotType>` is some class's armor or ring slot. Test files and Shinies are left out, and same-name copies are merged, as with weapons. So are items without a `<BagType>` or with a `<Projectile>`: they only hold a proc's shots, or stand in for something else, like fishing rods.
+An item is an armor or a ring when its `<Class>` is `Equipment` and its `<SlotType>` is some class's armor or ring slot. Test files and Shinies are left out, and same-name copies are merged, as with weapons. So are items without a `<BagType>`, which only hold a proc's shots or stand in for something else, and the items an enchantment's mutators fire shots from by their `type`: Eggsposing Shot Holder has a bag and the Eggshell Carapace's name, but no one wears it. Gear with its own `<Projectile>` and a bag, like E.Y.E., stays.
 
 | Field | Client source |
 |---|---|
