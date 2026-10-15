@@ -335,7 +335,7 @@ class Search {
 
   void FindObtainable();
   void FindReadStats();
-  bool ReadStatsHold(const PreparedLayout& layout);
+  int UnreadStat(const PreparedLayout& layout) const;
   void CompileOptions();
   bool RangeCanMatter(const std::vector<std::int32_t>& range, const std::vector<std::int32_t>& shaping);
   const FlatSets& SetsOf(std::size_t slot, const std::vector<std::size_t>& open, int room);
@@ -353,6 +353,8 @@ class Search {
   bool CanBeat(const PreparedLayout& layout, const std::vector<const Final*>& group, double best) const;
   std::size_t Widest(const std::vector<const Final*>& group) const;
   bool AnyBeats(const PreparedLayout& layout, std::vector<const Final*> group, double best) const;
+  bool CutByOpen(const PreparedLayout& layout, const std::array<std::vector<std::size_t>, kSlots>& specials,
+                 double best) const;
   void ScoreLayout(const PreparedLayout& layout, const std::array<std::vector<std::size_t>, kSlots>& specials);
   Build BuildOf(const Profile& profile, const std::array<std::vector<std::size_t>, kSlots>& specials,
                 const Final& f) const;
@@ -464,11 +466,11 @@ void Search::FindReadStats() {
   }
 }
 
-// Whether the layout's score, without the tie-break, moves with any stat
-// the search doesn't track. Each is raised a little and a lot from the
+// A stat the search doesn't track that the layout's score, without the
+// tie-break, moves with, or -1. Each is raised a little and a lot from the
 // layout's own stats. Not a proof, a guard: it catches a formula that
 // starts reading a new stat.
-bool Search::ReadStatsHold(const PreparedLayout& layout) {
+int Search::UnreadStat(const PreparedLayout& layout) const {
   const double base = scorer_.Weighted(layout, scorer_.WithStats(layout, layout.stats.before));
   for (std::size_t s = 0; s < kStats; ++s) {
     if (read_[s]) continue;
@@ -476,13 +478,10 @@ bool Search::ReadStatsHold(const PreparedLayout& layout) {
       Stats st = layout.stats.before;
       st[s] += more;
       const double v = scorer_.Weighted(layout, scorer_.WithStats(layout, st));
-      if (std::abs(v - base) > 1e-9 * std::max(1.0, std::abs(base))) {
-        read_[s] = true;
-        return false;
-      }
+      if (std::abs(v - base) > 1e-9 * std::max(1.0, std::abs(base))) return static_cast<int>(s);
     }
   }
-  return true;
+  return -1;
 }
 
 void Search::FindObtainable() {
@@ -1295,27 +1294,28 @@ bool Search::AnyBeats(const PreparedLayout& layout, std::vector<const Final*> gr
          AnyBeats(layout, {group.begin(), group.begin() + mid}, best);
 }
 
-// Scores the layout's finals, keeping any build above the best so far.
-void Search::ScoreLayout(const PreparedLayout& layout, const std::array<std::vector<std::size_t>, kSlots>& specials) {
+// Whether the open layout's finals show this layout can't beat `best`. A
+// layout whose specials add no stats reaches no stats the open layout (no
+// specials, every slot free) can't, so the open layout's finals, scored with
+// this layout's specials, bound it.
+bool Search::CutByOpen(const PreparedLayout& layout, const std::array<std::vector<std::size_t>, kSlots>& specials,
+                       double best) const {
   const bool open = std::ranges::all_of(specials, [](const auto& list) { return list.empty(); });
-  // A layout whose specials add no stats reaches no stats the open layout
-  // (no specials, every slot free) can't, so the open layout's finals,
-  // scored with this layout's specials, bound it.
-  bool adds_stats = false;
+  if (open || open_finals_ == nullptr) return false;
   for (std::size_t slot = 0; slot < kSlots; ++slot) {
     for (const std::size_t sp : specials[slot]) {
       const StatEffect& e = model_.effect(options_[slot].specials[sp]);
-      adds_stats = adds_stats || !e.conversions.empty() || e.tenths != Tenths{};
+      if (!e.conversions.empty() || e.tenths != Tenths{}) return false;
     }
   }
-  if (!open && !adds_stats && open_finals_ != nullptr) {
-    std::vector<const Final*> group;
-    for (const Final& f : *open_finals_) group.push_back(&f);
-    if (!AnyBeats(layout, std::move(group), best_)) {
-      ++counts_.layouts_cut;
-      return;
-    }
-  }
+  std::vector<const Final*> group;
+  for (const Final& f : *open_finals_) group.push_back(&f);
+  return !AnyBeats(layout, std::move(group), best);
+}
+
+// Scores the layout's finals, keeping any build above the best so far.
+void Search::ScoreLayout(const PreparedLayout& layout, const std::array<std::vector<std::size_t>, kSlots>& specials) {
+  const bool open = std::ranges::all_of(specials, [](const auto& list) { return list.empty(); });
   Profile& profile = ProfileFor(specials);
   if (!profile.found) {
     profile.layout = &layout;
@@ -1405,31 +1405,66 @@ std::optional<EnchantResult> Search::Run(double incumbent) {
       for (std::size_t i = 0; i < ids.size(); ++i) ids[i] = i;
       Sets(item, ids, item.room, [&](const Pick& p) { special_sets[slot].push_back(p.ids); });
     }
-    bool restart = false;
-    std::array<std::size_t, kSlots> pick{};
-    while (true) {
+    // Layouts go in batches: prepared in order, then the read-stat guard and
+    // the open layout's bound run on every thread, the bound against the
+    // best found before the batch. Each is then scored in order, after a
+    // second look at the bound if the best has risen since, so every layout
+    // is cut exactly when it would be one at a time. The open layout goes
+    // alone first, since the others are bounded by its finals.
+    struct Pending {
       std::array<std::vector<std::size_t>, kSlots> specials;
-      Layout key;
-      key.items = items_;
-      for (std::size_t slot = 0; slot < kSlots; ++slot) {
-        specials[slot] = special_sets[slot][pick[slot]];
-        for (const std::size_t sp : specials[slot]) key.specials[slot].push_back(options_[slot].specials[sp]);
-        std::ranges::sort(key.specials[slot]);
+      const PreparedLayout* layout = nullptr;
+      int unread = -1;
+      bool cut = false;
+    };
+    constexpr std::size_t kBatch = 64;
+    bool restart = false;
+    bool more = true;
+    bool first = true;
+    std::array<std::size_t, kSlots> pick{};
+    std::vector<Pending> batch;
+    while (more && !restart) {
+      batch.clear();
+      const std::size_t size = first ? 1 : kBatch;
+      first = false;
+      while (more && batch.size() < size) {
+        Pending& p = batch.emplace_back();
+        Layout key;
+        key.items = items_;
+        for (std::size_t slot = 0; slot < kSlots; ++slot) {
+          p.specials[slot] = special_sets[slot][pick[slot]];
+          for (const std::size_t sp : p.specials[slot]) key.specials[slot].push_back(options_[slot].specials[sp]);
+          std::ranges::sort(key.specials[slot]);
+        }
+        p.layout = scorer_.Prepare(key);
+        std::size_t slot = 0;
+        for (; slot < kSlots; ++slot) {
+          if (++pick[slot] < special_sets[slot].size()) break;
+          pick[slot] = 0;
+        }
+        more = slot < kSlots;
       }
-      if (const PreparedLayout* layout = scorer_.Prepare(key)) {
-        if (!ReadStatsHold(*layout)) {
+      const double before = best_;
+      ParallelFor(batch.size(), [&](std::size_t i) {
+        Pending& p = batch[i];
+        if (p.layout == nullptr) return;
+        p.unread = UnreadStat(*p.layout);
+        if (p.unread < 0) p.cut = CutByOpen(*p.layout, p.specials, before);
+      });
+      for (const Pending& p : batch) {
+        if (p.layout == nullptr) continue;
+        if (p.unread >= 0) {
+          read_[static_cast<std::size_t>(p.unread)] = true;
           restart = true;
           break;
         }
         ++counts_.layouts;
-        ScoreLayout(*layout, specials);
+        if (p.cut || (best_ > before && CutByOpen(*p.layout, p.specials, best_))) {
+          ++counts_.layouts_cut;
+          continue;
+        }
+        ScoreLayout(*p.layout, p.specials);
       }
-      std::size_t slot = 0;
-      for (; slot < kSlots; ++slot) {
-        if (++pick[slot] < special_sets[slot].size()) break;
-        pick[slot] = 0;
-      }
-      if (slot == kSlots) break;
     }
     if (!restart) return found_;
   }
