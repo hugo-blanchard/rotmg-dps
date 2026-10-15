@@ -12,7 +12,7 @@ Unofficial fan tool, not affiliated with DECA. Game assets © DECA Live Operatio
 
 - `engine/` (C++20) does all the math: damage per hit, fire rate, how many shots of a volley land on a round target, ability damage, MP and buff uptime, what every item does when you shoot or use your ability, gear, set bonuses, enchantments and DPS, with the source of every rule it applies. It also searches for the build with the most DPS. It first measures which stats the candidates' damage rises with, nothing assumed, and keeps the four that raise it most. It then reads every item's curves, how a build's damage with it grows with those stats as far as enchantments can take them, and keeps the items that are best somewhere, each tried with the other slots' leading items. Next it rates the most promising combinations of those by whole enchantment plans (the same stat stacked on every item, the same kind of single-stat enchantment everywhere, so that turning one stat into another pays off, and on-shoot boosts in any room left), fills the best from their plans along with the gear sets that fill best, and finally improves the best build, and the best close behind it with other items, one or two slots at a time, starting again from the ability that scales most with each stat built around. It can rank builds by sustained DPS or by the damage in a burst window, where everything is timed to the window: the weapon fires from the moment it opens, the ability is cast then and again as cooldown and MP allow, and MP regenerates in between. A search runs on up to 8 threads, reports its progress and best builds as it goes, and a fifth of a second of it gives a rough idea of how long the whole will take. It also runs the step-by-step simulation the site animates: projectiles move with the same code as the hit estimate, against any number of round targets that can move and die, while the ability is cast whenever MP allows and the weapon's on-shoot effects go off. With one still target it agrees with the calculated numbers. It builds natively for the tests and to WebAssembly for the site.
 - `web/` (Svelte and TypeScript) is the site. It runs the WebAssembly engine in a Web Worker.
-- Item data and sprites come from the game client. An extractor that isn't part of this repo turns them into the files described below and publishes them as a `data-*` release, and the site deploys the newest one.
+- Item data and sprites come from the game client. Which items are reskins of which comes from the RealmEye wiki, kept in `curated/reskins.json`. An extractor that isn't part of this repo turns them into the files described below and publishes them as a `data-*` release, and the site deploys the newest one.
 
 ## Building
 
@@ -91,9 +91,9 @@ The fields from `abilitySlotType` down were added with abilities and are missing
 
 An item is a weapon when its `<Class>` is `Equipment`, its `<SlotType>` is some class's weapon slot, and it has at least one `<Projectile>`. Items in test files (`testing/*.xml`, `equipTest.xml`) are left out unless they're admin items, which stay as `unobtainable`, and so are enchantment procs (`equipSubs.xml`) and Shinies: items with the `SHINY` label or a name ending in "Shiny". When several items share a name and stats, the one players can get stays.
 
-Many weapons have Retro and other reskins with the same `<DisplayId>`. A reskin with the same stats as the base item is dropped; a different projectile `<ObjectId>`, or a different `color`, `objectId` or `type` in an on-shoot effect, counts as looks, not stats. One with different stats is kept, with its `id` as its name so names stay unique.
+Many weapons have Retro and soulbound "(SB)" copies with the same `<DisplayId>`. A copy with the same stats and the same `<Texture>` as the base item is dropped; a different projectile `<ObjectId>`, or a different `color`, `objectId` or `type` in an on-shoot effect, counts as looks, not stats. One with different stats or its own texture is kept, with its `id` as its name so names stay unique, unless `names` in `curated/reskins.json` gives it the wiki's name: the client calls all four Beehemoth Quivers "Beehemoth Quiver", the wiki "Red Beehemoth Quiver" and so on.
 
-A reskin under its own name stays in, with `reskinOf` naming the item it plays like: one of the same kind with every element and attribute the same, apart from looks (texture, sound, description, animation, labels, tier and the like), in the same sets, named by the same effects' gear requirements (`mustWear` and the like), with as many enchantment slots and the same enchantments it can roll or get by artifact (see Enchantments). Of such a group, the base is the one not labelled `RESKIN`, then a tiered one, then the lowest `type`.
+Which items are reskins comes from the RealmEye wiki, not the client. `curated/reskins.json` lists every item the wiki calls a reskin of another, from its page's "Reskin of" or the Reskinned Equipment page, each with the page it comes from. It also lists the enchantments the wiki says only some items get: the awakened enchantments on the Enchanting page, and the mods the Artifacts page's engravings guarantee on a family of items, like Adonis' Shot on the Valentine reskins. A listed reskin gets `variantOf` when it can get one of those enchantments (see Enchantments) that the item it's a reskin of can't, and `reskinOf` otherwise.
 
 | Field | Client source |
 |---|---|
@@ -106,8 +106,8 @@ A reskin under its own name stays in, with `reskinOf` naming the item it plays l
 | `onAbility` | one `{"type", "params"}` per `<OnPlayerAbilityActivate>`: what goes off when the wearer uses their ability, whichever slot the item is in |
 | `enchantmentSlots` | how many enchantments the item can hold: 4 for every item with `<EnchantmentSlots>`, whose `slotChance` is the chance each slot rolls when the item drops. Missing for items without it, which take none |
 | `enchantmentPool` | `<EnchantmentSlots enchantmentList>`, the pool its enchantments roll from, or the default pool when the client doesn't define that list (the Void weapons name ones like "Tiered Flail Table 5") |
-| `reskinOf` | the name of the item this one plays exactly like, when it's a reskin (above) |
-| `variantOf` | the name of the item this one plays like when the only difference is the enchantments it can take or how many, like Cupid's Bow and its Valentine enchantments |
+| `reskinOf` | the name of the item the wiki says this one is a reskin of (above) |
+| `variantOf` | the same, for a reskin that can get enchantments that item can't, like the Retrowinds weapons |
 | `tooltip` | the game's own lines describing the item's effects, each `{name, text}` from an `<EffectInfo name description>` in `<ExtraTooltipData>`, empty ones left out |
 | `unobtainable` | `true` for admin items (`<AdminOnly>`, or ADMIN in the `id`), for items whose `<ExtraTooltipData>` says "not available to players" or "only available for testing", for tiered items past T0 without `<EnchantmentSlots>`: every tiered item players can get has slots, and today these are the Tier 8 abilities, which RealmEye lists as unobtainable. Also for items labelled `MOTMG_2024`, which only that event gave (RealmEye: "Obtained Through MotMG 2024"), and for items whose name starts with "+", like +Makakoyumi, which the game never hands out |
 | `projectiles` | one per `<Projectile>` |
@@ -149,7 +149,7 @@ Older weapons have no `<Subattack>` and set their firing values on the item itse
 
 ### Abilities
 
-An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is some class's ability slot, and it has `<Usable/>`. Items without it sit in ability slots only to hold a proc's projectiles. Test files, enchantment procs and Shinies are left out, and reskins are merged, as with weapons.
+An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is some class's ability slot, and it has `<Usable/>`. Items without it sit in ability slots only to hold a proc's projectiles. Test files, enchantment procs and Shinies are left out, and same-name copies are merged, as with weapons.
 
 | Field | Client source |
 |---|---|
@@ -165,7 +165,7 @@ An item is an ability when its `<Class>` is `Equipment`, its `<SlotType>` is som
 
 ### Armor and rings
 
-An item is an armor or a ring when its `<Class>` is `Equipment` and its `<SlotType>` is some class's armor or ring slot. Test files and Shinies are left out, and reskins are merged, as with weapons. So are items without a `<BagType>` or with a `<Projectile>`: they only hold a proc's shots, or stand in for something else, like fishing rods.
+An item is an armor or a ring when its `<Class>` is `Equipment` and its `<SlotType>` is some class's armor or ring slot. Test files and Shinies are left out, and same-name copies are merged, as with weapons. So are items without a `<BagType>` or with a `<Projectile>`: they only hold a proc's shots, or stand in for something else, like fishing rods.
 
 | Field | Client source |
 |---|---|
