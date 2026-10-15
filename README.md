@@ -109,7 +109,7 @@ A reskin under its own name stays in, with `reskinOf` naming the item it plays l
 | `reskinOf` | the name of the item this one plays exactly like, when it's a reskin (above) |
 | `variantOf` | the name of the item this one plays like when the only difference is the enchantments it can take or how many, like Cupid's Bow and its Valentine enchantments |
 | `tooltip` | the game's own lines describing the item's effects, each `{name, text}` from an `<EffectInfo name description>` in `<ExtraTooltipData>`, empty ones left out |
-| `unobtainable` | `true` for admin items (`<AdminOnly>`, or ADMIN in the `id`), for items whose `<ExtraTooltipData>` says "not available to players" or "only available for testing", and for tiered items past T0 without `<EnchantmentSlots>`: every tiered item players can get has slots, and today these are the Tier 8 abilities, which RealmEye lists as unobtainable |
+| `unobtainable` | `true` for admin items (`<AdminOnly>`, or ADMIN in the `id`), for items whose `<ExtraTooltipData>` says "not available to players" or "only available for testing", for tiered items past T0 without `<EnchantmentSlots>`: every tiered item players can get has slots, and today these are the Tier 8 abilities, which RealmEye lists as unobtainable. Also for items labelled `MOTMG_2024`, which only that event gave (RealmEye: "Obtained Through MotMG 2024"), and for items whose name starts with "+", like +Makakoyumi, which the game never hands out |
 | `projectiles` | one per `<Projectile>` |
 | `subattacks` | one per `<Subattack>` |
 | `onShoot` | one `{"type", "params"}` per `<OnPlayerShootActivate>`, read like an ability's `activates` (below) |
