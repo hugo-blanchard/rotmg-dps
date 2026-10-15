@@ -1,0 +1,2655 @@
+{
+  "names": {
+    "EH Blue Bee Armor": "Blue Beehemoth Armor",
+    "EH Blue Quiver": "Blue Beehemoth Quiver",
+    "EH Green Bee Armor": "Green Beehemoth Armor",
+    "EH Green Quiver": "Green Beehemoth Quiver",
+    "EH Red Bee Armor": "Red Beehemoth Armor",
+    "EH Red Quiver": "Red Beehemoth Quiver",
+    "EH Yellow Bee Armor": "Yellow Beehemoth Armor",
+    "EH Yellow Quiver": "Yellow Beehemoth Quiver"
+  },
+  "reskins": [
+    {
+      "item": "1-Bit Robe",
+      "of": "Astronomer's Gown",
+      "source": "https://www.realmeye.com/wiki/1-bit-robe"
+    },
+    {
+      "item": "Acidic Slasher",
+      "of": "Ancient Stone Sword",
+      "source": "https://www.realmeye.com/wiki/acidic-slasher"
+    },
+    {
+      "item": "Advent Seal",
+      "of": "Seal of the Blessed Champion",
+      "source": "https://www.realmeye.com/wiki/advent-seal"
+    },
+    {
+      "item": "Aeonic Talon",
+      "of": "Gearhawk Morning Star",
+      "source": "https://www.realmeye.com/wiki/aeonic-talon"
+    },
+    {
+      "item": "Almandine Armor of Anger",
+      "of": "Acropolis Armor",
+      "source": "https://www.realmeye.com/wiki/almandine-armor-of-anger"
+    },
+    {
+      "item": "Almandine Ring of Wrath",
+      "of": "Ring of Unbound Health",
+      "source": "https://www.realmeye.com/wiki/almandine-ring-of-wrath"
+    },
+    {
+      "item": "Amulet of Elemental Air",
+      "of": "Ring of Unbound Dexterity",
+      "source": "https://www.realmeye.com/wiki/amulet-of-elemental-air"
+    },
+    {
+      "item": "Amulet of Elemental Earth",
+      "of": "Ring of Unbound Defense",
+      "source": "https://www.realmeye.com/wiki/amulet-of-elemental-earth"
+    },
+    {
+      "item": "Amulet of Elemental Fire",
+      "of": "Ring of Unbound Attack",
+      "source": "https://www.realmeye.com/wiki/amulet-of-elemental-fire"
+    },
+    {
+      "item": "Amulet of Elemental Water",
+      "of": "Ring of Unbound Vitality",
+      "source": "https://www.realmeye.com/wiki/amulet-of-elemental-water"
+    },
+    {
+      "item": "Amulet of the Great Shaman",
+      "of": "Ring of Unbound Magic",
+      "source": "https://www.realmeye.com/wiki/amulet-of-the-great-shaman"
+    },
+    {
+      "item": "An Ancient's Embrace",
+      "of": "Volcanic Sheath",
+      "source": "https://www.realmeye.com/wiki/an-ancient-s-embrace"
+    },
+    {
+      "item": "An Icicle",
+      "of": "Agateclaw Dagger",
+      "source": "https://www.realmeye.com/wiki/an-icicle"
+    },
+    {
+      "item": "Anteros Longbow",
+      "of": "Crimson Longbow",
+      "source": "https://www.realmeye.com/wiki/anteros-longbow"
+    },
+    {
+      "item": "Arashi",
+      "of": "Celestial Blade",
+      "source": "https://www.realmeye.com/wiki/arashi"
+    },
+    {
+      "item": "Arctic Bow",
+      "of": "Coral Bow",
+      "source": "https://www.realmeye.com/wiki/arctic-bow"
+    },
+    {
+      "item": "Ashen Talon",
+      "of": "Queen's Stinger",
+      "source": "https://www.realmeye.com/wiki/ashen-talon"
+    },
+    {
+      "item": "Aurora Tachi",
+      "of": "Skyslash Tachi",
+      "source": "https://www.realmeye.com/wiki/aurora-tachi"
+    },
+    {
+      "item": "Beach Shovel",
+      "of": "Spellblade of the Heavens Light",
+      "source": "https://www.realmeye.com/wiki/beach-shovel"
+    },
+    {
+      "item": "Beach Umbrella",
+      "of": "Divine Flail",
+      "source": "https://www.realmeye.com/wiki/beach-umbrella"
+    },
+    {
+      "item": "Beastly Mane",
+      "of": "Tricorne of the High Seas",
+      "source": "https://www.realmeye.com/wiki/beastly-mane"
+    },
+    {
+      "item": "Blacksmith Hammer",
+      "of": "Sword of Splendor",
+      "source": "https://www.realmeye.com/wiki/blacksmith-hammer"
+    },
+    {
+      "item": "Blade of Eternal Rebirth",
+      "of": "Sword of the Colossus",
+      "source": "https://www.realmeye.com/wiki/blade-of-eternal-rebirth"
+    },
+    {
+      "item": "Blazon Bow",
+      "of": "Thousand Shot",
+      "source": "https://www.realmeye.com/wiki/blazon-bow"
+    },
+    {
+      "item": "Blizzard Jacket",
+      "of": "Tinkerers Apron",
+      "source": "https://www.realmeye.com/wiki/blizzard-jacket"
+    },
+    {
+      "item": "Blood Axe",
+      "of": "Dalvar's Battle Axe",
+      "source": "https://www.realmeye.com/wiki/blood-axe"
+    },
+    {
+      "item": "Blood Coated Dirk",
+      "of": "Marionette Ravager",
+      "source": "https://www.realmeye.com/wiki/blood-coated-dirk"
+    },
+    {
+      "item": "Blood Essence",
+      "of": "Cubic Frame",
+      "source": "https://www.realmeye.com/wiki/blood-essence"
+    },
+    {
+      "item": "Blood Ritual Tools",
+      "of": "Tools of the Tarnished",
+      "source": "https://www.realmeye.com/wiki/blood-ritual-tools"
+    },
+    {
+      "item": "Blood Siphoning Katana",
+      "of": "Kyuuketsuki Hitogoroshi",
+      "source": "https://www.realmeye.com/wiki/blood-siphoning-katana"
+    },
+    {
+      "item": "Bloody Pitch Fork Staff",
+      "of": "Squaroid Staff",
+      "source": "https://www.realmeye.com/wiki/bloody-pitch-fork-staff"
+    },
+    {
+      "item": "Bloom-Fire Scepter",
+      "of": "Torrential Staff",
+      "source": "https://www.realmeye.com/wiki/bloom-fire-scepter"
+    },
+    {
+      "item": "Blooming Bouquet Staff",
+      "of": "Staff of the Vital Unity",
+      "source": "https://www.realmeye.com/wiki/reskinned-equipment"
+    },
+    {
+      "item": "Blossom Bow",
+      "of": "Bow of Mystical Energy",
+      "source": "https://www.realmeye.com/wiki/blossom-bow"
+    },
+    {
+      "item": "Blue Beehemoth Quiver",
+      "of": "Freezing Quiver",
+      "source": "https://www.realmeye.com/wiki/blue-beehemoth-quiver"
+    },
+    {
+      "item": "Blue Falcon",
+      "of": "Bow of Mystical Energy",
+      "source": "https://www.realmeye.com/wiki/blue-falcon"
+    },
+    {
+      "item": "Bone Bow",
+      "of": "Deathless Crossbow",
+      "source": "https://www.realmeye.com/wiki/bone-bow"
+    },
+    {
+      "item": "Botany Book",
+      "of": "Tome of Purification",
+      "source": "https://www.realmeye.com/wiki/botany-book"
+    },
+    {
+      "item": "Bottled Lemonade",
+      "of": "Bottled Medusozoan",
+      "source": "https://www.realmeye.com/wiki/bottled-lemonade"
+    },
+    {
+      "item": "Boudoir Robe",
+      "of": "Ragged Robes",
+      "source": "https://www.realmeye.com/wiki/boudoir-robe"
+    },
+    {
+      "item": "Bow of Eternal Frost",
+      "of": "Bow of Innocent Blood",
+      "source": "https://www.realmeye.com/wiki/bow-of-eternal-frost"
+    },
+    {
+      "item": "Bow of Nightmares",
+      "of": "Bow of Innocent Blood",
+      "source": "https://www.realmeye.com/wiki/bow-of-nightmares"
+    },
+    {
+      "item": "Bow of the Morning Star",
+      "of": "Doom Bow",
+      "source": "https://www.realmeye.com/wiki/bow-of-the-morning-star"
+    },
+    {
+      "item": "Brine Quiver",
+      "of": "Quiver of Elvish Mastery",
+      "source": "https://www.realmeye.com/wiki/brine-quiver"
+    },
+    {
+      "item": "Bronze Pocketwatch",
+      "of": "Ring of Cubed Wisdom",
+      "source": "https://www.realmeye.com/wiki/bronze-pocketwatch"
+    },
+    {
+      "item": "Bubblegum Bucket",
+      "of": "Helm of the Swift Bunny",
+      "source": "https://www.realmeye.com/wiki/bubblegum-bucket"
+    },
+    {
+      "item": "Bunny Ear Tachi",
+      "of": "Hookblade Tachi",
+      "source": "https://www.realmeye.com/wiki/bunny-ear-tachi"
+    },
+    {
+      "item": "Burlap Hat",
+      "of": "Rusty Cuffs",
+      "source": "https://www.realmeye.com/wiki/burlap-hat"
+    },
+    {
+      "item": "Cane of the Void",
+      "of": "Cane of Caduceus",
+      "source": "https://www.realmeye.com/wiki/cane-of-the-void"
+    },
+    {
+      "item": "Caramel Spellblade",
+      "of": "Hovering Spellblade",
+      "source": "https://www.realmeye.com/wiki/reskinned-equipment"
+    },
+    {
+      "item": "Carrot Cake Crest",
+      "of": "Abyssal Insignia",
+      "source": "https://www.realmeye.com/wiki/carrot-cake-crest"
+    },
+    {
+      "item": "Ceremonial Wand",
+      "of": "Wand of Hidden Knowledge",
+      "source": "https://www.realmeye.com/wiki/ceremonial-wand"
+    },
+    {
+      "item": "Chocolate Armor",
+      "of": "Greaterhosen",
+      "source": "https://www.realmeye.com/wiki/chocolate-armor"
+    },
+    {
+      "item": "Chocolate Bunny Ears",
+      "of": "Steadfast Glyph",
+      "source": "https://www.realmeye.com/wiki/chocolate-bunny-ears"
+    },
+    {
+      "item": "Chocolate Egg Mace",
+      "of": "Stonemould Mace",
+      "source": "https://www.realmeye.com/wiki/chocolate-egg-mace"
+    },
+    {
+      "item": "Chocolate Glazed Robe",
+      "of": "Rocky Robe",
+      "source": "https://www.realmeye.com/wiki/chocolate-glazed-robe"
+    },
+    {
+      "item": "Chocolate Ovipositor",
+      "of": "Acidic Aspergillum",
+      "source": "https://www.realmeye.com/wiki/chocolate-ovipositor"
+    },
+    {
+      "item": "Chocsicle",
+      "of": "Pirate King's Cutlass",
+      "source": "https://www.realmeye.com/wiki/chocsicle"
+    },
+    {
+      "item": "Cloak of Eerie Trepidation",
+      "of": "Cloak of Bloody Surprises",
+      "source": "https://www.realmeye.com/wiki/cloak-of-eerie-trepidation"
+    },
+    {
+      "item": "Cloak of Winter",
+      "of": "Cloak of Ghostly Concealment",
+      "source": "https://www.realmeye.com/wiki/cloak-of-winter"
+    },
+    {
+      "item": "Coalbearing Quiver",
+      "of": "Quiver of Elvish Mastery",
+      "source": "https://www.realmeye.com/wiki/coalbearing-quiver"
+    },
+    {
+      "item": "Cobra Serpentis Scroll",
+      "of": "Recurring Terror Spell",
+      "source": "https://www.realmeye.com/wiki/cobra-serpentis-scroll"
+    },
+    {
+      "item": "Collarbone Collar",
+      "of": "Revenant Ring",
+      "source": "https://www.realmeye.com/wiki/collarbone-collar"
+    },
+    {
+      "item": "Combcutter Kunai",
+      "of": "Storied Blades",
+      "source": "https://www.realmeye.com/wiki/combcutter-kunai"
+    },
+    {
+      "item": "Comet of Calamity",
+      "of": "Tezcacoatl's Tail",
+      "source": "https://www.realmeye.com/wiki/comet-of-calamity"
+    },
+    {
+      "item": "Consecrated Trap",
+      "of": "Lifebringing Lotus",
+      "source": "https://www.realmeye.com/wiki/consecrated-trap"
+    },
+    {
+      "item": "Coral Soda",
+      "of": "Coral Bow",
+      "source": "https://www.realmeye.com/wiki/coral-soda"
+    },
+    {
+      "item": "Corrosion Cutter",
+      "of": "Queen's Stinger",
+      "source": "https://www.realmeye.com/wiki/corrosion-cutter"
+    },
+    {
+      "item": "Corrupted Cleaver",
+      "of": "Muramasa",
+      "source": "https://www.realmeye.com/wiki/corrupted-cleaver"
+    },
+    {
+      "item": "Crescent Dagger",
+      "of": "Dagger of Sinister Deeds",
+      "source": "https://www.realmeye.com/wiki/crescent-dagger"
+    },
+    {
+      "item": "Crest of the Rising Sun",
+      "of": "Warmonger",
+      "source": "https://www.realmeye.com/wiki/crest-of-the-rising-sun"
+    },
+    {
+      "item": "Crossbones Skull",
+      "of": "Bloodsucker Skull",
+      "source": "https://www.realmeye.com/wiki/crossbones-skull"
+    },
+    {
+      "item": "Cuirass of the Black Blade",
+      "of": "Acropolis Armor",
+      "source": "https://www.realmeye.com/wiki/cuirass-of-the-black-blade"
+    },
+    {
+      "item": "Cupid's Bow",
+      "of": "Bow of Innocent Blood",
+      "source": "https://www.realmeye.com/wiki/cupid-s-bow"
+    },
+    {
+      "item": "Cupid's Garments",
+      "of": "Coral Silk Armor",
+      "source": "https://www.realmeye.com/wiki/cupid-s-garments"
+    },
+    {
+      "item": "Curse Binding Robes",
+      "of": "Polygonal Garbs",
+      "source": "https://www.realmeye.com/wiki/curse-binding-robes"
+    },
+    {
+      "item": "Cursed Canopic Jar",
+      "of": "Murky Toxin",
+      "source": "https://www.realmeye.com/wiki/cursed-canopic-jar"
+    },
+    {
+      "item": "Cursed Harpoon",
+      "of": "Tideturner Trident",
+      "source": "https://www.realmeye.com/wiki/cursed-harpoon"
+    },
+    {
+      "item": "Dagger of the Amethyst Prism",
+      "of": "Dagger of Foul Malevolence",
+      "source": "https://www.realmeye.com/wiki/dagger-of-the-amethyst-prism"
+    },
+    {
+      "item": "Dagger of the Hasteful Rabbit",
+      "of": "Dagger of Foul Malevolence",
+      "source": "https://www.realmeye.com/wiki/dagger-of-the-hasteful-rabbit"
+    },
+    {
+      "item": "Dagger of the Terrible Talon",
+      "of": "Agateclaw Dagger",
+      "source": "https://www.realmeye.com/wiki/dagger-of-the-terrible-talon"
+    },
+    {
+      "item": "Daopao",
+      "of": "Hirejou Tenne",
+      "source": "https://www.realmeye.com/wiki/daopao"
+    },
+    {
+      "item": "Darkness Overcoat",
+      "of": "Doctor's Overcoat",
+      "source": "https://www.realmeye.com/wiki/darkness-overcoat"
+    },
+    {
+      "item": "Deathmask Staff",
+      "of": "Staff of the Vital Unity",
+      "source": "https://www.realmeye.com/wiki/deathmask-staff"
+    },
+    {
+      "item": "Depth Charge",
+      "of": "Slurpian Sea Scroll",
+      "source": "https://www.realmeye.com/wiki/depth-charge"
+    },
+    {
+      "item": "Devil Horn Headband",
+      "of": "Performer's Hat",
+      "source": "https://www.realmeye.com/wiki/devil-horn-headband"
+    },
+    {
+      "item": "Devilish Robes",
+      "of": "Magician's Robe",
+      "source": "https://www.realmeye.com/wiki/devilish-robes"
+    },
+    {
+      "item": "Diamond-Bladed Katana",
+      "of": "Muramasa",
+      "source": "https://www.realmeye.com/wiki/diamond-bladed-katana"
+    },
+    {
+      "item": "Diving Weights",
+      "of": "Imperial Keepsake",
+      "source": "https://www.realmeye.com/wiki/diving-weights"
+    },
+    {
+      "item": "Dragon Mace",
+      "of": "Crystal Mace",
+      "source": "https://www.realmeye.com/wiki/dragon-mace"
+    },
+    {
+      "item": "Dragon Slayer",
+      "of": "Shield of Flowing Clarity",
+      "source": "https://www.realmeye.com/wiki/dragon-slayer"
+    },
+    {
+      "item": "Dual Pops",
+      "of": "Moonstone Blades",
+      "source": "https://www.realmeye.com/wiki/dual-pops"
+    },
+    {
+      "item": "Dueling Daggers",
+      "of": "Corruption Cutter",
+      "source": "https://www.realmeye.com/wiki/dueling-daggers"
+    },
+    {
+      "item": "Dynamite",
+      "of": "Sadamune",
+      "source": "https://www.realmeye.com/wiki/dynamite"
+    },
+    {
+      "item": "Echoes Prism",
+      "of": "Corsair's Crown Jewel",
+      "source": "https://www.realmeye.com/wiki/echoes-prism"
+    },
+    {
+      "item": "Egg Basher",
+      "of": "Seismic Flail",
+      "source": "https://www.realmeye.com/wiki/egg-basher"
+    },
+    {
+      "item": "Eggre Battle Armor",
+      "of": "Fire Dragon Battle Armor",
+      "source": "https://www.realmeye.com/wiki/eggre-battle-armor"
+    },
+    {
+      "item": "Eggsponential Scepter",
+      "of": "Cnidaria Rod",
+      "source": "https://www.realmeye.com/wiki/eggsponential-scepter"
+    },
+    {
+      "item": "Eggstatic Conductor",
+      "of": "Conducting Wand",
+      "source": "https://www.realmeye.com/wiki/eggstatic-conductor"
+    },
+    {
+      "item": "Electric Guitar",
+      "of": "Harmonious Harp",
+      "source": "https://www.realmeye.com/wiki/electric-guitar"
+    },
+    {
+      "item": "Emblem of the Empire",
+      "of": "Ring of Unbound Health",
+      "source": "https://www.realmeye.com/wiki/emblem-of-the-empire"
+    },
+    {
+      "item": "Enchanted Chisel",
+      "of": "Daybreak Chakram",
+      "source": "https://www.realmeye.com/wiki/enchanted-chisel"
+    },
+    {
+      "item": "Enchanted Ice Blade",
+      "of": "Crystal Sword",
+      "source": "https://www.realmeye.com/wiki/enchanted-ice-blade"
+    },
+    {
+      "item": "Enchanted Ice Shard",
+      "of": "Ring of the Sphinx",
+      "source": "https://www.realmeye.com/wiki/enchanted-ice-shard"
+    },
+    {
+      "item": "Entrancing Hourglass",
+      "of": "Orb of Aether",
+      "source": "https://www.realmeye.com/wiki/entrancing-hourglass"
+    },
+    {
+      "item": "Esoteric Buckler",
+      "of": "Spiteful Scutum",
+      "source": "https://www.realmeye.com/wiki/esoteric-buckler"
+    },
+    {
+      "item": "Essence of Enlightened Love",
+      "of": "Soul Gem Amulet",
+      "source": "https://www.realmeye.com/wiki/essence-of-enlightened-love"
+    },
+    {
+      "item": "Essence of Love",
+      "of": "Fang Necklace",
+      "source": "https://www.realmeye.com/wiki/essence-of-love"
+    },
+    {
+      "item": "Eternal Bloom Wand",
+      "of": "Wand of Evocation",
+      "source": "https://www.realmeye.com/wiki/eternal-bloom-wand"
+    },
+    {
+      "item": "Eternal Echo",
+      "of": "Divinity",
+      "source": "https://www.realmeye.com/wiki/eternal-echo"
+    },
+    {
+      "item": "Eternal Graved Great Sword",
+      "of": "Ancient Stone Sword",
+      "source": "https://www.realmeye.com/wiki/eternal-graved-great-sword"
+    },
+    {
+      "item": "Eternal Snowflake Wand",
+      "of": "Wand of the Bulwark",
+      "source": "https://www.realmeye.com/wiki/eternal-snowflake-wand"
+    },
+    {
+      "item": "Eternal Star",
+      "of": "Star of Enlightenment",
+      "source": "https://www.realmeye.com/wiki/eternal-star"
+    },
+    {
+      "item": "Ever Green Skull",
+      "of": "Perennial Cranium",
+      "source": "https://www.realmeye.com/wiki/ever-green-skull"
+    },
+    {
+      "item": "Executioner's Garb",
+      "of": "Toga Picta",
+      "source": "https://www.realmeye.com/wiki/executioner-s-garb"
+    },
+    {
+      "item": "Explorer's Shovel",
+      "of": "Staff of the Vital Unity",
+      "source": "https://www.realmeye.com/wiki/explorer-s-shovel"
+    },
+    {
+      "item": "Faithful Spatha",
+      "of": "Sword of Splendor",
+      "source": "https://www.realmeye.com/wiki/faithful-spatha"
+    },
+    {
+      "item": "Fire Blade",
+      "of": "Doku No Ken",
+      "source": "https://www.realmeye.com/wiki/fire-blade"
+    },
+    {
+      "item": "Flip-Flops",
+      "of": "Morning Star of Conjuration",
+      "source": "https://www.realmeye.com/wiki/flip-flops"
+    },
+    {
+      "item": "Floral Corset",
+      "of": "Water Dragon Silk Robe",
+      "source": "https://www.realmeye.com/wiki/floral-corset"
+    },
+    {
+      "item": "Floral Edge Katana",
+      "of": "Sadamune",
+      "source": "https://www.realmeye.com/wiki/floral-edge-katana"
+    },
+    {
+      "item": "Floral Guard Armor",
+      "of": "Dominion Armor",
+      "source": "https://www.realmeye.com/wiki/floral-guard-armor"
+    },
+    {
+      "item": "Foramite Staff",
+      "of": "Spirit Staff",
+      "source": "https://www.realmeye.com/wiki/foramite-staff"
+    },
+    {
+      "item": "Fresh Breeze Quiver",
+      "of": "Embellished Quiver",
+      "source": "https://www.realmeye.com/wiki/fresh-breeze-quiver"
+    },
+    {
+      "item": "Frimarra",
+      "of": "Ring of the Pyramid",
+      "source": "https://www.realmeye.com/wiki/frimarra"
+    },
+    {
+      "item": "Frost Citadel Armor",
+      "of": "Acropolis Armor",
+      "source": "https://www.realmeye.com/wiki/frost-citadel-armor"
+    },
+    {
+      "item": "Frost Drake Hide Armor",
+      "of": "Hydra Skin Armor",
+      "source": "https://www.realmeye.com/wiki/frost-drake-hide-armor"
+    },
+    {
+      "item": "Frost Elementalist Robe",
+      "of": "Robe of the Grand Sorcerer",
+      "source": "https://www.realmeye.com/wiki/frost-elementalist-robe"
+    },
+    {
+      "item": "Frost Lich's Finger",
+      "of": "Dagger of Foul Malevolence",
+      "source": "https://www.realmeye.com/wiki/frost-lich-s-finger"
+    },
+    {
+      "item": "Frost Storm Bow",
+      "of": "Clockwork Repeater",
+      "source": "https://www.realmeye.com/wiki/frost-storm-bow"
+    },
+    {
+      "item": "Frostbite",
+      "of": "Skysplitter Sword",
+      "source": "https://www.realmeye.com/wiki/frostbite"
+    },
+    {
+      "item": "Frostbite Blades",
+      "of": "Bloodshed Blades",
+      "source": "https://www.realmeye.com/wiki/frostbite-blades"
+    },
+    {
+      "item": "Frostbite Mittens",
+      "of": "Experimental Cannon",
+      "source": "https://www.realmeye.com/wiki/frostbite-mittens"
+    },
+    {
+      "item": "Frosty's Walking Stick",
+      "of": "Staff of the Cosmic Whole",
+      "source": "https://www.realmeye.com/wiki/frosty-s-walking-stick"
+    },
+    {
+      "item": "Frozen Wand",
+      "of": "Crystal Wand",
+      "source": "https://www.realmeye.com/wiki/frozen-wand"
+    },
+    {
+      "item": "Fur Coat",
+      "of": "Chainmail Body Armor",
+      "source": "https://www.realmeye.com/wiki/fur-coat"
+    },
+    {
+      "item": "Garb of the Ordained",
+      "of": "Anointed Robe",
+      "source": "https://www.realmeye.com/wiki/garb-of-the-ordained"
+    },
+    {
+      "item": "Gaseous Glaive",
+      "of": "Pirate King's Cutlass",
+      "source": "https://www.realmeye.com/wiki/gaseous-glaive"
+    },
+    {
+      "item": "Geb's Lost Hedjet",
+      "of": "E.Y.E.",
+      "source": "https://www.realmeye.com/wiki/geb-s-lost-hedjet"
+    },
+    {
+      "item": "Ghastly Mace",
+      "of": "B.O.O.M.",
+      "source": "https://www.realmeye.com/wiki/ghastly-mace"
+    },
+    {
+      "item": "Ghost Ship's Bell",
+      "of": "Wavecrest Concertina",
+      "source": "https://www.realmeye.com/wiki/ghost-ship-s-bell"
+    },
+    {
+      "item": "Glorious Banded Plate",
+      "of": "Dominion Armor",
+      "source": "https://www.realmeye.com/wiki/glorious-banded-plate"
+    },
+    {
+      "item": "Gloves of Love",
+      "of": "Shaman's Staff",
+      "source": "https://www.realmeye.com/wiki/gloves-of-love"
+    },
+    {
+      "item": "Glowing Torch",
+      "of": "Wand of Evocation",
+      "source": "https://www.realmeye.com/wiki/glowing-torch"
+    },
+    {
+      "item": "Gravekeeper's Scythe",
+      "of": "Edictum Praetoris",
+      "source": "https://www.realmeye.com/wiki/gravekeeper-s-scythe"
+    },
+    {
+      "item": "Greedsnatcher Trap",
+      "of": "Giantcatcher Trap",
+      "source": "https://www.realmeye.com/wiki/greedsnatcher-trap"
+    },
+    {
+      "item": "Green Beehemoth Quiver",
+      "of": "Freezing Quiver",
+      "source": "https://www.realmeye.com/wiki/green-beehemoth-quiver"
+    },
+    {
+      "item": "Grim Goblet",
+      "of": "Interregnum",
+      "source": "https://www.realmeye.com/wiki/grim-goblet"
+    },
+    {
+      "item": "Hardened Carrot Armor",
+      "of": "Vortex Plating",
+      "source": "https://www.realmeye.com/wiki/hardened-carrot-armor"
+    },
+    {
+      "item": "Hatchling Blades",
+      "of": "Boomerang Blades",
+      "source": "https://www.realmeye.com/wiki/hatchling-blades"
+    },
+    {
+      "item": "Heart Jewel Blades",
+      "of": "Occult Blades",
+      "source": "https://www.realmeye.com/wiki/heart-jewel-blades"
+    },
+    {
+      "item": "Heartbreaker Wand",
+      "of": "Magic Wand",
+      "source": "https://www.realmeye.com/wiki/heartbreaker-wand"
+    },
+    {
+      "item": "Heartfind Dagger",
+      "of": "Agateclaw Dagger",
+      "source": "https://www.realmeye.com/wiki/heartfind-dagger"
+    },
+    {
+      "item": "Heartseeker Katana",
+      "of": "Ray Katana",
+      "source": "https://www.realmeye.com/wiki/heartseeker-katana"
+    },
+    {
+      "item": "Heartstruck Bow",
+      "of": "Leaf Bow",
+      "source": "https://www.realmeye.com/wiki/heartstruck-bow"
+    },
+    {
+      "item": "Hellfire Broadsword",
+      "of": "Pixie-Enchanted Sword",
+      "source": "https://www.realmeye.com/wiki/hellfire-broadsword"
+    },
+    {
+      "item": "Helm of the Jack-o'-naut",
+      "of": "Helm of the Juggernaut",
+      "source": "https://www.realmeye.com/wiki/helm-of-the-jack-o-naut"
+    },
+    {
+      "item": "Hero's Blades",
+      "of": "Moonstone Blades",
+      "source": "https://www.realmeye.com/wiki/hero-s-blades"
+    },
+    {
+      "item": "Hero's Bow",
+      "of": "Bow of Mystical Energy",
+      "source": "https://www.realmeye.com/wiki/hero-s-bow"
+    },
+    {
+      "item": "Hero's Dagger",
+      "of": "Dagger of Sinister Deeds",
+      "source": "https://www.realmeye.com/wiki/hero-s-dagger"
+    },
+    {
+      "item": "Hero's Flail",
+      "of": "Divine Flail",
+      "source": "https://www.realmeye.com/wiki/hero-s-flail"
+    },
+    {
+      "item": "Hero's Katana",
+      "of": "Sadamune",
+      "source": "https://www.realmeye.com/wiki/hero-s-katana"
+    },
+    {
+      "item": "Hero's Longbow",
+      "of": "Longbow of the Morning Spirit",
+      "source": "https://www.realmeye.com/wiki/hero-s-longbow"
+    },
+    {
+      "item": "Hero's Spellblade",
+      "of": "Spellblade of the Heavens Light",
+      "source": "https://www.realmeye.com/wiki/hero-s-spellblade"
+    },
+    {
+      "item": "Hero's Staff",
+      "of": "Staff of the Vital Unity",
+      "source": "https://www.realmeye.com/wiki/hero-s-staff"
+    },
+    {
+      "item": "Hero's Sword",
+      "of": "Sword of Splendor",
+      "source": "https://www.realmeye.com/wiki/hero-s-sword"
+    },
+    {
+      "item": "Hero's Tachi",
+      "of": "Sunset Tachi",
+      "source": "https://www.realmeye.com/wiki/hero-s-tachi"
+    },
+    {
+      "item": "Hero's Wand",
+      "of": "Wand of Evocation",
+      "source": "https://www.realmeye.com/wiki/hero-s-wand"
+    },
+    {
+      "item": "Holly Poison",
+      "of": "Baneserpent Poison",
+      "source": "https://www.realmeye.com/wiki/holly-poison"
+    },
+    {
+      "item": "Holy Artifact",
+      "of": "Theurgy Wand",
+      "source": "https://www.realmeye.com/wiki/holy-artifact"
+    },
+    {
+      "item": "Hooded Skull",
+      "of": "Memento Mori",
+      "source": "https://www.realmeye.com/wiki/hooded-skull"
+    },
+    {
+      "item": "Horned Ring",
+      "of": "Ring of Pure Wishes",
+      "source": "https://www.realmeye.com/wiki/horned-ring"
+    },
+    {
+      "item": "Hydroflow Cloak",
+      "of": "Cloak of Ghostly Concealment",
+      "source": "https://www.realmeye.com/wiki/hydroflow-cloak"
+    },
+    {
+      "item": "Hydroflow Helm",
+      "of": "Helm of the Great General",
+      "source": "https://www.realmeye.com/wiki/hydroflow-helm"
+    },
+    {
+      "item": "Hydroflow Mace",
+      "of": "Sovereign Mace",
+      "source": "https://www.realmeye.com/wiki/hydroflow-mace"
+    },
+    {
+      "item": "Hydroflow Orb",
+      "of": "Planefetter Orb",
+      "source": "https://www.realmeye.com/wiki/hydroflow-orb"
+    },
+    {
+      "item": "Hydroflow Poison",
+      "of": "Baneserpent Poison",
+      "source": "https://www.realmeye.com/wiki/hydroflow-poison"
+    },
+    {
+      "item": "Hydroflow Prism",
+      "of": "Prism of Apparitions",
+      "source": "https://www.realmeye.com/wiki/hydroflow-prism"
+    },
+    {
+      "item": "Hydroflow Quiver",
+      "of": "Quiver of Elvish Mastery",
+      "source": "https://www.realmeye.com/wiki/hydroflow-quiver"
+    },
+    {
+      "item": "Hydroflow Scepter",
+      "of": "Scepter of Storms",
+      "source": "https://www.realmeye.com/wiki/hydroflow-scepter"
+    },
+    {
+      "item": "Hydroflow Seal",
+      "of": "Seal of the Blessed Champion",
+      "source": "https://www.realmeye.com/wiki/hydroflow-seal"
+    },
+    {
+      "item": "Hydroflow Sheath",
+      "of": "Great Shinobi Sheath",
+      "source": "https://www.realmeye.com/wiki/hydroflow-sheath"
+    },
+    {
+      "item": "Hydroflow Shield",
+      "of": "Colossus Shield",
+      "source": "https://www.realmeye.com/wiki/hydroflow-shield"
+    },
+    {
+      "item": "Hydroflow Sigil",
+      "of": "Sigil of the Horse",
+      "source": "https://www.realmeye.com/wiki/hydroflow-sigil"
+    },
+    {
+      "item": "Hydroflow Singing Glass",
+      "of": "Skyward Lute",
+      "source": "https://www.realmeye.com/wiki/hydroflow-singing-glass"
+    },
+    {
+      "item": "Hydroflow Skull",
+      "of": "Bloodsucker Skull",
+      "source": "https://www.realmeye.com/wiki/hydroflow-skull"
+    },
+    {
+      "item": "Hydroflow Spell",
+      "of": "Elemental Detonation Spell",
+      "source": "https://www.realmeye.com/wiki/hydroflow-spell"
+    },
+    {
+      "item": "Hydroflow Star",
+      "of": "Doom Circle",
+      "source": "https://www.realmeye.com/wiki/hydroflow-star"
+    },
+    {
+      "item": "Hydroflow Tome",
+      "of": "Tome of Holy Guidance",
+      "source": "https://www.realmeye.com/wiki/hydroflow-tome"
+    },
+    {
+      "item": "Hydroflow Trap",
+      "of": "Giantcatcher Trap",
+      "source": "https://www.realmeye.com/wiki/hydroflow-trap"
+    },
+    {
+      "item": "Hydroflow Wakizashi",
+      "of": "Royal Wakizashi",
+      "source": "https://www.realmeye.com/wiki/hydroflow-wakizashi"
+    },
+    {
+      "item": "Ice Crown",
+      "of": "The Forgotten Crown",
+      "source": "https://www.realmeye.com/wiki/ice-crown"
+    },
+    {
+      "item": "Icicle Launcher",
+      "of": "Bow of Covert Havens",
+      "source": "https://www.realmeye.com/wiki/icicle-launcher"
+    },
+    {
+      "item": "Igneous Starblossom",
+      "of": "Hanagasaku",
+      "source": "https://www.realmeye.com/wiki/igneous-starblossom"
+    },
+    {
+      "item": "Ignis",
+      "of": "Bow of Mystical Energy",
+      "source": "https://www.realmeye.com/wiki/ignis"
+    },
+    {
+      "item": "Ilex Star",
+      "of": "Doom Circle",
+      "source": "https://www.realmeye.com/wiki/ilex-star"
+    },
+    {
+      "item": "Immortal Mantle",
+      "of": "Twilight Shroud",
+      "source": "https://www.realmeye.com/wiki/immortal-mantle"
+    },
+    {
+      "item": "Inferno Pick",
+      "of": "Angel's Fanfare",
+      "source": "https://www.realmeye.com/wiki/inferno-pick"
+    },
+    {
+      "item": "Insightful Mourning Robe",
+      "of": "Robe of the Star Mother",
+      "source": "https://www.realmeye.com/wiki/insightful-mourning-robe"
+    },
+    {
+      "item": "Jacket Of Blossoms",
+      "of": "Wyrmhide Armor",
+      "source": "https://www.realmeye.com/wiki/jacket-of-blossoms"
+    },
+    {
+      "item": "Joker Timbrel",
+      "of": "Wavecrest Concertina",
+      "source": "https://www.realmeye.com/wiki/joker-timbrel"
+    },
+    {
+      "item": "Jurassic Sigil",
+      "of": "Mechraptor Sigil",
+      "source": "https://www.realmeye.com/wiki/jurassic-sigil"
+    },
+    {
+      "item": "Kagebooshi",
+      "of": "Kageboshi",
+      "source": "https://www.realmeye.com/wiki/kagebooshi"
+    },
+    {
+      "item": "Khopesh",
+      "of": "Sword of Splendor",
+      "source": "https://www.realmeye.com/wiki/khopesh"
+    },
+    {
+      "item": "Lacerated Gown",
+      "of": "A.R.M.O.R.",
+      "source": "https://www.realmeye.com/wiki/lacerated-gown"
+    },
+    {
+      "item": "Lament of the Frozen Prisoner",
+      "of": "Celebrant Flail",
+      "source": "https://www.realmeye.com/wiki/lament-of-the-frozen-prisoner"
+    },
+    {
+      "item": "Leaf Woven Robe",
+      "of": "Robe of the Star Mother",
+      "source": "https://www.realmeye.com/wiki/leaf-woven-robe"
+    },
+    {
+      "item": "Legion Elite Bow",
+      "of": "Bow of Mystical Energy",
+      "source": "https://www.realmeye.com/wiki/legion-elite-bow"
+    },
+    {
+      "item": "Legion Elite Cloak",
+      "of": "Cloak of Ghostly Concealment",
+      "source": "https://www.realmeye.com/wiki/legion-elite-cloak"
+    },
+    {
+      "item": "Legion Elite Dagger",
+      "of": "Dagger of Sinister Deeds",
+      "source": "https://www.realmeye.com/wiki/legion-elite-dagger"
+    },
+    {
+      "item": "Legion Elite Drums",
+      "of": "Skyward Lute",
+      "source": "https://www.realmeye.com/wiki/legion-elite-drums"
+    },
+    {
+      "item": "Legion Elite Helm",
+      "of": "Helm of the Great General",
+      "source": "https://www.realmeye.com/wiki/legion-elite-helm"
+    },
+    {
+      "item": "Legion Elite Katana",
+      "of": "Sadamune",
+      "source": "https://www.realmeye.com/wiki/legion-elite-katana"
+    },
+    {
+      "item": "Legion Elite Leather Armor",
+      "of": "Wyrmhide Armor",
+      "source": "https://www.realmeye.com/wiki/legion-elite-leather-armor"
+    },
+    {
+      "item": "Legion Elite Mace",
+      "of": "Sovereign Mace",
+      "source": "https://www.realmeye.com/wiki/legion-elite-mace"
+    },
+    {
+      "item": "Legion Elite Orb",
+      "of": "Planefetter Orb",
+      "source": "https://www.realmeye.com/wiki/legion-elite-orb"
+    },
+    {
+      "item": "Legion Elite Plate Armor",
+      "of": "Dominion Armor",
+      "source": "https://www.realmeye.com/wiki/legion-elite-plate-armor"
+    },
+    {
+      "item": "Legion Elite Poison",
+      "of": "Baneserpent Poison",
+      "source": "https://www.realmeye.com/wiki/legion-elite-poison"
+    },
+    {
+      "item": "Legion Elite Prism",
+      "of": "Prism of Apparitions",
+      "source": "https://www.realmeye.com/wiki/legion-elite-prism"
+    },
+    {
+      "item": "Legion Elite Quiver",
+      "of": "Quiver of Elvish Mastery",
+      "source": "https://www.realmeye.com/wiki/legion-elite-quiver"
+    },
+    {
+      "item": "Legion Elite Robe",
+      "of": "Robe of the Star Mother",
+      "source": "https://www.realmeye.com/wiki/legion-elite-robe"
+    },
+    {
+      "item": "Legion Elite Scepter",
+      "of": "Scepter of Storms",
+      "source": "https://www.realmeye.com/wiki/legion-elite-scepter"
+    },
+    {
+      "item": "Legion Elite Seal",
+      "of": "Seal of the Blessed Champion",
+      "source": "https://www.realmeye.com/wiki/legion-elite-seal"
+    },
+    {
+      "item": "Legion Elite Sheath",
+      "of": "Great Shinobi Sheath",
+      "source": "https://www.realmeye.com/wiki/legion-elite-sheath"
+    },
+    {
+      "item": "Legion Elite Shield",
+      "of": "Colossus Shield",
+      "source": "https://www.realmeye.com/wiki/legion-elite-shield"
+    },
+    {
+      "item": "Legion Elite Sigil",
+      "of": "Sigil of the Horse",
+      "source": "https://www.realmeye.com/wiki/legion-elite-sigil"
+    },
+    {
+      "item": "Legion Elite Skull",
+      "of": "Bloodsucker Skull",
+      "source": "https://www.realmeye.com/wiki/legion-elite-skull"
+    },
+    {
+      "item": "Legion Elite Spell",
+      "of": "Elemental Detonation Spell",
+      "source": "https://www.realmeye.com/wiki/legion-elite-spell"
+    },
+    {
+      "item": "Legion Elite Staff",
+      "of": "Staff of the Vital Unity",
+      "source": "https://www.realmeye.com/wiki/legion-elite-staff"
+    },
+    {
+      "item": "Legion Elite Star",
+      "of": "Doom Circle",
+      "source": "https://www.realmeye.com/wiki/legion-elite-star"
+    },
+    {
+      "item": "Legion Elite Sword",
+      "of": "Sword of Splendor",
+      "source": "https://www.realmeye.com/wiki/legion-elite-sword"
+    },
+    {
+      "item": "Legion Elite Tome",
+      "of": "Tome of Holy Guidance",
+      "source": "https://www.realmeye.com/wiki/legion-elite-tome"
+    },
+    {
+      "item": "Legion Elite Trap",
+      "of": "Giantcatcher Trap",
+      "source": "https://www.realmeye.com/wiki/legion-elite-trap"
+    },
+    {
+      "item": "Legion Elite Wakizashi",
+      "of": "Royal Wakizashi",
+      "source": "https://www.realmeye.com/wiki/legion-elite-wakizashi"
+    },
+    {
+      "item": "Legion Elite Wand",
+      "of": "Wand of Evocation",
+      "source": "https://www.realmeye.com/wiki/legion-elite-wand"
+    },
+    {
+      "item": "Legions Odachi",
+      "of": "Sadamune",
+      "source": "https://www.realmeye.com/wiki/legions-odachi"
+    },
+    {
+      "item": "Life Jacket",
+      "of": "Wyrmhide Armor",
+      "source": "https://www.realmeye.com/wiki/life-jacket"
+    },
+    {
+      "item": "Longbow of Spirits and Shadows",
+      "of": "Hama Yumi",
+      "source": "https://www.realmeye.com/wiki/longbow-of-spirits-and-shadows"
+    },
+    {
+      "item": "Longbow of the Great Glacier",
+      "of": "Longbow of the Endless Sky",
+      "source": "https://www.realmeye.com/wiki/longbow-of-the-great-glacier"
+    },
+    {
+      "item": "Longbow of the Void",
+      "of": "Longbow of the Morning Spirit",
+      "source": "https://www.realmeye.com/wiki/longbow-of-the-void"
+    },
+    {
+      "item": "Love Heart Spellblade",
+      "of": "Spellblade of Starry Insight",
+      "source": "https://www.realmeye.com/wiki/love-heart-spellblade"
+    },
+    {
+      "item": "Lovebite Armor",
+      "of": "Cask Corslet",
+      "source": "https://www.realmeye.com/wiki/lovebite-armor"
+    },
+    {
+      "item": "Lovesick Scepter",
+      "of": "Lightshow Scepter",
+      "source": "https://www.realmeye.com/wiki/lovesick-scepter"
+    },
+    {
+      "item": "Lovestruck Yoyo",
+      "of": "Mithril Flail",
+      "source": "https://www.realmeye.com/wiki/lovestruck-yoyo"
+    },
+    {
+      "item": "Mace of the North Pole",
+      "of": "Sovereign Mace",
+      "source": "https://www.realmeye.com/wiki/mace-of-the-north-pole"
+    },
+    {
+      "item": "Magical Winter Scarf",
+      "of": "Targeting Monocular",
+      "source": "https://www.realmeye.com/wiki/magical-winter-scarf"
+    },
+    {
+      "item": "Maize Machete",
+      "of": "Carved Golem Remains",
+      "source": "https://www.realmeye.com/wiki/maize-machete"
+    },
+    {
+      "item": "Mala Beads",
+      "of": "Heavenly Magatama",
+      "source": "https://www.realmeye.com/wiki/mala-beads"
+    },
+    {
+      "item": "Mask of Anubis",
+      "of": "Ring of Unbound Health",
+      "source": "https://www.realmeye.com/wiki/mask-of-anubis"
+    },
+    {
+      "item": "Mask of Cnidaria",
+      "of": "Ring of Unbound Magic",
+      "source": "https://www.realmeye.com/wiki/mask-of-cnidaria"
+    },
+    {
+      "item": "Mask of Lightning",
+      "of": "Ring of Unbound Magic",
+      "source": "https://www.realmeye.com/wiki/mask-of-lightning"
+    },
+    {
+      "item": "Mask of Mucus",
+      "of": "Ring of Unbound Health",
+      "source": "https://www.realmeye.com/wiki/mask-of-mucus"
+    },
+    {
+      "item": "Mask of Passion",
+      "of": "Ritual Skull",
+      "source": "https://www.realmeye.com/wiki/mask-of-passion"
+    },
+    {
+      "item": "Maw of Malignance",
+      "of": "Perennial Cranium",
+      "source": "https://www.realmeye.com/wiki/maw-of-malignance"
+    },
+    {
+      "item": "Metal Tray",
+      "of": "Bow of Mystical Energy",
+      "source": "https://www.realmeye.com/wiki/metal-tray"
+    },
+    {
+      "item": "Metal-plated Corset",
+      "of": "Hollyhock Hide",
+      "source": "https://www.realmeye.com/wiki/metal-plated-corset"
+    },
+    {
+      "item": "Minotaur Mace",
+      "of": "Incubation Mace",
+      "source": "https://www.realmeye.com/wiki/minotaur-mace"
+    },
+    {
+      "item": "Monochrome Staff",
+      "of": "Nebular Rod",
+      "source": "https://www.realmeye.com/wiki/monochrome-staff"
+    },
+    {
+      "item": "Moonbeam Blade",
+      "of": "Ray Katana",
+      "source": "https://www.realmeye.com/wiki/moonbeam-blade"
+    },
+    {
+      "item": "Moonstone Ring",
+      "of": "First Mate's Hook",
+      "source": "https://www.realmeye.com/wiki/moonstone-ring"
+    },
+    {
+      "item": "Morning Star Of Sweet Miracles",
+      "of": "Morning Star of Harrowing Memories",
+      "source": "https://www.realmeye.com/wiki/morning-star-of-sweet-miracles"
+    },
+    {
+      "item": "Morning Star of the Hero",
+      "of": "Morning Star of Conjuration",
+      "source": "https://www.realmeye.com/wiki/morning-star-of-the-hero"
+    },
+    {
+      "item": "Morning Star of the Void",
+      "of": "Morning Star of Conjuration",
+      "source": "https://www.realmeye.com/wiki/morning-star-of-the-void"
+    },
+    {
+      "item": "Nativity Tome",
+      "of": "Tome of Holy Guidance",
+      "source": "https://www.realmeye.com/wiki/nativity-tome"
+    },
+    {
+      "item": "Nutrient Rich Carrot Blade",
+      "of": "Fallen One's Blade",
+      "source": "https://www.realmeye.com/wiki/nutrient-rich-carrot-blade"
+    },
+    {
+      "item": "Occult Bow",
+      "of": "Spider Silk Bow",
+      "source": "https://www.realmeye.com/wiki/occult-bow"
+    },
+    {
+      "item": "Orb of Terror",
+      "of": "Orb of Conflict",
+      "source": "https://www.realmeye.com/wiki/orb-of-terror"
+    },
+    {
+      "item": "Orb of the Sabbath",
+      "of": "Soul of the Bearer",
+      "source": "https://www.realmeye.com/wiki/orb-of-the-sabbath"
+    },
+    {
+      "item": "Ornamental Prism",
+      "of": "Prism of Apparitions",
+      "source": "https://www.realmeye.com/wiki/ornamental-prism"
+    },
+    {
+      "item": "Oryx Dominus Crest",
+      "of": "Battalion Banner",
+      "source": "https://www.realmeye.com/wiki/oryx-dominus-crest"
+    },
+    {
+      "item": "Oryxmas Carol",
+      "of": "Skyward Lute",
+      "source": "https://www.realmeye.com/wiki/oryxmas-carol"
+    },
+    {
+      "item": "Painted Egg Amulet",
+      "of": "Aquamarine Amulet",
+      "source": "https://www.realmeye.com/wiki/painted-egg-amulet"
+    },
+    {
+      "item": "Painted Eggshell Armor",
+      "of": "Ornate Armor",
+      "source": "https://www.realmeye.com/wiki/painted-eggshell-armor"
+    },
+    {
+      "item": "Parrot Skeleton Scepter",
+      "of": "Scepter of Storms",
+      "source": "https://www.realmeye.com/wiki/parrot-skeleton-scepter"
+    },
+    {
+      "item": "Pathfinder's Helm",
+      "of": "Helm of the Great General",
+      "source": "https://www.realmeye.com/wiki/pathfinder-s-helm"
+    },
+    {
+      "item": "Peppermint Wakizashi",
+      "of": "Royal Wakizashi",
+      "source": "https://www.realmeye.com/wiki/peppermint-wakizashi"
+    },
+    {
+      "item": "Petal Strike Sword",
+      "of": "Sword of Splendor",
+      "source": "https://www.realmeye.com/wiki/petal-strike-sword"
+    },
+    {
+      "item": "Phantasm Dirk",
+      "of": "Dirk of Cronus",
+      "source": "https://www.realmeye.com/wiki/phantasm-dirk"
+    },
+    {
+      "item": "Phantom Pendant",
+      "of": "Defiled Equilibrium",
+      "source": "https://www.realmeye.com/wiki/phantom-pendant"
+    },
+    {
+      "item": "Phosphorescent Rags",
+      "of": "Oceanic Apparel",
+      "source": "https://www.realmeye.com/wiki/phosphorescent-rags"
+    },
+    {
+      "item": "Pirate Queen's Brigandine",
+      "of": "Hydra Skin Armor",
+      "source": "https://www.realmeye.com/wiki/pirate-queen-s-brigandine"
+    },
+    {
+      "item": "Pointy Tail",
+      "of": "Heavenly Halo",
+      "source": "https://www.realmeye.com/wiki/pointy-tail"
+    },
+    {
+      "item": "Pontifex Ring",
+      "of": "Ring of Pagan Favor",
+      "source": "https://www.realmeye.com/wiki/pontifex-ring"
+    },
+    {
+      "item": "Pool Noodle",
+      "of": "Sunset Tachi",
+      "source": "https://www.realmeye.com/wiki/pool-noodle"
+    },
+    {
+      "item": "Present Dispensing Wand",
+      "of": "Wand of Ancient Warning",
+      "source": "https://www.realmeye.com/wiki/present-dispensing-wand"
+    },
+    {
+      "item": "Primal Padding",
+      "of": "Mechpilot's Jerkin",
+      "source": "https://www.realmeye.com/wiki/primal-padding"
+    },
+    {
+      "item": "Pumpkin Prism",
+      "of": "Brain of the Golem",
+      "source": "https://www.realmeye.com/wiki/pumpkin-prism"
+    },
+    {
+      "item": "Quiver of Dazing Love",
+      "of": "Quiver of Thunder",
+      "source": "https://www.realmeye.com/wiki/quiver-of-dazing-love"
+    },
+    {
+      "item": "Ragetorn Armor",
+      "of": "Naval Uniform",
+      "source": "https://www.realmeye.com/wiki/ragetorn-armor"
+    },
+    {
+      "item": "Red Beehemoth Quiver",
+      "of": "Freezing Quiver",
+      "source": "https://www.realmeye.com/wiki/red-beehemoth-quiver"
+    },
+    {
+      "item": "Reliable Pugio",
+      "of": "Dagger of Sinister Deeds",
+      "source": "https://www.realmeye.com/wiki/reliable-pugio"
+    },
+    {
+      "item": "Resounding Shield",
+      "of": "Colossus Shield",
+      "source": "https://www.realmeye.com/wiki/resounding-shield"
+    },
+    {
+      "item": "Retrowinds Bow",
+      "of": "Bow of Mystical Energy",
+      "source": "https://www.realmeye.com/wiki/retrowinds-bow"
+    },
+    {
+      "item": "Retrowinds Dagger",
+      "of": "Dagger of Sinister Deeds",
+      "source": "https://www.realmeye.com/wiki/retrowinds-dagger"
+    },
+    {
+      "item": "Retrowinds Heavy Armor",
+      "of": "Dominion Armor",
+      "source": "https://www.realmeye.com/wiki/retrowinds-heavy-armor"
+    },
+    {
+      "item": "Retrowinds Katana",
+      "of": "Sadamune",
+      "source": "https://www.realmeye.com/wiki/retrowinds-katana"
+    },
+    {
+      "item": "Retrowinds Leather Armor",
+      "of": "Wyrmhide Armor",
+      "source": "https://www.realmeye.com/wiki/retrowinds-leather-armor"
+    },
+    {
+      "item": "Retrowinds Robe",
+      "of": "Robe of the Star Mother",
+      "source": "https://www.realmeye.com/wiki/retrowinds-robe"
+    },
+    {
+      "item": "Retrowinds Staff",
+      "of": "Staff of the Vital Unity",
+      "source": "https://www.realmeye.com/wiki/retrowinds-staff"
+    },
+    {
+      "item": "Retrowinds Sword",
+      "of": "Sword of Splendor",
+      "source": "https://www.realmeye.com/wiki/retrowinds-sword"
+    },
+    {
+      "item": "Retrowinds Wand",
+      "of": "Wand of Evocation",
+      "source": "https://www.realmeye.com/wiki/retrowinds-wand"
+    },
+    {
+      "item": "Ring Of Radiant Petals",
+      "of": "Ring of Unbound Health",
+      "source": "https://www.realmeye.com/wiki/ring-of-radiant-petals"
+    },
+    {
+      "item": "Ring of Unbound Love",
+      "of": "Ring of Unbound Health",
+      "source": "https://www.realmeye.com/wiki/ring-of-unbound-love"
+    },
+    {
+      "item": "Ring of the Burning Sun",
+      "of": "Ring of Unbound Defense",
+      "source": "https://www.realmeye.com/wiki/ring-of-the-burning-sun"
+    },
+    {
+      "item": "Ring of the Northern Light",
+      "of": "Ring of the Nile",
+      "source": "https://www.realmeye.com/wiki/ring-of-the-northern-light"
+    },
+    {
+      "item": "Robe of the Enchantress",
+      "of": "Soulless Robe",
+      "source": "https://www.realmeye.com/wiki/robe-of-the-enchantress"
+    },
+    {
+      "item": "Robe of the Summer Solstice",
+      "of": "Robe of the Grand Sorcerer",
+      "source": "https://www.realmeye.com/wiki/robe-of-the-summer-solstice"
+    },
+    {
+      "item": "Rod of Radiance",
+      "of": "Wand of Evocation",
+      "source": "https://www.realmeye.com/wiki/rod-of-radiance"
+    },
+    {
+      "item": "Rose Brooch",
+      "of": "E.Y.E.",
+      "source": "https://www.realmeye.com/wiki/rose-brooch"
+    },
+    {
+      "item": "Rosebite Dagger",
+      "of": "Dagger of Sinister Deeds",
+      "source": "https://www.realmeye.com/wiki/rosebite-dagger"
+    },
+    {
+      "item": "Rusted Barrel",
+      "of": "Plague Poison",
+      "source": "https://www.realmeye.com/wiki/rusted-barrel"
+    },
+    {
+      "item": "Rusted Mechanism",
+      "of": "Overclocking Amulet",
+      "source": "https://www.realmeye.com/wiki/rusted-mechanism"
+    },
+    {
+      "item": "S.H.E.A.T.H.",
+      "of": "Sheath of Thunderous Rites",
+      "source": "https://www.realmeye.com/wiki/s-h-e-a-t-h"
+    },
+    {
+      "item": "Sacramental Crossbow",
+      "of": "Thousand Shot",
+      "source": "https://www.realmeye.com/wiki/sacramental-crossbow"
+    },
+    {
+      "item": "Sacrilege Seal",
+      "of": "Seal of the Enchanted Forest",
+      "source": "https://www.realmeye.com/wiki/sacrilege-seal"
+    },
+    {
+      "item": "Saint Nicolas' Blade",
+      "of": "Sword of Acclaim",
+      "source": "https://www.realmeye.com/wiki/saint-nicolas-blade"
+    },
+    {
+      "item": "Sakura Wakizashi",
+      "of": "Wakizashi of Eastern Winds",
+      "source": "https://www.realmeye.com/wiki/sakura-wakizashi"
+    },
+    {
+      "item": "Salju",
+      "of": "Muramasa",
+      "source": "https://www.realmeye.com/wiki/salju"
+    },
+    {
+      "item": "Savage Claws",
+      "of": "Swashbuckler's Sickle",
+      "source": "https://www.realmeye.com/wiki/savage-claws"
+    },
+    {
+      "item": "Scarlet Etched Branch",
+      "of": "Soul's Guidance",
+      "source": "https://www.realmeye.com/wiki/scarlet-etched-branch"
+    },
+    {
+      "item": "Scepter of Sainthood",
+      "of": "Scepter of Storms",
+      "source": "https://www.realmeye.com/wiki/scepter-of-sainthood"
+    },
+    {
+      "item": "Scepter of the Transgressor",
+      "of": "Scepter of Devastation",
+      "source": "https://www.realmeye.com/wiki/scepter-of-the-transgressor"
+    },
+    {
+      "item": "Seeker's Chisel",
+      "of": "Dagger of Sinister Deeds",
+      "source": "https://www.realmeye.com/wiki/seeker-s-chisel"
+    },
+    {
+      "item": "Shard Launcher",
+      "of": "Harpoon Longbow",
+      "source": "https://www.realmeye.com/wiki/shard-launcher"
+    },
+    {
+      "item": "Shield of Jawgmur",
+      "of": "Shield of Ogmur",
+      "source": "https://www.realmeye.com/wiki/shield-of-jawgmur"
+    },
+    {
+      "item": "Shining Blade",
+      "of": "Sadamune",
+      "source": "https://www.realmeye.com/wiki/shining-blade"
+    },
+    {
+      "item": "Ship's Wheel Shield",
+      "of": "Colossus Shield",
+      "source": "https://www.realmeye.com/wiki/ship-s-wheel-shield"
+    },
+    {
+      "item": "Sigil of the Reindeer",
+      "of": "Sigil of the Horse",
+      "source": "https://www.realmeye.com/wiki/sigil-of-the-reindeer"
+    },
+    {
+      "item": "Silver Revolvers",
+      "of": "Bergenia Bow",
+      "source": "https://www.realmeye.com/wiki/silver-revolvers"
+    },
+    {
+      "item": "Skull of Krampus",
+      "of": "Bloodsucker Skull",
+      "source": "https://www.realmeye.com/wiki/skull-of-krampus"
+    },
+    {
+      "item": "Skull-splitter Sword",
+      "of": "Skysplitter Sword",
+      "source": "https://www.realmeye.com/wiki/skull-splitter-sword"
+    },
+    {
+      "item": "Snow Branch",
+      "of": "Elder Heartwood Staff",
+      "source": "https://www.realmeye.com/wiki/snow-branch"
+    },
+    {
+      "item": "Snow Critters",
+      "of": "Sentry Turret",
+      "source": "https://www.realmeye.com/wiki/snow-critters"
+    },
+    {
+      "item": "Snowblind Spellblade",
+      "of": "Spellblade of the Sun",
+      "source": "https://www.realmeye.com/wiki/snowblind-spellblade"
+    },
+    {
+      "item": "Snowblind Wand",
+      "of": "Wand of the Fallen",
+      "source": "https://www.realmeye.com/wiki/snowblind-wand"
+    },
+    {
+      "item": "Snowbound Orb",
+      "of": "Planefetter Orb",
+      "source": "https://www.realmeye.com/wiki/snowbound-orb"
+    },
+    {
+      "item": "Snowflake Blade",
+      "of": "Celestial Blade",
+      "source": "https://www.realmeye.com/wiki/snowflake-blade"
+    },
+    {
+      "item": "Snowman's Sheath",
+      "of": "Great Shinobi Sheath",
+      "source": "https://www.realmeye.com/wiki/snowman-s-sheath"
+    },
+    {
+      "item": "Solar Flare Igniter",
+      "of": "Laser Pointer",
+      "source": "https://www.realmeye.com/wiki/solar-flare-igniter"
+    },
+    {
+      "item": "Sovereign Cinder-Blade",
+      "of": "Valor",
+      "source": "https://www.realmeye.com/wiki/sovereign-cinder-blade"
+    },
+    {
+      "item": "Spectral Spell",
+      "of": "Ancient Eminence",
+      "source": "https://www.realmeye.com/wiki/spectral-spell"
+    },
+    {
+      "item": "Spellblade of the Void",
+      "of": "Spellblade of the Heavens Light",
+      "source": "https://www.realmeye.com/wiki/spellblade-of-the-void"
+    },
+    {
+      "item": "Spike Headband",
+      "of": "Cuband",
+      "source": "https://www.realmeye.com/wiki/spike-headband"
+    },
+    {
+      "item": "Spinal Quiver",
+      "of": "Quiver of Shrieking Specters",
+      "source": "https://www.realmeye.com/wiki/spinal-quiver"
+    },
+    {
+      "item": "Spooky Smasher",
+      "of": "Barnacle Basher",
+      "source": "https://www.realmeye.com/wiki/spooky-smasher"
+    },
+    {
+      "item": "Spring Rose",
+      "of": "S.T.A.F.F.",
+      "source": "https://www.realmeye.com/wiki/spring-rose"
+    },
+    {
+      "item": "Spring Wonder Bow",
+      "of": "Resplendent Bow",
+      "source": "https://www.realmeye.com/wiki/spring-wonder-bow"
+    },
+    {
+      "item": "Spriteful Shield",
+      "of": "Spiteful Scutum",
+      "source": "https://www.realmeye.com/wiki/spriteful-shield"
+    },
+    {
+      "item": "Staff of Adoration",
+      "of": "Staff of Astral Knowledge",
+      "source": "https://www.realmeye.com/wiki/staff-of-adoration"
+    },
+    {
+      "item": "Staff of Horrific Knowledge",
+      "of": "Staff of Astral Knowledge",
+      "source": "https://www.realmeye.com/wiki/staff-of-horrific-knowledge"
+    },
+    {
+      "item": "Staff of Iceblast",
+      "of": "Staff of Extreme Prejudice",
+      "source": "https://www.realmeye.com/wiki/staff-of-iceblast"
+    },
+    {
+      "item": "Staff of Rich History",
+      "of": "Elder Heartwood Staff",
+      "source": "https://www.realmeye.com/wiki/staff-of-rich-history"
+    },
+    {
+      "item": "Staff of Yuletide Carols",
+      "of": "Staff of Astral Knowledge",
+      "source": "https://www.realmeye.com/wiki/staff-of-yuletide-carols"
+    },
+    {
+      "item": "Staff of the Eclipse",
+      "of": "Staff of the Vital Unity",
+      "source": "https://www.realmeye.com/wiki/staff-of-the-eclipse"
+    },
+    {
+      "item": "Staff of the Rising Sun",
+      "of": "Staff of the Cosmic Whole",
+      "source": "https://www.realmeye.com/wiki/staff-of-the-rising-sun"
+    },
+    {
+      "item": "Storied Fossil",
+      "of": "Pressure Gauge Band",
+      "source": "https://www.realmeye.com/wiki/storied-fossil"
+    },
+    {
+      "item": "Storm Caller",
+      "of": "Scepter of Fulmination",
+      "source": "https://www.realmeye.com/wiki/storm-caller"
+    },
+    {
+      "item": "Strange Ring",
+      "of": "Eye of Divination",
+      "source": "https://www.realmeye.com/wiki/strange-ring"
+    },
+    {
+      "item": "Stygian Torch",
+      "of": "The Phylactery",
+      "source": "https://www.realmeye.com/wiki/stygian-torch"
+    },
+    {
+      "item": "Summer Dress",
+      "of": "Robe of the Star Mother",
+      "source": "https://www.realmeye.com/wiki/summer-dress"
+    },
+    {
+      "item": "Sun Bathed Straw Hat",
+      "of": "Eye of the Void",
+      "source": "https://www.realmeye.com/wiki/sun-bathed-straw-hat"
+    },
+    {
+      "item": "Sun Hat",
+      "of": "Ring of Unbound Health",
+      "source": "https://www.realmeye.com/wiki/sun-hat"
+    },
+    {
+      "item": "Sun Star Buckler",
+      "of": "Sunken Buckler",
+      "source": "https://www.realmeye.com/wiki/sun-star-buckler"
+    },
+    {
+      "item": "Sun's Judgement",
+      "of": "Doom Bow",
+      "source": "https://www.realmeye.com/wiki/sun-s-judgement"
+    },
+    {
+      "item": "Sunken Ring",
+      "of": "Corsair Ring",
+      "source": "https://www.realmeye.com/wiki/sunken-ring"
+    },
+    {
+      "item": "Sunny Side Bow",
+      "of": "Thousand Shot",
+      "source": "https://www.realmeye.com/wiki/sunny-side-bow"
+    },
+    {
+      "item": "Supernatural Staff",
+      "of": "Corruption Tether",
+      "source": "https://www.realmeye.com/wiki/supernatural-staff"
+    },
+    {
+      "item": "Sweet Desire Wand",
+      "of": "Earthen Ward",
+      "source": "https://www.realmeye.com/wiki/sweet-desire-wand"
+    },
+    {
+      "item": "Sweetcut Wakizashi",
+      "of": "Fractured Gemstone Wakizashi",
+      "source": "https://www.realmeye.com/wiki/sweetcut-wakizashi"
+    },
+    {
+      "item": "Sweetener Ring",
+      "of": "Ring of Unbound Health",
+      "source": "https://www.realmeye.com/wiki/sweetener-ring"
+    },
+    {
+      "item": "Sweetheart Taichi",
+      "of": "Accursed Tachi",
+      "source": "https://www.realmeye.com/wiki/sweetheart-taichi"
+    },
+    {
+      "item": "Sweettreats Bow",
+      "of": "Spider Silk Bow",
+      "source": "https://www.realmeye.com/wiki/sweettreats-bow"
+    },
+    {
+      "item": "Sweettreats Dagger",
+      "of": "Corruption Cutter",
+      "source": "https://www.realmeye.com/wiki/sweettreats-dagger"
+    },
+    {
+      "item": "Sweettreats Katana",
+      "of": "Celestial Blade",
+      "source": "https://www.realmeye.com/wiki/sweettreats-katana"
+    },
+    {
+      "item": "Sweettreats Staff",
+      "of": "Staff of Esben",
+      "source": "https://www.realmeye.com/wiki/sweettreats-staff"
+    },
+    {
+      "item": "Sweettreats Sword",
+      "of": "Pirate King's Cutlass",
+      "source": "https://www.realmeye.com/wiki/sweettreats-sword"
+    },
+    {
+      "item": "Sweettreats Wand",
+      "of": "Wand of the Fallen",
+      "source": "https://www.realmeye.com/wiki/sweettreats-wand"
+    },
+    {
+      "item": "Swim Tube",
+      "of": "Dominion Armor",
+      "source": "https://www.realmeye.com/wiki/swim-tube"
+    },
+    {
+      "item": "Sword of Illumination",
+      "of": "Demon Blade",
+      "source": "https://www.realmeye.com/wiki/sword-of-illumination"
+    },
+    {
+      "item": "Sword of the Mad God",
+      "of": "Sword of Acclaim",
+      "source": "https://www.realmeye.com/wiki/sword-of-the-mad-god"
+    },
+    {
+      "item": "Tectonus",
+      "of": "Leaf Bow",
+      "source": "https://www.realmeye.com/wiki/tectonus"
+    },
+    {
+      "item": "Temperate Curiass",
+      "of": "Wyrmhide Armor",
+      "source": "https://www.realmeye.com/wiki/temperate-curiass"
+    },
+    {
+      "item": "Temporal Wand",
+      "of": "Wand of Evocation",
+      "source": "https://www.realmeye.com/wiki/temporal-wand"
+    },
+    {
+      "item": "The Crimson Blade",
+      "of": "Spectral Sword",
+      "source": "https://www.realmeye.com/wiki/the-crimson-blade"
+    },
+    {
+      "item": "The Forgotten Ring",
+      "of": "Ring of Decades",
+      "source": "https://www.realmeye.com/wiki/the-forgotten-ring"
+    },
+    {
+      "item": "The Golden Forgotten Crown",
+      "of": "The Forgotten Crown",
+      "source": "https://www.realmeye.com/wiki/the-golden-forgotten-crown"
+    },
+    {
+      "item": "The Heart of the Dragon",
+      "of": "Prism of Dire Instability",
+      "source": "https://www.realmeye.com/wiki/the-heart-of-the-dragon"
+    },
+    {
+      "item": "The North Star",
+      "of": "Morning Star of Repentance",
+      "source": "https://www.realmeye.com/wiki/the-north-star"
+    },
+    {
+      "item": "Thousand Suns Spell",
+      "of": "Elemental Detonation Spell",
+      "source": "https://www.realmeye.com/wiki/thousand-suns-spell"
+    },
+    {
+      "item": "Thunder Mallet",
+      "of": "Reikoku",
+      "source": "https://www.realmeye.com/wiki/thunder-mallet"
+    },
+    {
+      "item": "Tiara of Eggscellent Sturdiness",
+      "of": "Ring of Unbound Defense",
+      "source": "https://www.realmeye.com/wiki/tiara-of-eggscellent-sturdiness"
+    },
+    {
+      "item": "Tome of Exorcism",
+      "of": "Ceremonial Merlot",
+      "source": "https://www.realmeye.com/wiki/tome-of-exorcism"
+    },
+    {
+      "item": "Tome of Frigid Protection",
+      "of": "Tome of Holy Protection",
+      "source": "https://www.realmeye.com/wiki/tome-of-frigid-protection"
+    },
+    {
+      "item": "Tome of Piracy",
+      "of": "Tome of Holy Guidance",
+      "source": "https://www.realmeye.com/wiki/tome-of-piracy"
+    },
+    {
+      "item": "Tome of the Dragon",
+      "of": "Tome of Holy Furor",
+      "source": "https://www.realmeye.com/wiki/tome-of-the-dragon"
+    },
+    {
+      "item": "Tormented Shriek",
+      "of": "C.L.A.W.",
+      "source": "https://www.realmeye.com/wiki/tormented-shriek"
+    },
+    {
+      "item": "Tormentor's Chainmail",
+      "of": "Fairy Plate",
+      "source": "https://www.realmeye.com/wiki/tormentor-s-chainmail"
+    },
+    {
+      "item": "Torso Tunic",
+      "of": "Wraith's Brigandine",
+      "source": "https://www.realmeye.com/wiki/torso-tunic"
+    },
+    {
+      "item": "Traditional Blouse",
+      "of": "Robe of the Mad Scientist",
+      "source": "https://www.realmeye.com/wiki/traditional-blouse"
+    },
+    {
+      "item": "Transdimensional Bow",
+      "of": "Bow of Mystical Energy",
+      "source": "https://www.realmeye.com/wiki/transdimensional-bow"
+    },
+    {
+      "item": "Trap of the Blood Spirit",
+      "of": "Trap of the Vile Spirit",
+      "source": "https://www.realmeye.com/wiki/trap-of-the-blood-spirit"
+    },
+    {
+      "item": "Treasure Orb",
+      "of": "Cosmic Astrolabe",
+      "source": "https://www.realmeye.com/wiki/treasure-orb"
+    },
+    {
+      "item": "Tsunami",
+      "of": "Sadamune",
+      "source": "https://www.realmeye.com/wiki/tsunami"
+    },
+    {
+      "item": "Unresolved Grudge",
+      "of": "C.O.N.T.R.O.L.L.E.R.",
+      "source": "https://www.realmeye.com/wiki/unresolved-grudge"
+    },
+    {
+      "item": "Vial of Sustenance",
+      "of": "Chrysanthemum Corsage",
+      "source": "https://www.realmeye.com/wiki/vial-of-sustenance"
+    },
+    {
+      "item": "Vigil Spell",
+      "of": "Elemental Detonation Spell",
+      "source": "https://www.realmeye.com/wiki/vigil-spell"
+    },
+    {
+      "item": "Vinesword",
+      "of": "Skysplitter Sword",
+      "source": "https://www.realmeye.com/wiki/vinesword"
+    },
+    {
+      "item": "Vision of Draconis",
+      "of": "Forbidden Artifact",
+      "source": "https://www.realmeye.com/wiki/vision-of-draconis"
+    },
+    {
+      "item": "Void Blades",
+      "of": "Moonstone Blades",
+      "source": "https://www.realmeye.com/wiki/void-blades"
+    },
+    {
+      "item": "Void Flail",
+      "of": "Divine Flail",
+      "source": "https://www.realmeye.com/wiki/void-flail"
+    },
+    {
+      "item": "Void Leeches",
+      "of": "Bloodletting Leeches",
+      "source": "https://www.realmeye.com/wiki/void-leeches"
+    },
+    {
+      "item": "Void Mask",
+      "of": "Plague Mask",
+      "source": "https://www.realmeye.com/wiki/void-mask"
+    },
+    {
+      "item": "Void Tachi",
+      "of": "Sunset Tachi",
+      "source": "https://www.realmeye.com/wiki/void-tachi"
+    },
+    {
+      "item": "Wand of Ancient Terror",
+      "of": "Wand of Ancient Warning",
+      "source": "https://www.realmeye.com/wiki/wand-of-ancient-terror"
+    },
+    {
+      "item": "Wand of Budding Romance",
+      "of": "Wand of Ancient Warning",
+      "source": "https://www.realmeye.com/wiki/wand-of-budding-romance"
+    },
+    {
+      "item": "Wand of Egg-cellence",
+      "of": "Wand of Ancient Warning",
+      "source": "https://www.realmeye.com/wiki/wand-of-egg-cellence"
+    },
+    {
+      "item": "Wanderer's Cape",
+      "of": "Robe of the Grand Sorcerer",
+      "source": "https://www.realmeye.com/wiki/wanderer-s-cape"
+    },
+    {
+      "item": "Warlord Wand",
+      "of": "Crystal Wand",
+      "source": "https://www.realmeye.com/wiki/warlord-wand"
+    },
+    {
+      "item": "Water Pistol",
+      "of": "Longbow of the Morning Spirit",
+      "source": "https://www.realmeye.com/wiki/water-pistol"
+    },
+    {
+      "item": "Wings of the Fallen",
+      "of": "Wings of Sanctity",
+      "source": "https://www.realmeye.com/wiki/wings-of-the-fallen"
+    },
+    {
+      "item": "Winter Boots",
+      "of": "Gjallarhorn",
+      "source": "https://www.realmeye.com/wiki/winter-boots"
+    },
+    {
+      "item": "Winter's Breath Wand",
+      "of": "Wand of Recompense",
+      "source": "https://www.realmeye.com/wiki/winter-s-breath-wand"
+    },
+    {
+      "item": "Witch's Brooch",
+      "of": "Ring of the Covetous Heart",
+      "source": "https://www.realmeye.com/wiki/witch-s-brooch"
+    },
+    {
+      "item": "Withered Poncho",
+      "of": "Golem Garments",
+      "source": "https://www.realmeye.com/wiki/withered-poncho"
+    },
+    {
+      "item": "X-Marks-the-Spot Spell",
+      "of": "Elemental Detonation Spell",
+      "source": "https://www.realmeye.com/wiki/x-marks-the-spot-spell"
+    },
+    {
+      "item": "Yellow Beehemoth Quiver",
+      "of": "Freezing Quiver",
+      "source": "https://www.realmeye.com/wiki/yellow-beehemoth-quiver"
+    },
+    {
+      "item": "Yuki",
+      "of": "Masamune",
+      "source": "https://www.realmeye.com/wiki/yuki"
+    }
+  ],
+  "enchantments": [
+    {
+      "id": "ANCIENTS_BLESSING",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "ANCIENT_ARTIFACTS",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "APITOXIN",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "ARTIFICIAL_CORE",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_ACIDIC_SLASHER",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_ANCIENT_STONE_SWORD",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_BRAMBLE_BOW",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_CORRUPTION_CUTTER",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_CORSAIR_RING",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_CRYSTAL_BONE_RING",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_DEMON_BLADE",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_DOOM_BOW",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_DUELING_DAGGERS",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_MATRIX_BLUE",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_MATRIX_GREEN",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_MATRIX_RED",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_MATRIX_YELLOW",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_NEO_ACIDIC_SLASHER",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_NEO_SUNS_JUDGEMENT",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_POISON_FANG_DAGGER",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_ROBE_OF_THE_TLATOANI",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_SNAKE_EYE_RING",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_SPIDERS_EYE_RING",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_STAFF_OF_THE_CRYSTAL_SERPENT",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_SUNS_JUDGEMENT",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_TLATOANIS_SHROUD",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "AWAKENED_WARLORD_WAND",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "BAR_BRAWLER",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "BONE_CLAWS",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "BUZZING_BULLETS_STINGER",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "CONSUMING_VOID",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "CORAL_VOLLEY",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "CRYSTAL_SHARDS",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "CURSEBEARER",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "DRAKE_WARDEN",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "EASTER_EGGSPOSING_SHOT",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "FRACTURED_BLADE",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "GLORY_ATT_BONUS",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "GLORY_HP_BONUS",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "HALLOWEEN_WEAPON_SOUL_COLLECTOR",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "HIGH_VOLTAGE",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "HYDRO_HYDROSHOCK",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "INFERNAL_ANGER",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "INSIGHT_MP_REDUCTION",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "INSIGHT_WIS_BONUS",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "KOGBOLD_SPIRIT",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "LIVING_HIVE_BEEHEMOTH",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "MOLECULAR_BLADE",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "N.O.V.A.",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "NECROTIC_KNOWLEDGE",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "NIGHTMATTER_SOUL",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "NIGHTMATTER_STRENGTH",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "NIGHTMATTER_TENACITY",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "NIGHTMATTER_WISDOM",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "ORYXMAS_ABILITY_POLAR_EXPLORER",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "ORYXMAS_ABILITY_WARM_AND_COZY",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "ORYXMAS_COOL_PROTECTION",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "ORYXMAS_FROZEN_BLAST",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "ORYXMAS_ICE_RUSH",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "ORYXMAS_SNOWSTORM",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "ORYXMAS_WEAPON_NAUGHTY",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "ORYXMAS_WEAPON_NICE",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_MAGUS_ARMOR",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_MAGUS_BOW",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_MAGUS_DAGGER",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_MAGUS_KATANA",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_MAGUS_RING",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_MAGUS_STAFF",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_MAGUS_SWORD",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_MAGUS_WAND",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SNIPER_ARMOR",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SNIPER_BOW",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SNIPER_DAGGER",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SNIPER_KATANA",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SNIPER_RING",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SNIPER_STAFF",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SNIPER_SWORD",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SNIPER_WAND",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_STALWART_ARMOR",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_STALWART_BOW",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_STALWART_DAGGER",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_STALWART_KATANA",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_STALWART_RING",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_STALWART_STAFF",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_STALWART_SWORD",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_STALWART_WAND",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SWIFTBLADE_ARMOR",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SWIFTBLADE_BOW",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SWIFTBLADE_DAGGER",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SWIFTBLADE_KATANA",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SWIFTBLADE_RING",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SWIFTBLADE_STAFF",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SWIFTBLADE_SWORD",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "PATH_OF_THE_SWIFTBLADE_WAND",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "RETRO_RETROWINDS_ARMOR",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "RETRO_RETROWINDS_WEAPON",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "SPELLSWORD_MASTERY",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "STELLAR_ASCEND",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "SWARM_TREE_WRATH",
+      "source": "https://www.realmeye.com/wiki/enchanting"
+    },
+    {
+      "id": "THANNKSGIVING_GIVER",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "THANNKSGIVING_THANKFUL",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_ADONIS_SHOT_BOW",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_ADONIS_SHOT_DAGGER",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_ADONIS_SHOT_DUALBLADE",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_ADONIS_SHOT_FLAIL",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_ADONIS_SHOT_KATANA",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_ADONIS_SHOT_LONGBOW",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_ADONIS_SHOT_MORNINGSTAR",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_ADONIS_SHOT_SPELLBLADE",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_ADONIS_SHOT_STAFF",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_ADONIS_SHOT_SWORD",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_ADONIS_SHOT_TACHI",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_ADONIS_SHOT_WAND",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_APHRODITE_SHOT_BOW",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_APHRODITE_SHOT_DAGGER",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_APHRODITE_SHOT_DUALBLADE",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_APHRODITE_SHOT_FLAIL",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_APHRODITE_SHOT_KATANA",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_APHRODITE_SHOT_LONGBOW",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_APHRODITE_SHOT_MORNINGSTAR",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_APHRODITE_SHOT_SPELLBLADE",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_APHRODITE_SHOT_STAFF",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_APHRODITE_SHOT_SWORD",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_APHRODITE_SHOT_TACHI",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_APHRODITE_SHOT_WAND",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    },
+    {
+      "id": "VALENTINES_ROSE_THORNS",
+      "source": "https://www.realmeye.com/wiki/artifacts"
+    }
+  ]
+}
