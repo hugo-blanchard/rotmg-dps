@@ -225,6 +225,45 @@ struct Final {
   std::array<const FlatSet*, kSlots> flat{};
 };
 
+// A sum of flat sets so far, and which set it took from each item.
+template <std::size_t D>
+struct Sum {
+  Point<D> at{};
+  std::array<std::uint16_t, kSlots> pick{};
+};
+
+// Buffers a thread reuses from one merge to the next, so a merge allocates
+// only while they grow.
+template <std::size_t D>
+struct MergeScratch {
+  std::array<std::vector<std::pair<Point<D>, std::uint16_t>>, kSlots> own;
+  std::vector<Sum<D>> sums;
+  std::vector<Sum<D>> grown;
+  std::vector<Stats> finals;
+  std::vector<std::int32_t> rows;
+  std::vector<std::uint32_t> kept;
+  FrontierScratch frontier;
+
+  // Pool threads live as long as the page, so a buffer past this size is
+  // given back rather than kept for the next merge.
+  void Trim() {
+    constexpr std::size_t kMostBytes = std::size_t{1} << 20;
+    const auto trim = [](auto& v) {
+      if (v.capacity() * sizeof(v[0]) > kMostBytes) std::remove_reference_t<decltype(v)>().swap(v);
+    };
+    for (auto& v : own) trim(v);
+    trim(sums);
+    trim(grown);
+    trim(finals);
+    trim(rows);
+    trim(kept);
+    trim(frontier.order);
+    trim(frontier.steps);
+    trim(frontier.tails);
+    trim(frontier.block_most);
+  }
+};
+
 // Final stats already reached, asked "does any have at least these?" far
 // more often than it grows: a snapshot index rebuilt by Settle, plus the
 // few finals added since, checked one by one.
@@ -1064,10 +1103,7 @@ template <std::size_t D>
 std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, const Reached& reached) const {
   static_assert(D <= kMaxCompared);
   const PreparedLayout& layout = *profile.layout;
-  struct Sum {
-    Point<D> at{};
-    std::array<std::uint16_t, kSlots> pick{};
-  };
+  thread_local MergeScratch<D> scratch;
   // An item's flat set as a point: its tenths on each compared stat,
   // negated where more of the stat lowers the read stats.
   const auto point_of = [&](const FlatSet& f) {
@@ -1080,8 +1116,9 @@ std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, co
   // they're kept for other assignments.
   std::uint32_t signature = 0;
   for (const auto& [stat, sign] : a.dims) signature |= 1u << (stat + (sign < 0 ? kStats : 0));
-  std::array<std::vector<std::pair<Point<D>, std::uint16_t>>, kSlots> own;
+  auto& own = scratch.own;
   for (std::size_t slot = 0; slot < kSlots; ++slot) {
+    own[slot].clear();
     const std::vector<FlatSet>& sets = profile.flats[slot][a.conv[slot]]->sets;
     for (const std::uint16_t i : OwnFrontier<D>(sets, a, signature)) own[slot].emplace_back(point_of(sets[i]), i);
   }
@@ -1129,10 +1166,11 @@ std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, co
     return c;
   };
   std::vector<Final> out;
-  std::vector<Sum> sums = {Sum{}};
+  std::vector<Sum<D>>& sums = scratch.sums;
+  sums.assign(1, Sum<D>{});
   for (std::size_t slot = 0; slot < kSlots; ++slot) {
-    std::vector<Sum> grown;
-    grown.reserve(sums.size() * own[slot].size());
+    std::vector<Sum<D>>& grown = scratch.grown;
+    grown.clear();
     // Sums and the item's sets in blocks of nearby points. Pairs from two
     // blocks are all hopeless when the blocks' corners add to a hopeless
     // point, since the bound only grows; then each sum with the sets'
@@ -1141,7 +1179,7 @@ std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, co
     constexpr std::size_t kSetBlock = 8;
     auto& sets = own[slot];
     std::ranges::sort(sets, std::greater<>{}, [](const auto& o) { return o.first; });
-    std::ranges::sort(sums, std::greater<>{}, [](const Sum& x) { return x.at; });
+    std::ranges::sort(sums, std::greater<>{}, [](const Sum<D>& x) { return x.at; });
     for (std::size_t ob = 0; ob < sets.size(); ob += kSetBlock) {
       const auto oe = std::min(sets.size(), ob + kSetBlock);
       const Point<D> sets_corner = corner(sets.begin() + static_cast<std::ptrdiff_t>(ob),
@@ -1151,16 +1189,16 @@ std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, co
         const auto se = std::min(sums.size(), sb + kSumBlock);
         Point<D> both = corner(sums.begin() + static_cast<std::ptrdiff_t>(sb),
                                sums.begin() + static_cast<std::ptrdiff_t>(se),
-                               [](const Sum& x) -> const Point<D>& { return x.at; });
+                               [](const Sum<D>& x) -> const Point<D>& { return x.at; });
         for (std::size_t k = 0; k < D; ++k) both[k] += sets_corner[k];
         if (hopeless(both, slot)) continue;
         for (std::size_t xi = sb; xi < se; ++xi) {
-          const Sum& x = sums[xi];
+          const Sum<D>& x = sums[xi];
           Point<D> with_corner = x.at;
           for (std::size_t k = 0; k < D; ++k) with_corner[k] += sets_corner[k];
           if (hopeless(with_corner, slot)) continue;
           for (std::size_t oi = ob; oi < oe; ++oi) {
-            Sum next = x;
+            Sum<D> next = x;
             for (std::size_t k = 0; k < D; ++k) next.at[k] += sets[oi].first[k];
             next.pick[slot] = sets[oi].second;
             if (!hopeless(next.at, slot)) grown.push_back(next);
@@ -1169,24 +1207,23 @@ std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, co
       }
     }
     if (slot + 1 < kSlots) {
-      std::vector<Point<D>> points;
-      points.reserve(grown.size());
-      for (const Sum& x : grown) points.push_back(x.at);
-      std::vector<Sum> kept;
-      for (const std::size_t i : Frontier(points)) kept.push_back(grown[i]);
-      sums = std::move(kept);
+      FrontierInto<D>(grown.size(), [&](std::uint32_t i) -> const Point<D>& { return grown[i].at; }, scratch.frontier,
+                      scratch.kept);
+      sums.clear();
+      for (const std::uint32_t i : scratch.kept) sums.push_back(grown[i]);
       continue;
     }
     // Nothing comes after the last item: compare final stats.
-    std::vector<Stats> finals;
-    std::vector<std::int32_t> rows;
-    finals.reserve(grown.size());
-    rows.reserve(grown.size() * read_list_.size());
-    for (const Sum& x : grown) {
+    std::vector<Stats>& finals = scratch.finals;
+    std::vector<std::int32_t>& rows = scratch.rows;
+    finals.clear();
+    rows.clear();
+    for (const Sum<D>& x : grown) {
       finals.push_back(final_of(x.at));
       for (const std::size_t s : read_list_) rows.push_back(finals.back()[s]);
     }
-    for (const std::size_t i : FrontierOfRows(rows, read_list_.size())) {
+    FrontierOfRowsInto(rows, read_list_.size(), scratch.frontier, scratch.kept);
+    for (const std::uint32_t i : scratch.kept) {
       if (reached.Covers(finals[i])) continue;
       Final f;
       f.stats = finals[i];
@@ -1197,6 +1234,7 @@ std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, co
       out.push_back(f);
     }
   }
+  scratch.Trim();
   return out;
 }
 
