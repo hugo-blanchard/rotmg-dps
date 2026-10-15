@@ -118,7 +118,7 @@ bool IsChanceBoost(const Activate& a) {
 
 // Wand of Geb's needs all four set pieces, matching its tooltip's "With Full
 // Set"; the Alien enchantments' boosts need any one Alien item.
-bool GearWorn(const Activate& a, const std::vector<int>& worn) {
+bool GearWorn(const Activate& a, std::span<const int> worn) {
   const auto wearing = [&](int type) { return std::ranges::find(worn, type) != worn.end(); };
   const auto not_wearing = [&](int type) { return !wearing(type); };
   const std::string_view any = a.Text("mustWearOR");
@@ -126,7 +126,7 @@ bool GearWorn(const Activate& a, const std::vector<int>& worn) {
          EachType(a.Text("mustNotWear"), false, not_wearing) && EachType(a.Text("mustNotWearOR"), false, not_wearing);
 }
 
-OnShootModel ModelOf(const Weapon& weapon, const Activate& a, const std::vector<int>& worn) {
+OnShootModel ModelOf(const Weapon& weapon, const Activate& a, std::span<const int> worn) {
   if (IsWhileShooting(a)) {
     return OnShootModel::kWhileShooting;
   }
@@ -142,7 +142,7 @@ OnShootModel ModelOf(const Weapon& weapon, const Activate& a, const std::vector<
   return IsChanceBoost(a) ? OnShootModel::kChanceBoost : OnShootModel::kNone;
 }
 
-bool CountsAsChanceBoost(const Weapon& weapon, const Activate& boost, const std::vector<int>& worn) {
+bool CountsAsChanceBoost(const Weapon& weapon, const Activate& boost, std::span<const int> worn) {
   const auto no_stack = [](const Activate& a) { return a.Text("channel").starts_with("noStack"); };
   if (!no_stack(boost)) {
     return true;
@@ -169,9 +169,9 @@ bool CountsAsChanceBoost(const Weapon& weapon, const Activate& boost, const std:
   return true;
 }
 
-std::vector<ChanceBoost> ChanceBoosts(const Weapon& weapon, const std::vector<int>& worn, double shots_per_second) {
+std::vector<ChanceBoost> ChanceBoosts(const Weapon& weapon, std::span<const int> worn, double shots_per_second) {
   std::vector<ChanceBoost> out;
-  std::vector<int> wearing = worn;
+  ItemTypes wearing(worn);
   wearing.push_back(weapon.type);
   for (const Activate& a : weapon.on_shoot) {
     if (!IsChanceBoost(a) || !GearWorn(a, wearing) || !CountsAsChanceBoost(weapon, a, wearing) ||
@@ -239,7 +239,7 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
 
   const std::vector<StatBonus> while_shooting = WhileShooting(weapon);
   bool unmodelled_on_shoot = false;
-  std::vector<int> worn = character.worn;
+  ItemTypes worn = character.worn;
   worn.push_back(weapon.type);
   // Only the explanation lists effects that aren't modelled.
   if (details) {

@@ -119,7 +119,7 @@ Prepared Prepare(const RequestSpec& spec, const Dataset& dataset) {
   for (const WornSet& s : r.sets) {
     r.character = r.character.With(s.stats);
   }
-  r.character.worn = worn;
+  r.character.worn = ItemTypes(worn);
   // Reads one item's enchantment ids, checking the item can have each, that
   // none clash and that they fit in its slots.
   const bool artifacts = spec.artifacts;

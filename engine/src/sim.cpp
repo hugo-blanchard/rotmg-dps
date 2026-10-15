@@ -224,7 +224,7 @@ Simulation::Simulation(const Weapon& weapon, const Character& character, const S
       proc_subattack_ = i;
     }
   }
-  std::vector<int> worn = base_.worn;
+  ItemTypes worn = base_.worn;
   worn.push_back(weapon_.type);
   for (const Activate& act : weapon_.on_shoot) {
     Proc proc{&act, ModelOf(weapon_, act, worn), 0, 0, 0};

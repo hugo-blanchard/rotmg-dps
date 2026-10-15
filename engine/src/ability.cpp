@@ -230,7 +230,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   // MP the gear gives back on casting lowers what a cast really costs, and
   // how often it comes back depends on how often you cast, so the two are
   // worked out together.
-  std::vector<int> worn_for_refunds = character.worn;
+  ItemTypes worn_for_refunds = character.worn;
   worn_for_refunds.push_back(ability.type);
   for (const Activate& a : ability.on_ability) {
     if (a.type == "Magic" && GearWorn(a, worn_for_refunds) && GoesOffOnCast(a)) {
@@ -437,7 +437,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   }
 
   // Effects of the ability and the other gear that go off when it's used.
-  std::vector<int> worn = character.worn;
+  ItemTypes worn = character.worn;
   worn.push_back(ability.type);
   prefix = "On use, ";
   for (const Activate& a : ability.on_ability) {

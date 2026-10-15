@@ -61,6 +61,8 @@ TEST_CASE("reports errors instead of throwing") {
   CHECK(json::parse(api.Evaluate("not json"))["ok"] == false);
   CHECK(json::parse(api.Evaluate(R"({"attack": 50})"))["ok"] == false);
   CHECK(json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "curve": {"step": 0}})"))["error"] == "bad curve range");
+  CHECK(json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "wearing": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+                                     14, 15, 16, 17]})"))["error"] == "bad request: more than 16 items worn");
 }
 
 TEST_CASE("returns the hit estimate over distance") {

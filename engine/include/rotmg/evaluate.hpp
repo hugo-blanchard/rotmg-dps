@@ -1,6 +1,12 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <initializer_list>
 #include <optional>
+#include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -10,6 +16,39 @@
 #include "rotmg/model.hpp"
 
 namespace rotmg {
+
+/// Item types, held inline: a build wears a handful of items, and a
+/// character is copied for every mix of buffs an evaluation looks at.
+class ItemTypes {
+ public:
+  static constexpr std::size_t kMost = 16;
+
+  ItemTypes() = default;
+  ItemTypes(std::initializer_list<int> types) {
+    for (const int t : types) push_back(t);
+  }
+  explicit ItemTypes(std::span<const int> types) {
+    for (const int t : types) push_back(t);
+  }
+
+  /// Throws std::length_error past kMost.
+  void push_back(int type) {
+    if (size_ == kMost) {
+      throw std::length_error("more than " + std::to_string(kMost) + " items worn");
+    }
+    types_[size_++] = type;
+  }
+  const int* data() const { return types_.data(); }
+  const int* begin() const { return types_.data(); }
+  const int* end() const { return types_.data() + size_; }
+  std::size_t size() const { return size_; }
+  bool empty() const { return size_ == 0; }
+  bool operator==(const ItemTypes& other) const { return std::ranges::equal(*this, other); }
+
+ private:
+  std::array<int, kMost> types_{};
+  std::size_t size_ = 0;
+};
 
 /// Stats from everything except the item being evaluated. Its own stat
 /// bonuses are added during evaluation, so swapping items compares fairly.
@@ -25,7 +64,7 @@ struct Character {
   PlayerStatus status{};
   /// Items worn besides the one being evaluated, by type: the ability,
   /// armor and ring. Some on-shoot effects need them.
-  std::vector<int> worn{};
+  ItemTypes worn{};
 
   /// A stat by the client's name: ATT, DEX, WIS, VIT, DEF, SPD, MAXHP or
   /// MAXMP. 0 for anything else.
@@ -98,7 +137,7 @@ struct Breakdown {
 
 /// Whether the gear an effect asks for is on: every mustWear item, one of
 /// the mustWearOR ones if it lists any, none of the mustNotWear ones.
-bool GearWorn(const Activate& effect, const std::vector<int>& worn);
+bool GearWorn(const Activate& effect, std::span<const int> worn);
 
 /// A stat boost with a chance per shot and a cooldown, like the OnShoot
 /// boost enchantments. Ones that need HP or a status aren't modelled.
@@ -112,7 +151,7 @@ std::vector<StatBonus> WhileShooting(const Weapon& weapon);
 /// effect it doesn't model, or whose gear isn't in `worn` (which includes the
 /// weapon).
 enum class OnShootModel { kNone, kWhileShooting, kPoisonBurst, kExtraShots, kChanceBoost };
-OnShootModel ModelOf(const Weapon& weapon, const Activate& effect, const std::vector<int>& worn);
+OnShootModel ModelOf(const Weapon& weapon, const Activate& effect, std::span<const int> worn);
 
 /// An on-shoot stat boost that goes off by chance, like the OnShoot Attack
 /// Boost enchantment's 3% for +5 ATT, and the share of the time it's up.
@@ -127,13 +166,13 @@ struct ChanceBoost {
 /// 1 / (chance x shots per second) seconds later on average. A boost is up
 /// for its duration out of that cycle. Only the ones CountsAsChanceBoost
 /// allows are listed.
-std::vector<ChanceBoost> ChanceBoosts(const Weapon& weapon, const std::vector<int>& worn, double shots_per_second);
+std::vector<ChanceBoost> ChanceBoosts(const Weapon& weapon, std::span<const int> worn, double shots_per_second);
 
 /// Whether one of the weapon's chance boosts counts, with `worn` including
 /// the weapon. Boosts that don't stack with others of their stat (channel
 /// noStack) don't add up at all: of those, only one per stat counts, the
 /// biggest, then the longest, then the likeliest, then the first.
-bool CountsAsChanceBoost(const Weapon& weapon, const Activate& boost, const std::vector<int>& worn);
+bool CountsAsChanceBoost(const Weapon& weapon, const Activate& boost, std::span<const int> worn);
 
 /// Single-target DPS of a weapon. Each subattack fires on its own at its own
 /// rate (RealmEye: Weapon Attributes), so the total is their sum.
