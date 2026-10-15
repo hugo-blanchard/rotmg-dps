@@ -45,23 +45,13 @@ void CheckFrontier(std::mt19937& rng) {
     CHECK(values == SlowFrontier(points));
     CHECK(values.size() == kept.size());
     CHECK(std::ranges::is_sorted(kept));
-  }
-}
-
-template <std::size_t D>
-void CheckGrowingIndex(std::mt19937& rng) {
-  for (int trial = 0; trial < 40; ++trial) {
-    rotmg::search::GrowingIndex<D> index;
-    std::vector<Point<D>> added;
-    for (const Point<D>& p : RandomPoints<D>(rng, 400, 3 + static_cast<std::int32_t>(rng() % 40))) {
-      if (rng() % 3 == 0) {
-        index.Add(p);
-        added.push_back(p);
-        continue;
-      }
-      const bool covered = std::ranges::any_of(added, [&](const Point<D>& q) { return rotmg::search::Covers(q, p); });
-      CHECK(index.Covers(p) == covered);
+    // Of equal points, the first is kept.
+    for (const std::size_t i : kept) {
+      CHECK(std::ranges::find(points, points[i]) - points.begin() == static_cast<std::ptrdiff_t>(i));
     }
+    std::vector<std::int32_t> rows;
+    for (const Point<D>& p : points) rows.insert(rows.end(), p.begin(), p.end());
+    CHECK(rotmg::search::FrontierOfRows(rows, D) == kept);
   }
 }
 
@@ -75,13 +65,5 @@ TEST_CASE("a frontier keeps exactly the points nothing else covers") {
   CheckFrontier<4>(rng);
   CheckFrontier<5>(rng);
   CheckFrontier<6>(rng);
-}
-
-TEST_CASE("a growing index knows whether any point added covers another") {
-  std::mt19937 rng(4);
-  CheckGrowingIndex<1>(rng);
-  CheckGrowingIndex<2>(rng);
-  CheckGrowingIndex<3>(rng);
-  CheckGrowingIndex<4>(rng);
-  CheckGrowingIndex<5>(rng);
+  CheckFrontier<8>(rng);
 }

@@ -14,6 +14,7 @@
 #include <memory>
 #include <numeric>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace rotmg::search {
@@ -223,145 +224,151 @@ class SnapshotIndex {
   std::unique_ptr<StaticIndex<D>> index_;
 };
 
-// The same question over a set that grows: static indexes of 16, 32, 64,
-// ... points, merged and rebuilt like binary carries (the logarithmic
-// method), and a buffer of the newest points searched one by one.
-template <std::size_t D>
-class GrowingIndex {
- public:
-  void Add(const Point<D>& p) {
-    buffer_.push_back(p);
-    if (buffer_.size() < kBuffer) {
-      return;
-    }
-    std::vector<Point<D>> carry = std::move(buffer_);
-    buffer_.clear();
-    std::size_t level = 0;
-    for (; level < levels_.size() && !levels_[level].points.empty(); ++level) {
-      carry.insert(carry.end(), levels_[level].points.begin(), levels_[level].points.end());
-      levels_[level] = {};
-    }
-    if (level == levels_.size()) {
-      levels_.emplace_back();
-    }
-    Level& l = levels_[level];
-    l.points = std::move(carry);
-    std::vector<const Point<D>*> pointers;
-    pointers.reserve(l.points.size());
-    for (const Point<D>& q : l.points) pointers.push_back(&q);
-    l.index = std::make_unique<StaticIndex<D>>(pointers);
-  }
-
-  bool Covers(const Point<D>& x) const {
-    for (const Point<D>& q : buffer_) {
-      if (search::Covers(q, x)) {
-        return true;
-      }
-    }
-    for (const Level& l : levels_) {
-      if (l.index && l.index->Covers(x)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
- private:
-  static constexpr std::size_t kBuffer = 16;
-  struct Level {
-    std::vector<Point<D>> points;
-    std::unique_ptr<StaticIndex<D>> index;
-  };
-  std::vector<Point<D>> buffer_;
-  std::vector<Level> levels_;
+// Buffers a thread reuses across frontiers, so finding one allocates only
+// while they grow.
+struct FrontierScratch {
+  std::vector<std::uint32_t> order;
+  // Three dimensions: the kept points' last two, as a staircase with the
+  // first ascending and the second descending.
+  std::vector<std::pair<std::int32_t, std::int32_t>> steps;
+  // More: the kept points after their first dimension, and each block's most
+  // of every dimension.
+  std::vector<std::int32_t> tails;
+  std::vector<std::int32_t> block_most;
 };
 
-// The indices of the frontier of `points`, ascending: one of each group of
-// equal points. Taken in descending lexicographic order, anything that
-// covers a point comes before it, so a point is kept unless a kept one
-// covers it on the dimensions after the first: for 2 dimensions that's the
-// most of the second so far, for 3 a staircase, for more a growing index.
-template <std::size_t D>
-std::vector<std::size_t> Frontier(const std::vector<Point<D>>& points) {
-  std::vector<std::size_t> order(points.size());
-  std::iota(order.begin(), order.end(), std::size_t{0});
-  std::ranges::sort(order, [&](std::size_t x, std::size_t y) {
-    return points[x] != points[y] ? points[x] > points[y] : x < y;
+// The indices of the frontier of `n` points, `point(i)` the i-th, ascending
+// in `kept`: one of each group of equal points, the first. Taken in
+// descending lexicographic order, anything that covers a point comes before
+// it, so a point is kept unless a kept one covers it on the dimensions after
+// the first: for 2 dimensions that's the most of the second so far, for 3 a
+// staircase, for more a scan of the kept points in blocks, skipping a block
+// whose maxima can't cover the point. Frontiers in the search are small
+// (tens to hundreds of points), where the scan beats building an index.
+template <std::size_t D, typename Get>
+void FrontierInto(std::size_t n, const Get& point, FrontierScratch& scratch, std::vector<std::uint32_t>& kept) {
+  kept.clear();
+  std::vector<std::uint32_t>& order = scratch.order;
+  order.resize(n);
+  std::iota(order.begin(), order.end(), std::uint32_t{0});
+  std::ranges::sort(order, [&](std::uint32_t x, std::uint32_t y) {
+    const Point<D>& a = point(x);
+    const Point<D>& b = point(y);
+    return a != b ? a > b : x < y;
   });
-  std::vector<std::size_t> kept;
   if constexpr (D == 1) {
     if (!order.empty()) kept.push_back(order[0]);
   } else if constexpr (D == 2) {
     std::int32_t most = std::numeric_limits<std::int32_t>::min();
-    for (const std::size_t i : order) {
-      if (kept.empty() || points[i][1] > most) {
+    for (const std::uint32_t i : order) {
+      if (kept.empty() || point(i)[1] > most) {
         kept.push_back(i);
-        most = points[i][1];
+        most = point(i)[1];
       }
     }
   } else if constexpr (D == 3) {
-    Staircase stairs;
-    for (const std::size_t i : order) {
-      if (!stairs.Covers(points[i][1], points[i][2])) {
-        kept.push_back(i);
-        stairs.Add(points[i][1], points[i][2]);
-      }
+    auto& steps = scratch.steps;
+    steps.clear();
+    for (const std::uint32_t i : order) {
+      const std::int32_t a = point(i)[1];
+      const std::int32_t b = point(i)[2];
+      auto it = std::ranges::lower_bound(steps, a, {}, &std::pair<std::int32_t, std::int32_t>::first);
+      if (it != steps.end() && it->second >= b) continue;
+      kept.push_back(i);
+      // Steps before it have less of a; those with no more of b are covered.
+      auto from = it;
+      while (from != steps.begin() && std::prev(from)->second <= b) --from;
+      it = steps.erase(from, it);
+      if (it != steps.end() && it->first == a) it = steps.erase(it);
+      steps.insert(it, {a, b});
     }
   } else {
-    GrowingIndex<D - 1> rest;
-    for (const std::size_t i : order) {
-      Point<D - 1> tail;
-      std::copy(points[i].begin() + 1, points[i].end(), tail.begin());
-      if (!rest.Covers(tail)) {
-        kept.push_back(i);
-        rest.Add(tail);
+    constexpr std::size_t kTail = D - 1;
+    constexpr std::size_t kBlock = 32;
+    auto& tails = scratch.tails;
+    auto& most = scratch.block_most;
+    tails.clear();
+    most.clear();
+    for (const std::uint32_t i : order) {
+      const Point<D>& p = point(i);
+      const std::size_t count = tails.size() / kTail;
+      bool covered = false;
+      for (std::size_t b = 0; b * kBlock < count && !covered; ++b) {
+        const std::int32_t* m = most.data() + b * kTail;
+        bool may = true;
+        for (std::size_t d = 0; d < kTail && may; ++d) may = m[d] >= p[d + 1];
+        if (!may) continue;
+        const std::size_t end = std::min(count, (b + 1) * kBlock);
+        for (std::size_t k = b * kBlock; k < end && !covered; ++k) {
+          const std::int32_t* q = tails.data() + k * kTail;
+          bool all = true;
+          for (std::size_t d = 0; d < kTail && all; ++d) all = q[d] >= p[d + 1];
+          covered = all;
+        }
       }
+      if (covered) continue;
+      if (count % kBlock == 0) most.insert(most.end(), p.begin() + 1, p.end());
+      std::int32_t* m = most.data() + (count / kBlock) * kTail;
+      for (std::size_t d = 0; d < kTail; ++d) m[d] = std::max(m[d], p[d + 1]);
+      tails.insert(tails.end(), p.begin() + 1, p.end());
+      kept.push_back(i);
     }
   }
   std::ranges::sort(kept);
-  return kept;
 }
 
-// Frontier for points whose dimension count is only known at run time, as
-// rows of `dims` values: for paths that aren't hot, where instantiating a
-// template for every count isn't worth it. Kept points are checked in
-// blocks, skipping a block whose maxima can't cover the point.
-inline std::vector<std::size_t> FrontierOfRows(const std::vector<std::int32_t>& rows, std::size_t dims) {
+template <std::size_t D>
+std::vector<std::size_t> Frontier(const std::vector<Point<D>>& points) {
+  FrontierScratch scratch;
+  std::vector<std::uint32_t> kept;
+  FrontierInto<D>(points.size(), [&](std::uint32_t i) -> const Point<D>& { return points[i]; }, scratch, kept);
+  return {kept.begin(), kept.end()};
+}
+
+// The same for points whose dimension count is only known at run time, as
+// rows of `dims` values: for paths where instantiating a template for every
+// count isn't worth it. Always the block scan.
+inline void FrontierOfRowsInto(const std::vector<std::int32_t>& rows, std::size_t dims, FrontierScratch& scratch,
+                               std::vector<std::uint32_t>& kept) {
+  kept.clear();
   const std::size_t n = dims == 0 ? 0 : rows.size() / dims;
-  const auto row = [&](std::size_t i) { return rows.begin() + static_cast<std::ptrdiff_t>(i * dims); };
-  std::vector<std::size_t> order(n);
-  std::iota(order.begin(), order.end(), std::size_t{0});
-  std::ranges::sort(order, [&](std::size_t x, std::size_t y) {
-    const auto mismatch = std::mismatch(row(x), row(x) + static_cast<std::ptrdiff_t>(dims), row(y));
-    return mismatch.first != row(x) + static_cast<std::ptrdiff_t>(dims) ? *mismatch.first > *mismatch.second : x < y;
+  const auto row = [&](std::size_t i) { return rows.data() + i * dims; };
+  std::vector<std::uint32_t>& order = scratch.order;
+  order.resize(n);
+  std::iota(order.begin(), order.end(), std::uint32_t{0});
+  std::ranges::sort(order, [&](std::uint32_t x, std::uint32_t y) {
+    const auto mismatch = std::mismatch(row(x), row(x) + dims, row(y));
+    return mismatch.first != row(x) + dims ? *mismatch.first > *mismatch.second : x < y;
   });
   constexpr std::size_t kBlock = 32;
-  std::vector<std::size_t> kept;
-  std::vector<std::int32_t> block_most;
-  for (const std::size_t i : order) {
+  auto& most = scratch.block_most;
+  most.clear();
+  for (const std::uint32_t i : order) {
     bool covered = false;
     for (std::size_t b = 0; b * kBlock < kept.size() && !covered; ++b) {
       bool may = true;
-      for (std::size_t d = 0; d < dims && may; ++d) may = block_most[b * dims + d] >= row(i)[static_cast<std::ptrdiff_t>(d)];
+      for (std::size_t d = 0; d < dims && may; ++d) may = most[b * dims + d] >= row(i)[d];
       if (!may) continue;
       for (std::size_t k = b * kBlock; k < std::min(kept.size(), (b + 1) * kBlock) && !covered; ++k) {
         bool all = true;
-        for (std::size_t d = 0; d < dims && all; ++d) {
-          all = row(kept[k])[static_cast<std::ptrdiff_t>(d)] >= row(i)[static_cast<std::ptrdiff_t>(d)];
-        }
+        for (std::size_t d = 0; d < dims && all; ++d) all = row(kept[k])[d] >= row(i)[d];
         covered = all;
       }
     }
     if (covered) continue;
-    if (kept.size() % kBlock == 0) block_most.insert(block_most.end(), row(i), row(i) + static_cast<std::ptrdiff_t>(dims));
+    if (kept.size() % kBlock == 0) most.insert(most.end(), row(i), row(i) + dims);
     const std::size_t b = kept.size() / kBlock;
-    for (std::size_t d = 0; d < dims; ++d) {
-      block_most[b * dims + d] = std::max(block_most[b * dims + d], row(i)[static_cast<std::ptrdiff_t>(d)]);
-    }
+    for (std::size_t d = 0; d < dims; ++d) most[b * dims + d] = std::max(most[b * dims + d], row(i)[d]);
     kept.push_back(i);
   }
   std::ranges::sort(kept);
-  return kept;
+}
+
+inline std::vector<std::size_t> FrontierOfRows(const std::vector<std::int32_t>& rows, std::size_t dims) {
+  FrontierScratch scratch;
+  std::vector<std::uint32_t> kept;
+  FrontierOfRowsInto(rows, dims, scratch, kept);
+  return {kept.begin(), kept.end()};
 }
 
 }  // namespace rotmg::search
