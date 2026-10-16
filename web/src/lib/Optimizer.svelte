@@ -1,7 +1,11 @@
 <script lang="ts">
   // Asks the engine for the build with the most DPS against the current
-  // target, changing the slots you don't keep, and lets you take one of the
-  // builds it finds, with an undo.
+  // target, and lets you take one of the builds it finds, with an undo. The
+  // exact bounded search proves the best armor, ring and enchantments for
+  // your weapon and ability among armors and rings you list; the wide search
+  // tries every item but can miss a build.
+  import { tick } from "svelte";
+  import Picker from "./Picker.svelte";
   import Sprite from "./Sprite.svelte";
   import { itemEffects, itemsFor, slots, statSummary, type Dataset, type DatasetClass, type Slot } from "./dataset";
   import type {
@@ -17,6 +21,7 @@
     DpsWeights,
   } from "./engine";
   import { isBurstWindow } from "./engine";
+  import { itemFilters, itemOptions } from "./itemOptions";
   import { itemIcon, type Sprites } from "./sprites";
 
   let {
@@ -46,6 +51,18 @@
 
   const slotNames: Record<Slot, string> = { weapon: "Weapon", ability: "Ability", armor: "Armor", ring: "Ring" };
   let open = $state(false);
+  let mode = $state<"exact" | "wide">("exact");
+  // The armors and rings the exact search chooses from, by name ("" for
+  // none): the build's own until you change the list.
+  let armors = $state<string[] | null>(null);
+  let rings = $state<string[] | null>(null);
+  const armorList = $derived(armors ?? [items.armor]);
+  const ringList = $derived(rings ?? [items.ring]);
+  // Which list the picker adds to.
+  let adding = $state<"armor" | "ring">("armor");
+  let picking = $state(false);
+  // How the search whose builds are shown was run.
+  let searchedMode = $state<"exact" | "wide">("exact");
   let lock = $state<Record<Slot, boolean>>({ weapon: false, ability: false, armor: false, ring: false });
   let pools = $state({ tiered: true, untiered: true, set: true });
   let enchantMode = $state<OptimizeOptions["enchantments"]>("best");
@@ -118,7 +135,27 @@
   const asResponse = (p: OptimizeProgress | null): OptimizeResponse | null =>
     p && { ok: true, baseline: p.baseline, evaluated: p.evaluated, builds: p.builds };
 
+  const hasSlot = (slot: Slot) => usableSlots.includes(slot);
+  const canExact = $derived(Boolean(items.weapon && items.ability));
+  const exactPairs = $derived(
+    (hasSlot("armor") ? armorList.length : 1) * (hasSlot("ring") ? ringList.length : 1),
+  );
+
   function options(): OptimizeOptions {
+    if (mode === "exact") {
+      return {
+        lock: [],
+        pools: ["tiered", "untiered", "set"],
+        enchantments: "best",
+        artifacts,
+        slots: perItem,
+        weights: weights(balance),
+        exact: {
+          armors: hasSlot("armor") ? [...armorList] : [""],
+          rings: hasSlot("ring") ? [...ringList] : [""],
+        },
+      };
+    }
     return {
       lock: usableSlots.filter((s) => lock[s]),
       pools: (["tiered", "untiered", "set"] as const).filter((p) => pools[p]),
@@ -138,7 +175,8 @@
     found = null;
     progress = null;
     stopped = false;
-    rankedBy = { balance, burst: goal === "burst" };
+    searchedMode = mode;
+    rankedBy = { balance, burst: mode === "wide" && goal === "burst" };
     searched = options();
     opened = null;
     startedAt = now = performance.now();
@@ -188,7 +226,7 @@
   let asked = 0;
   $effect(() => {
     const ask = { ...$state.snapshot(request), optimize: options() };
-    if (!open || !engine || searching || (goal === "burst" && !burstValid)) return;
+    if (!open || !engine || searching || mode === "exact" || (goal === "burst" && !burstValid)) return;
     const id = ++asked;
     const timer = setTimeout(async () => {
       const res = await engine.estimateOptimize(ask);
@@ -240,6 +278,34 @@
     ) as Record<Slot, string[]>;
   }
 
+  // Takes a wide search's build and proves its enchantments with the exact
+  // search, on its own armor and ring.
+  async function prove(b: OptimizedBuild) {
+    take(b);
+    mode = "exact";
+    armors = [b.armor];
+    rings = [b.ring];
+    await tick();
+    await search();
+  }
+
+  function startAdding(slot: "armor" | "ring") {
+    adding = slot;
+    picking = true;
+  }
+  function add(name: string) {
+    if (adding === "armor" && !armorList.includes(name)) armors = [...armorList, name];
+    if (adding === "ring" && !ringList.includes(name)) rings = [...ringList, name];
+  }
+  function remove(slot: "armor" | "ring", name: string) {
+    if (slot === "armor") armors = armorList.filter((n) => n !== name);
+    else rings = ringList.filter((n) => n !== name);
+  }
+  const candidateOptions = $derived([
+    { key: "", name: `No ${adding}` },
+    ...itemOptions(dataset, itemsFor(dataset, cls, adding), sprites),
+  ]);
+
   function undo() {
     if (!previous) return;
     items = previous.items;
@@ -274,27 +340,65 @@
   {/if}
   {#if open}
     <div class="panel">
-      <fieldset>
-        <legend>Keep</legend>
-        {#each usableSlots as slot (slot)}
-          <label><input type="checkbox" bind:checked={lock[slot]} /> {slotNames[slot]}</label>
+      <fieldset class="modes">
+        <legend class="visually-hidden">Search</legend>
+        <label class:chosen={mode === "exact"}>
+          <input type="radio" name="search-mode" value="exact" bind:group={mode} disabled={searching} />
+          Exact bounded search
+        </label>
+        <label class:chosen={mode === "wide"}>
+          <input type="radio" name="search-mode" value="wide" bind:group={mode} disabled={searching} />
+          Wide search
+        </label>
+      </fieldset>
+      {#if mode === "exact"}
+        <p class="hint">
+          Keeps your weapon and ability and finds the armor, ring and enchantments with the most DPS among the armors
+          and rings listed here. It checks every possibility, so the build it returns is the best there is for these
+          choices with this calculator's numbers. It ranks by sustained DPS.
+        </p>
+        {#if !canExact}
+          <p role="alert">The exact search needs a weapon and an ability: choose an ability first.</p>
+        {/if}
+        {#each ["armor", "ring"] as const as slot (slot)}
+          {#if hasSlot(slot)}
+            <fieldset class="candidates">
+              <legend>{slot === "armor" ? "Armors" : "Rings"} to choose from</legend>
+              {#each slot === "armor" ? armorList : ringList as name (name)}
+                <span class="chip">
+                  {name || `No ${slot}`}
+                  <button type="button" aria-label={`Remove ${name || `no ${slot}`}`} onclick={() => remove(slot, name)}>
+                    ×
+                  </button>
+                </span>
+              {/each}
+              <button type="button" disabled={searching} onclick={() => startAdding(slot)}>Add</button>
+            </fieldset>
+          {/if}
         {/each}
-      </fieldset>
-      <fieldset>
-        <legend>Try items that are</legend>
-        <label><input type="checkbox" bind:checked={pools.tiered} /> Tiered</label>
-        <label><input type="checkbox" bind:checked={pools.untiered} /> Untiered</label>
-        <label><input type="checkbox" bind:checked={pools.set} /> Set pieces</label>
-      </fieldset>
-      <label class="mode">
-        Enchantments
-        <select bind:value={enchantMode}>
-          <option value="best">Find the best</option>
-          <option value="keep">Keep mine where they fit</option>
-          <option value="none">None</option>
-        </select>
-      </label>
-      {#if enchantMode === "best"}
+      {:else}
+        <fieldset>
+          <legend>Keep</legend>
+          {#each usableSlots as slot (slot)}
+            <label><input type="checkbox" bind:checked={lock[slot]} /> {slotNames[slot]}</label>
+          {/each}
+        </fieldset>
+        <fieldset>
+          <legend>Try items that are</legend>
+          <label><input type="checkbox" bind:checked={pools.tiered} /> Tiered</label>
+          <label><input type="checkbox" bind:checked={pools.untiered} /> Untiered</label>
+          <label><input type="checkbox" bind:checked={pools.set} /> Set pieces</label>
+        </fieldset>
+        <label class="mode">
+          Enchantments
+          <select bind:value={enchantMode}>
+            <option value="best">Find the best</option>
+            <option value="keep">Keep mine where they fit</option>
+            <option value="none">None</option>
+          </select>
+        </label>
+      {/if}
+      {#if mode === "exact" || enchantMode === "best"}
         <label class="mode">
           Enchantments per item
           <select bind:value={perItem}>
@@ -304,40 +408,42 @@
           </select>
         </label>
       {/if}
-      {#if enchantMode !== "none"}
+      {#if mode === "exact" || enchantMode !== "none"}
         <label><input type="checkbox" bind:checked={artifacts} /> Also ones that need an artifact or engraving</label>
       {/if}
-      <label class="mode">
-        Build around
-        <select bind:value={around}>
-          <option value="every stat">Every stat</option>
-          <option value="nothing">Nothing, just improve yours (quicker)</option>
-          {#each stats as [id, name] (id)}
-            <option value={id}>{name}</option>
-          {/each}
-        </select>
-      </label>
-      <label class="mode">
-        Optimize for
-        <select bind:value={goal}>
-          <option value="sustained">Sustained DPS</option>
-          <option value="burst">Burst damage</option>
-        </select>
-      </label>
-      {#if goal === "burst"}
-        <div class="burst">
-          <label>A window of <input type="number" min="0" max="60" step="0.1" bind:value={burst.window} /> s</label>
-          <label>every <input type="number" min="1" max="600" step="1" bind:value={burst.every} /> s</label>
-        </div>
-        {#if !burstValid}
-          <p role="alert">The window has to be 0 to 60 seconds, and shorter than the time between windows.</p>
+      {#if mode === "wide"}
+        <label class="mode">
+          Build around
+          <select bind:value={around}>
+            <option value="every stat">Every stat</option>
+            <option value="nothing">Nothing, just improve yours (quicker)</option>
+            {#each stats as [id, name] (id)}
+              <option value={id}>{name}</option>
+            {/each}
+          </select>
+        </label>
+        <label class="mode">
+          Optimize for
+          <select bind:value={goal}>
+            <option value="sustained">Sustained DPS</option>
+            <option value="burst">Burst damage</option>
+          </select>
+        </label>
+        {#if goal === "burst"}
+          <div class="burst">
+            <label>A window of <input type="number" min="0" max="60" step="0.1" bind:value={burst.window} /> s</label>
+            <label>every <input type="number" min="1" max="600" step="1" bind:value={burst.every} /> s</label>
+          </div>
+          {#if !burstValid}
+            <p role="alert">The window has to be 0 to 60 seconds, and shorter than the time between windows.</p>
+          {/if}
+          <p class="hint">
+            For bosses you can only hurt now and then. A window of 0 s is a single moment: one volley and one cast. Only
+            what you fire or cast in the window counts, and of a poison only what lands in it. The ability is cast as
+            the window opens and again as soon as cooldown and MP allow, and over many windows each only gets the MP
+            that regenerates in between.
+          </p>
         {/if}
-        <p class="hint">
-          For bosses you can only hurt now and then. A window of 0 s is a single moment: one volley and one cast. Only
-          what you fire or cast in the window counts, and of a poison only what lands in it. The ability is cast as
-          the window opens and again as soon as cooldown and MP allow, and over many windows each only gets the MP
-          that regenerates in between.
-        </p>
       {/if}
       <label class="mode">
         Rank by
@@ -348,32 +454,59 @@
         <div class="progress">
           <progress max="1" value={progress?.done ?? 0}></progress>
           <span>
+            {#if progress?.pairs}Armor and ring pair {Math.min(progress.pairs[0] + 1, progress.pairs[1])} of
+              {progress.pairs[1]}.
+            {/if}
             {secondsLeft === null
               ? "Working out how long this takes…"
-              : `About ${whole.format(Math.max(1, secondsLeft))} s left`}
+              : `About ${duration(Math.max(1, secondsLeft))} left`}
           </span>
           <button type="button" onclick={stop}>Stop</button>
         </div>
       {:else}
-        <button type="button" class="primary" onclick={search} disabled={!engine || (goal === "burst" && !burstValid)}>
-          {goal === "burst" ? "Find the most burst damage" : "Find the most DPS"}
-        </button>
-        {#if estimateText}<p class="hint">{estimateText}</p>{/if}
+        {#if mode === "exact"}
+          <button type="button" class="primary" onclick={search} disabled={!engine || !canExact || exactPairs === 0}>
+            Find the proven best
+          </button>
+          <p class="hint">
+            {exactPairs} armor and ring {exactPairs === 1 ? "pair" : "pairs"} to search. Each takes from a fraction of a
+            second to a few seconds; one with an item that moves a stat both ways, like Faded Heart Scarab, can take many
+            minutes.
+          </p>
+        {:else}
+          <button type="button" class="primary" onclick={search} disabled={!engine || (goal === "burst" && !burstValid)}>
+            {goal === "burst" ? "Find the most burst damage" : "Find the most DPS"}
+          </button>
+          {#if estimateText}<p class="hint">{estimateText}</p>{/if}
+        {/if}
       {/if}
-      <p class="hint">
-        Against the target and distance below, using the calculated numbers. It first measures how each item's damage
-        grows with each stat and keeps the items that are best somewhere, like a spell that wins at low WIS next to one
-        that wins at high WIS. It tries the most promising sets of those with whole enchantment plans, like stacking ATT
-        and turning it into DEX, then improves the best one or two slots at a time. It can still miss a better build,
-        but never returns one worse than yours.
-      </p>
+      {#if mode === "wide"}
+        <p class="hint">
+          Against the target and distance below, using the calculated numbers. It first measures how each item's damage
+          grows with each stat and keeps the items that are best somewhere, like a spell that wins at low WIS next to
+          one that wins at high WIS. It tries the most promising sets of those with whole enchantment plans, like
+          stacking ATT and turning it into DEX, then improves the best one or two slots at a time.
+        </p>
+        <p class="caution">
+          This search approximates: to stay fast it skips most combinations, so it can miss a better build, though it
+          never returns one worse than yours. "Prove it" on a result checks that build's enchantments with the exact
+          search.
+        </p>
+      {/if}
       {#if shown && !shown.ok}
         <p role="alert">{shown.error}</p>
       {:else if shown}
         {#if searching}
           <p class="hint">Best so far:</p>
+        {:else if stopped && searchedMode === "exact"}
+          <p class="caution">Stopped early: this is the best build it had found, not proven.</p>
         {:else if stopped}
           <p class="hint">Stopped early. These are the best builds it had found.</p>
+        {:else if found?.ok && found.proven}
+          <p class="proven">
+            Proven best for this weapon and ability with the armors and rings listed: no other choice of them and
+            their enchantments does more.
+          </p>
         {/if}
         <ol class="builds">
           {#each shown.builds as b, i (i)}
@@ -403,6 +536,9 @@
               </div>
               <div class="actions">
                 <button type="button" onclick={() => take(b)}>Use</button>
+                {#if searchedMode === "wide" && b.ability && !searching}
+                  <button type="button" onclick={() => prove(b)}>Prove it</button>
+                {/if}
                 <button type="button" aria-expanded={opened === i} onclick={() => details(i, b)}>
                   Details
                 </button>
@@ -449,6 +585,15 @@
     </div>
   {/if}
 </div>
+
+<Picker
+  bind:open={picking}
+  {sprites}
+  title={adding === "armor" ? "Add an armor" : "Add a ring"}
+  options={candidateOptions}
+  filters={itemFilters}
+  onpick={add}
+/>
 
 <style>
   .optimizer {
@@ -557,6 +702,67 @@
     margin: 0;
     font-size: 0.8rem;
     color: var(--text-2);
+  }
+  .caution,
+  .proven {
+    margin: 0;
+    font-size: 0.85rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 6px;
+    border-left: 3px solid var(--accent);
+    background: var(--grid);
+  }
+  .modes {
+    display: inline-flex;
+    gap: 0;
+    width: fit-content;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .modes label {
+    padding: 0.35rem 0.8rem;
+    cursor: pointer;
+  }
+  .modes label + label {
+    border-left: 1px solid var(--border);
+  }
+  .modes label.chosen {
+    background: var(--accent);
+    color: white;
+  }
+  .modes input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .modes label:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .candidates {
+    align-items: center;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.85rem;
+    padding: 0.1rem 0.2rem 0.1rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+  }
+  .chip button {
+    padding: 0 0.4rem;
+    border: none;
+    background: none;
   }
   .builds {
     list-style: none;

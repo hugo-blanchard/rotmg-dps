@@ -285,6 +285,12 @@ export interface OptimizeOptions {
   /** Rank by damage in a window this many seconds long (0 for a moment) every so many seconds. */
   burst?: BurstWindow;
   results?: number;
+  /**
+   * The exact bounded search instead: the request's weapon and ability, one
+   * of these armors and rings by name ("" for none), and the best
+   * enchantments on all four, proven. Sustained DPS only.
+   */
+  exact?: { armors: string[]; rings: string[] };
 }
 
 /** A window this many seconds long (0 for a single moment) every so many seconds. */
@@ -340,6 +346,8 @@ export interface OptimizeProgress {
   baseline: number;
   evaluated: number;
   builds: OptimizedBuild[];
+  /** For the exact search: armor and ring pairs searched, and how many there are. */
+  pairs?: [number, number];
 }
 
 /** One way to fill a slot: an item ("" for none) and the enchantments on it. */
@@ -370,7 +378,14 @@ export type EstimateResponse =
   | { ok: false; error: string };
 
 export type OptimizeResponse =
-  | { ok: true; baseline: number; evaluated: number; builds: OptimizedBuild[] }
+  | {
+      ok: true;
+      baseline: number;
+      evaluated: number;
+      builds: OptimizedBuild[];
+      /** The exact search finished: no build with these choices beats the first. */
+      proven?: boolean;
+    }
   | { ok: false; error: string };
 
 export type SimState =
