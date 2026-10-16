@@ -15,6 +15,7 @@
 #include <utility>
 
 #include "parallel.hpp"
+#include "shared_map.hpp"
 #include "rotmg/dataset.hpp"
 #include "rotmg/enchant.hpp"
 #include "rotmg/evaluate.hpp"
@@ -205,29 +206,31 @@ class BuildSearch {
   // what the curves, plans and specials spread the enchantment budget over.
   std::vector<std::size_t> scaling_;
   std::atomic<long> probes_ = 0;
-  std::map<std::tuple<std::size_t, std::string, int, std::size_t, std::size_t>, const Enchantment*>
+  // The caches below are shared by the search's threads. A value is worked
+  // out outside the cache's lock, so two threads may work out the same one,
+  // which only costs time.
+  SharedMap<std::tuple<std::size_t, std::string, int, std::size_t, std::size_t>, const Enchantment*>
       stat_enchantments_;
-  std::map<std::tuple<std::size_t, std::string, std::size_t>, std::vector<const Enchantment*>> procs_;
+  SharedMap<std::tuple<std::size_t, std::string, std::size_t>, std::vector<const Enchantment*>> procs_;
+  // Filled before the search starts, and only read after.
   std::map<const Enchantment*, StatEffect> effects_;
-  std::map<std::pair<std::size_t, std::string>, Fitting> fitting_;
+  SharedMap<std::pair<std::size_t, std::string>, Fitting> fitting_;
   // How many items carry each label.
   std::map<std::string, int> carriers_;
-  std::unordered_map<std::string, std::optional<double>> scores_;
-  std::unordered_map<std::string, Rates> rates_;
-  std::map<std::string, std::pair<double, Build>> seen_;
+  SharedMap<std::string, std::optional<double>> scores_;
+  SharedMap<std::string, Rates> rates_;
+  SharedMap<std::string, std::pair<double, Build>> seen_;
   // Whether an enchantment that does more than add stats changes an
   // item's DPS, by slot, the items worn and enchantment. Keyed by all the
   // items: the answer depends on the rest of them, like an Alien boost on
   // the Alien gear worn, and keying by the item alone kept whichever build
   // a thread reached first.
-  std::map<std::tuple<std::size_t, std::string, const Enchantment*>, bool> tested_;
+  SharedMap<std::tuple<std::size_t, std::string, const Enchantment*>, bool> tested_;
   // Relevant's answers, by slot, the items worn and which stats matter.
-  std::map<std::pair<std::size_t, std::string>, std::vector<const Enchantment*>> relevant_;
+  SharedMap<std::pair<std::size_t, std::string>, std::vector<const Enchantment*>> relevant_;
   // Enabler's answers, by slot and the items worn.
-  std::map<std::pair<std::size_t, std::string>, const Enchantment*> enablers_;
-  // Guards the caches above, which the search's threads share. Each is
-  // looked up and filled under it, and worked out outside it; two threads
-  // may work out the same thing, which only costs time.
+  SharedMap<std::pair<std::size_t, std::string>, const Enchantment*> enablers_;
+  // Guards the progress fields below.
   std::mutex mu_;
   // Set once a progress report throws, like a caller cutting the search
   // short: every thread then stops at its next build, and the search
@@ -263,11 +266,8 @@ std::string BuildSearch::Key(const Build& b) {
 
 const BuildSearch::Fitting& BuildSearch::Fits(std::size_t slot, const std::string& item) {
   const auto key = std::pair{slot, item};
-  {
-    std::lock_guard lock(mu_);
-    if (auto it = fitting_.find(key); it != fitting_.end()) {
-      return it->second;
-    }
+  if (const Fitting* known = fitting_.Find(key)) {
+    return *known;
   }
   const Weapon* w = slot == 0 ? FindWeapon(d_, item) : nullptr;
   const Ability* a = slot == 1 ? FindAbility(d_, item) : nullptr;
@@ -286,8 +286,7 @@ const BuildSearch::Fitting& BuildSearch::Fits(std::size_t slot, const std::strin
       out.options.push_back(&e);
     }
   }
-  std::lock_guard lock(mu_);
-  return fitting_.try_emplace(key, std::move(out)).first->second;
+  return fitting_.Add(key, std::move(out));
 }
 
 // Keeps the enchantments that still fit the slot's item, in order, as many
@@ -336,11 +335,8 @@ std::optional<double> BuildSearch::Score(const Build& b, const Stats& extra) {
   if (!plain) {
     for (int x : extra) key += std::to_string(x) + ",";
   }
-  {
-    std::lock_guard lock(mu_);
-    if (auto it = scores_.find(key); it != scores_.end()) {
-      return it->second;
-    }
+  if (const std::optional<double>* known = scores_.Find(key)) {
+    return *known;
   }
   // Only the thread that started the search can call back into the caller,
   // so it checks whether a report is due on each build it scores.
@@ -348,8 +344,7 @@ std::optional<double> BuildSearch::Score(const Build& b, const Stats& extra) {
     Report();
   }
   const std::optional<double> dps = p_.score(b, extra);
-  std::lock_guard lock(mu_);
-  scores_.emplace(key, dps);
+  scores_.Add(key, dps);
   if (!plain || !dps) {
     return dps;
   }
@@ -368,12 +363,13 @@ std::optional<double> BuildSearch::Score(const Build& b, const Stats& extra) {
     for (const auto& list : x.enchants) n += list.size();
     return n;
   };
-  auto it = seen_.find(items_key);
-  if (it == seen_.end() || it->second.first < *dps ||
-      (it->second.first == *dps &&
-       std::pair{count(b), key} < std::pair{count(it->second.second), Key(it->second.second)})) {
-    seen_[items_key] = {*dps, b};
-  }
+  seen_.Update(items_key, [&](const std::pair<double, Build>* now) -> std::optional<std::pair<double, Build>> {
+    if (now == nullptr || now->first < *dps ||
+        (now->first == *dps && std::pair{count(b), key} < std::pair{count(now->second), Key(now->second)})) {
+      return std::pair{*dps, b};
+    }
+    return std::nullopt;
+  });
   return dps;
 }
 
@@ -390,11 +386,8 @@ std::vector<std::optional<double>> BuildSearch::ScoreAll(const std::vector<Build
 // probe that shows any.
 Rates BuildSearch::StatRates(const Build& b) {
   const std::string key = Key(b);
-  {
-    std::lock_guard lock(mu_);
-    if (auto it = rates_.find(key); it != rates_.end()) {
-      return it->second;
-    }
+  if (const Rates* known = rates_.Find(key)) {
+    return *known;
   }
   Rates out{};
   const double base = Score(b).value_or(0);
@@ -415,8 +408,7 @@ Rates BuildSearch::StatRates(const Build& b) {
       }
     }
   }
-  std::lock_guard lock(mu_);
-  return rates_.try_emplace(key, out).first->second;
+  return rates_.Add(key, out);
 }
 
 // The stats that would raise the build's DPS.
@@ -438,11 +430,8 @@ const Enchantment* BuildSearch::Enabler(const Build& b, std::size_t slot) {
   Build items = b;
   for (auto& list : items.enchants) list.clear();
   const auto key = std::pair{slot, Key(items)};
-  {
-    std::lock_guard lock(mu_);
-    if (auto it = enablers_.find(key); it != enablers_.end()) {
-      return it->second;
-    }
+  if (const Enchantment* const* known = enablers_.Find(key)) {
+    return *known;
   }
   const Enchantment* best = nullptr;
   if (!b.items[slot].empty() && Score(items).value_or(0) <= 0) {
@@ -465,8 +454,7 @@ const Enchantment* BuildSearch::Enabler(const Build& b, std::size_t slot) {
       }
     }
   }
-  std::lock_guard lock(mu_);
-  return enablers_.try_emplace(key, best).first->second;
+  return enablers_.Add(key, best);
 }
 
 namespace {
@@ -508,11 +496,8 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
   for (auto& list : items.enchants) list.clear();
   const std::string context = Key(items);
   const auto cache_key = std::pair{slot, context + std::to_string(bits)};
-  {
-    std::lock_guard lock(mu_);
-    if (auto it = relevant_.find(cache_key); it != relevant_.end()) {
-      return it->second;
-    }
+  if (const std::vector<const Enchantment*>* known = relevant_.Find(cache_key)) {
+    return *known;
   }
   Build reference = items;
   if (enabler != nullptr) {
@@ -530,12 +515,9 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
   {
     std::vector<const Enchantment*> untested;
     const Fitting& fits = Fits(slot, b.items[slot]);
-    {
-      std::lock_guard lock(mu_);
-      for (const Enchantment* e : fits.options) {
-        if (!effects_.at(e).by_stats && !tested_.contains(std::tuple{slot, context, e})) {
-          untested.push_back(e);
-        }
+    for (const Enchantment* e : fits.options) {
+      if (!effects_.at(e).by_stats && tested_.Find(std::tuple{slot, context, e}) == nullptr) {
+        untested.push_back(e);
       }
     }
     std::vector<Build> ones(untested.size(), items);
@@ -543,9 +525,8 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
       ones[i].enchants[slot] = WithEnabler(enabler, untested[i]);
     }
     const std::vector<std::optional<double>> scored = ScoreAll(ones);
-    std::lock_guard lock(mu_);
     for (std::size_t i = 0; i < untested.size(); ++i) {
-      tested_.try_emplace(std::tuple{slot, context, untested[i]}, changes_it(untested[i], scored[i]));
+      tested_.Add(std::tuple{slot, context, untested[i]}, changes_it(untested[i], scored[i]));
     }
   }
   std::vector<const Enchantment*> out;
@@ -563,18 +544,13 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
     }
     const auto key = std::tuple{slot, context, e};
     std::optional<bool> changes;
-    {
-      std::lock_guard lock(mu_);
-      if (auto it = tested_.find(key); it != tested_.end()) {
-        changes = it->second;
-      }
+    if (const bool* known = tested_.Find(key)) {
+      changes = *known;
     }
     if (!changes) {
       Build one = items;
       one.enchants[slot] = WithEnabler(enabler, e);
-      changes = changes_it(e, Score(one));
-      std::lock_guard lock(mu_);
-      tested_.try_emplace(key, *changes);
+      changes = tested_.Add(key, changes_it(e, Score(one)));
     }
     if (*changes) {
       out.push_back(e);
@@ -606,8 +582,7 @@ std::vector<const Enchantment*> BuildSearch::Relevant(const Build& b, std::size_
       kept.push_back(x);
     }
   }
-  std::lock_guard lock(mu_);
-  return relevant_.try_emplace(cache_key, std::move(kept)).first->second;
+  return relevant_.Add(cache_key, std::move(kept));
 }
 
 // The enchantments to combine on the slot's item, with b's slot left
@@ -1218,13 +1193,10 @@ std::vector<std::string> BuildSearch::Seeds(const Build& from) {
 OptimizerResult BuildSearch::Results() {
   OptimizerResult out;
   out.baseline = baseline_;
-  {
-    std::lock_guard lock(mu_);
-    // Distinct builds, since two threads can score the same one at once.
-    out.evaluated = static_cast<long>(scores_.size()) + probes_;
-    for (const auto& [key, entry] : seen_) {
-      out.builds.push_back(entry);
-    }
+  // Distinct builds, since two threads can score the same one at once.
+  out.evaluated = static_cast<long>(scores_.Size()) + probes_;
+  for (const auto& [key, entry] : seen_.Sorted()) {
+    out.builds.push_back(entry);
   }
   std::ranges::stable_sort(out.builds, [](const auto& a, const auto& b) { return a.first > b.first; });
   if (out.builds.size() > p_.results) {
@@ -1320,10 +1292,11 @@ std::optional<OptimizerResult> BuildSearch::Search() {
   // The best build of other items close behind gets a descent too: a set
   // filled around the wrong ability can be one change from the top.
   std::vector<Build> others;
+  const auto seen = seen_.Sorted();
   {
     std::lock_guard lock(mu_);
     double top = -1;
-    for (const auto& [key, entry] : seen_) {
+    for (const auto& [key, entry] : seen) {
       if (entry.first > top) {
         top = entry.first;
         best = entry.second;
@@ -1334,7 +1307,7 @@ std::optional<OptimizerResult> BuildSearch::Search() {
                                    [&](std::size_t s) { return b.items[s] != best.items[s]; });
     };
     double runner = top * 0.97;
-    for (const auto& [key, entry] : seen_) {
+    for (const auto& [key, entry] : seen) {
       if (entry.first > runner && differ(entry.second) >= 2) {
         runner = entry.first;
         others = {entry.second};
@@ -1394,11 +1367,8 @@ void BuildSearch::DescendFrom(const Build& from, const std::vector<Build>& other
     parts_done_[first + i] = 1;
   });
   std::vector<std::pair<double, Build>> top;
-  {
-    std::lock_guard lock(mu_);
-    for (const auto& [key, entry] : seen_) {
-      top.push_back(entry);
-    }
+  for (const auto& [key, entry] : seen_.Sorted()) {
+    top.push_back(entry);
   }
   std::ranges::stable_sort(top, [](const auto& a, const auto& b) { return a.first > b.first; });
   constexpr std::size_t kTraded = 6;
@@ -1756,11 +1726,8 @@ BuildSearch::Lists BuildSearch::CurveShortlists() {
 const Enchantment* BuildSearch::StatEnchantment(std::size_t slot, const std::string& item, Kind kind,
                                                 std::size_t stat, std::size_t from) {
   const auto key = std::tuple{slot, item, static_cast<int>(kind), stat, from};
-  {
-    std::lock_guard lock(mu_);
-    if (auto it = stat_enchantments_.find(key); it != stat_enchantments_.end()) {
-      return it->second;
-    }
+  if (const Enchantment* const* known = stat_enchantments_.Find(key)) {
+    return *known;
   }
   const Enchantment* best = nullptr;
   double most = 0;
@@ -1792,8 +1759,7 @@ const Enchantment* BuildSearch::StatEnchantment(std::size_t slot, const std::str
       most = amount;
     }
   }
-  std::lock_guard lock(mu_);
-  return stat_enchantments_.try_emplace(key, best).first->second;
+  return stat_enchantments_.Add(key, best);
 }
 
 // The on-shoot boost of a stat that gives the item the most of it, whose
@@ -1803,12 +1769,9 @@ const Enchantment* BuildSearch::ProcEnchantment(std::size_t slot, const std::str
   const auto key = std::tuple{slot, item, stat};
   std::vector<const Enchantment*> procs;
   bool known = false;
-  {
-    std::lock_guard lock(mu_);
-    if (auto it = procs_.find(key); it != procs_.end()) {
-      procs = it->second;
-      known = true;
-    }
+  if (const std::vector<const Enchantment*>* cached = procs_.Find(key)) {
+    procs = *cached;
+    known = true;
   }
   if (!known) {
     // By how much of the stat each keeps up while it lasts.
@@ -1824,8 +1787,7 @@ const Enchantment* BuildSearch::ProcEnchantment(std::size_t slot, const std::str
     }
     std::ranges::stable_sort(ranked, std::greater<>{}, &std::pair<double, const Enchantment*>::first);
     for (const auto& [value, e] : ranked) procs.push_back(e);
-    std::lock_guard lock(mu_);
-    procs_.try_emplace(key, procs);
+    procs_.Add(key, procs);
   }
   for (const Enchantment* e : procs) {
     if (GearWorn(e->mutators[0].attributes, worn)) return e;

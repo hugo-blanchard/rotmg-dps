@@ -7,11 +7,9 @@
 #include <exception>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <set>
 #include <stdexcept>
-#include <unordered_map>
 #include <utility>
 
 #include <nlohmann/json.hpp>
@@ -24,6 +22,7 @@
 #include "rotmg/optimize.hpp"
 #include "rotmg/sets.hpp"
 #include "request.hpp"
+#include "shared_map.hpp"
 
 // Request:
 //   {"weapon": "Doom Bow", "ability": "Magic Quiver",
@@ -907,18 +906,14 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
     // The build's items looked up, once per set of items: the search tries
     // many sets of enchantments on the same items. Null for items the engine
     // rejects.
-    std::mutex items_mu;
-    std::unordered_map<std::string, std::shared_ptr<const PreparedItems>> items_cache;
+    SharedMap<std::string, std::shared_ptr<const PreparedItems>> items_cache;
     const auto items_of = [&](const OptimizerBuild& b) -> std::shared_ptr<const PreparedItems> {
       std::string key;
       for (const std::string& item : b.items) {
         key += item + "\n";
       }
-      {
-        std::lock_guard lock(items_mu);
-        if (const auto it = items_cache.find(key); it != items_cache.end()) {
-          return it->second;
-        }
+      if (const std::shared_ptr<const PreparedItems>* known = items_cache.Find(key)) {
+        return *known;
       }
       RequestSpec spec = base_spec;
       const auto named = [](const std::string& name) {
@@ -937,8 +932,7 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
       } catch (const std::exception&) {
         // Items the engine rejects, like an armor it doesn't know.
       }
-      std::lock_guard lock(items_mu);
-      return items_cache.try_emplace(key, items).first->second;
+      return items_cache.Add(key, items);
     };
     // The build's items and enchantments looked up, or nothing for a build
     // the engine rejects.
