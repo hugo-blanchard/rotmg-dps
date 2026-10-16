@@ -87,13 +87,13 @@ TEST_CASE("loads armor, rings and the slots classes wear them in") {
   CHECK(d.classes[0].ring_slot_type == 9);
   REQUIRE(d.armors.size() == 2);
   REQUIRE(d.rings.size() == 3);
-  const rotmg::Gear* ring = rotmg::FindGear(d.rings, "Plain Ring");
+  const rotmg::Gear* ring = rotmg::FindRing(d, "Plain Ring");
   REQUIRE(ring != nullptr);
   CHECK(ring->type == 28690);
   CHECK(ring->stat_bonuses.size() == 1);
   CHECK(ring->labels == std::vector<std::string>{"EQUIPMENT", "RING", "UT"});
   CHECK(ring->unsupported == std::vector<std::string>{"OnPlayerHitActivate"});
-  CHECK(rotmg::FindGear(d.armors, "Plain Ring") == nullptr);
+  CHECK(rotmg::FindArmor(d, "Plain Ring") == nullptr);
 }
 
 TEST_CASE("loads how items take enchantments and which are reskins") {
@@ -103,9 +103,9 @@ TEST_CASE("loads how items take enchantments and which are reskins") {
   CHECK(sword->enchanting.pool == "Default Enchantment Pool");
   CHECK(rotmg::FindWeapon(d, "Burst Bow")->enchanting.slots == 0);
   CHECK(rotmg::FindAbility(d, "War Helm")->labels == std::vector<std::string>{"EQUIPMENT", "ABILITY"});
-  CHECK(rotmg::FindGear(d.rings, "Plain Amulet")->enchanting.pool.empty());
-  CHECK(rotmg::FindGear(d.rings, "Festive Ring")->reskin_of == "Plain Ring");
-  CHECK(rotmg::FindGear(d.rings, "Plain Ring")->reskin_of.empty());
+  CHECK(rotmg::FindRing(d, "Plain Amulet")->enchanting.pool.empty());
+  CHECK(rotmg::FindRing(d, "Festive Ring")->reskin_of == "Plain Ring");
+  CHECK(rotmg::FindRing(d, "Plain Ring")->reskin_of.empty());
   CHECK(rotmg::FindAbility(d, "Relic Helm")->unobtainable);
   CHECK_FALSE(rotmg::FindAbility(d, "War Helm")->unobtainable);
   REQUIRE(d.enchantment_pools.size() == 1);
@@ -119,4 +119,20 @@ TEST_CASE("a dataset without abilities still loads") {
   CHECK(d.abilities.empty());
   CHECK(d.classes[0].ability_slot_type == 0);
   CHECK(d.classes[0].wisdom.max == 0);
+}
+
+TEST_CASE("finds items and enchantments by name, also after the lists change") {
+  rotmg::Dataset d = LoadSmallDataset();
+  REQUIRE(rotmg::FindArmor(d, "Spark Coat") != nullptr);
+  CHECK(rotmg::FindArmor(d, "Spark Coat")->name == "Spark Coat");
+  CHECK(rotmg::FindRing(d, "Festive Ring")->name == "Festive Ring");
+  CHECK(rotmg::FindRing(d, "Spark Coat") == nullptr);
+  CHECK(rotmg::FindEnchantment(d, "Dexterity_Bonus_2")->id == "Dexterity_Bonus_2");
+  CHECK(rotmg::FindEnchantment(d, "No_Such_Enchantment") == nullptr);
+
+  rotmg::Weapon copy = *rotmg::FindWeapon(d, "Plain Sword");
+  copy.name = "Copied Sword";
+  d.weapons.push_back(copy);
+  CHECK(rotmg::FindWeapon(d, "Copied Sword") != nullptr);
+  CHECK(rotmg::FindWeapon(d, "Plain Sword")->name == "Plain Sword");
 }

@@ -91,10 +91,10 @@ Prepared Prepare(const RequestSpec& spec, const Dataset& dataset) {
   r.weights = spec.weights;
   // The armor and ring add their stats like the weapon and ability do.
   std::vector<int> worn = spec.wearing;
-  for (const auto& [key, list, into, name] : {std::tuple{"armor", &dataset.armors, &r.armor, &spec.armor},
-                                              {"ring", &dataset.rings, &r.ring, &spec.ring}}) {
+  for (const auto& [key, find, into, name] : {std::tuple{"armor", &FindArmor, &r.armor, &spec.armor},
+                                              {"ring", &FindRing, &r.ring, &spec.ring}}) {
     if (*name) {
-      *into = FindGear(*list, **name);
+      *into = find(dataset, **name);
       if (*into == nullptr) {
         throw std::runtime_error(std::string("no ") + key + " named \"" + **name + "\"");
       }
@@ -127,8 +127,8 @@ Prepared Prepare(const RequestSpec& spec, const Dataset& dataset) {
                         int slots) {
     std::vector<const Enchantment*> picked;
     for (const std::string& id : ids) {
-      const auto e = std::ranges::find(dataset.enchantments, id, &Enchantment::id);
-      if (e == dataset.enchantments.end()) {
+      const Enchantment* e = FindEnchantment(dataset, id);
+      if (e == nullptr) {
         throw std::runtime_error("no enchantment named \"" + id + "\"");
       }
       const Obtained how = obtained(*e);

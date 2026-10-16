@@ -22,8 +22,13 @@ const Weapon* FindWeapon(const Dataset& dataset, std::string_view name);
 /// Looks an ability up by display name. Null if there's no such ability.
 const Ability* FindAbility(const Dataset& dataset, std::string_view name);
 
-/// Looks an armor or a ring up by display name, among `gear`. Null if
-/// there's none.
-const Gear* FindGear(const std::vector<Gear>& gear, std::string_view name);
+/// Looks an armor up by display name. Null if there's none.
+const Gear* FindArmor(const Dataset& dataset, std::string_view name);
+
+/// Looks a ring up by display name. Null if there's none.
+const Gear* FindRing(const Dataset& dataset, std::string_view name);
+
+/// Looks an enchantment up by id. Null if there's none.
+const Enchantment* FindEnchantment(const Dataset& dataset, std::string_view id);
 
 }  // namespace rotmg

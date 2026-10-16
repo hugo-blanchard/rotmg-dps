@@ -1,11 +1,14 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -261,6 +264,14 @@ struct Gear {
   std::vector<std::string> unsupported;
 };
 
+/// Hashes strings and string views alike, so a map keyed by strings can be
+/// searched with a view.
+struct StringHash {
+  using is_transparent = void;
+  std::size_t operator()(std::string_view s) const { return std::hash<std::string_view>{}(s); }
+};
+using NameIndex = std::unordered_map<std::string, std::size_t, StringHash, std::equal_to<>>;
+
 struct Dataset {
   int schema_version = 0;
   std::string build;
@@ -274,6 +285,12 @@ struct Dataset {
   /// Enchantment ids by pool name. Empty in datasets from before pools,
   /// where every item takes up to 4 of any enchantment that fits it.
   std::map<std::string, std::set<std::string>, std::less<>> enchantment_pools;
+  /// Positions in the lists above, by item name and enchantment id, filled
+  /// by ParseDataset. Lookups search a list itself when its index doesn't
+  /// cover it, as in a dataset built or changed by hand.
+  struct Index {
+    NameIndex weapons, abilities, armors, rings, enchantments;
+  } index;
 };
 
 }  // namespace rotmg

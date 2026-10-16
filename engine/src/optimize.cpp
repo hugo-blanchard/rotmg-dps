@@ -271,7 +271,7 @@ const BuildSearch::Fitting& BuildSearch::Fits(std::size_t slot, const std::strin
   }
   const Weapon* w = slot == 0 ? FindWeapon(d_, item) : nullptr;
   const Ability* a = slot == 1 ? FindAbility(d_, item) : nullptr;
-  const Gear* g = slot == 2 ? FindGear(d_.armors, item) : slot == 3 ? FindGear(d_.rings, item) : nullptr;
+  const Gear* g = slot == 2 ? FindArmor(d_, item) : slot == 3 ? FindRing(d_, item) : nullptr;
   Fitting out;
   out.slots = w   ? EnchantmentSlots(w->enchanting, d_)
               : a ? EnchantmentSlots(a->enchanting, d_)
@@ -753,8 +753,8 @@ double BuildSearch::Exchange(Build& b) {
     const int room = std::min(p_.per_item, Fits(slot, from.items[slot]).slots);
     const auto fits_with = [&](const Enchantment* e, const std::vector<std::string>& others) {
       return std::ranges::none_of(others, [&](const std::string& id) {
-        const auto o = std::ranges::find(d_.enchantments, id, &Enchantment::id);
-        return id == e->id || (o != d_.enchantments.end() && Conflict(*o, *e));
+        const Enchantment* o = FindEnchantment(d_, id);
+        return id == e->id || (o != nullptr && Conflict(*o, *e));
       });
     };
     for (std::size_t k = 0; k <= now.size(); ++k) {
@@ -1851,8 +1851,7 @@ std::vector<Build> BuildSearch::Plans(const Build& items) {
   std::array<std::vector<const Enchantment*>, kSlotCount> kept;
   for (std::size_t s = 0; s < kSlotCount; ++s) {
     for (const std::string& id : items.enchants[s]) {
-      const auto it = std::ranges::find(d_.enchantments, id, &Enchantment::id);
-      if (it != d_.enchantments.end()) kept[s].push_back(&*it);
+      if (const Enchantment* e = FindEnchantment(d_, id)) kept[s].push_back(e);
     }
   }
   std::vector<int> worn;
@@ -1863,7 +1862,7 @@ std::vector<Build> BuildSearch::Plans(const Build& items) {
       if (const Weapon* w = FindWeapon(d_, name)) worn.push_back(w->type);
     } else if (s == 1) {
       if (const Ability* a = FindAbility(d_, name)) worn.push_back(a->type);
-    } else if (const Gear* g = FindGear(s == 2 ? d_.armors : d_.rings, name)) {
+    } else if (const Gear* g = s == 2 ? FindArmor(d_, name) : FindRing(d_, name)) {
       worn.push_back(g->type);
     }
   }

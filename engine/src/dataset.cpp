@@ -375,25 +375,57 @@ Dataset ParseDataset(std::string_view text) {
         d.enchantment_pools.emplace(p.at("name").get<std::string>(), p.at("enchantments").get<std::set<std::string>>());
       }
     }
+    const auto index = [](const auto& list, NameIndex& into, auto key) {
+      for (std::size_t i = 0; i < list.size(); ++i) {
+        into.try_emplace(list[i].*key, i);
+      }
+    };
+    index(d.weapons, d.index.weapons, &Weapon::name);
+    index(d.abilities, d.index.abilities, &Ability::name);
+    index(d.armors, d.index.armors, &Gear::name);
+    index(d.rings, d.index.rings, &Gear::name);
+    index(d.enchantments, d.index.enchantments, &Enchantment::id);
     return d;
   } catch (const json::exception& e) {
     throw DatasetError(std::string("bad dataset: ") + e.what());
   }
 }
 
+namespace {
+
+// The first entry of `list` whose `key` is `name`, through the index when
+// it covers the list. Names are unique in a dataset the pipeline made, so
+// the index then has an entry for each.
+template <typename T>
+const T* Find(const std::vector<T>& list, const NameIndex& index, std::string_view name, std::string T::*key) {
+  if (index.size() == list.size()) {
+    const auto it = index.find(name);
+    return it == index.end() ? nullptr : &list[it->second];
+  }
+  const auto it = std::ranges::find(list, name, key);
+  return it == list.end() ? nullptr : &*it;
+}
+
+}  // namespace
+
 const Weapon* FindWeapon(const Dataset& dataset, std::string_view name) {
-  auto it = std::ranges::find(dataset.weapons, name, &Weapon::name);
-  return it == dataset.weapons.end() ? nullptr : &*it;
+  return Find(dataset.weapons, dataset.index.weapons, name, &Weapon::name);
 }
 
 const Ability* FindAbility(const Dataset& dataset, std::string_view name) {
-  auto it = std::ranges::find(dataset.abilities, name, &Ability::name);
-  return it == dataset.abilities.end() ? nullptr : &*it;
+  return Find(dataset.abilities, dataset.index.abilities, name, &Ability::name);
 }
 
-const Gear* FindGear(const std::vector<Gear>& gear, std::string_view name) {
-  auto it = std::ranges::find(gear, name, &Gear::name);
-  return it == gear.end() ? nullptr : &*it;
+const Gear* FindArmor(const Dataset& dataset, std::string_view name) {
+  return Find(dataset.armors, dataset.index.armors, name, &Gear::name);
+}
+
+const Gear* FindRing(const Dataset& dataset, std::string_view name) {
+  return Find(dataset.rings, dataset.index.rings, name, &Gear::name);
+}
+
+const Enchantment* FindEnchantment(const Dataset& dataset, std::string_view id) {
+  return Find(dataset.enchantments, dataset.index.enchantments, id, &Enchantment::id);
 }
 
 std::optional<double> Activate::Number(std::string_view key) const {
