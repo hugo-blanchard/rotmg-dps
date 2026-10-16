@@ -9,6 +9,9 @@
 
 namespace rotmg {
 
+// Effect parameters by key, like a.Number(kCooldown).
+using enum ParamKey;
+
 using nlohmann::json;
 
 RequestSpec ReadSpec(const json& req) {
@@ -130,7 +133,7 @@ PreparedItems PrepareItems(const RequestSpec& spec, const Dataset& dataset) {
       }
       if (a.type == "AbilityUseDiscount") {
         // RealmEye, The Twilight Gemstone: its cut stacks with other gear's.
-        discount *= a.Number("multiplier").value_or(1);
+        discount *= a.Number(kMultiplier).value_or(1);
       } else if (const std::string tag = "ActivateOnEquip " + a.type;
                  std::ranges::find(r.gear_unsupported, tag) == r.gear_unsupported.end()) {
         r.gear_unsupported.push_back(tag);
@@ -178,7 +181,7 @@ PreparedItems PrepareItems(const RequestSpec& spec, const Dataset& dataset) {
     for (Activate a : on_shoot) {
       // An ability's shots without a `type` are its own projectile, which
       // the weapon knows by the ability's type.
-      if (own != nullptr && a.Text("type").empty() && !own->projectiles.empty()) {
+      if (own != nullptr && a.Text(kType).empty() && !own->projectiles.empty()) {
         a.params["type"] = std::to_string(own->type);
         items.joined_projectiles.emplace_back(own->type, own->projectiles[0]);
       }

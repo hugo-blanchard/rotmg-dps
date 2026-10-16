@@ -45,6 +45,9 @@
 // stat of a group of finals bounds every final in the group.
 
 namespace rotmg::search {
+
+// Effect parameters by key, like a.Number(kCooldown).
+using enum ParamKey;
 namespace {
 
 using Tenths = std::array<std::int32_t, kStats>;
@@ -124,7 +127,7 @@ bool StrongerBoost(const Activate& a, const Activate& x) {
 }
 
 bool NoStackChanceBoost(const Activate& a) {
-  return IsChanceBoost(a) && a.Text("channel").starts_with("noStack");
+  return IsChanceBoost(a) && a.Text(kChannel).starts_with("noStack");
 }
 
 // Whether mutator `a` does at least what `x` does, in a way that can't
@@ -171,15 +174,15 @@ bool AtLeast(const Mutator& a, const Mutator& x, const Mask& down, std::span<con
     // (CountsAsChanceBoost). Swapping `x` for `a` can make `a` count instead
     // of a rival ranked between them, so `a` must beat each of those too.
     const auto rank = [](const Activate& b) {
-      return std::tuple{b.Number("amount").value_or(0), b.Number("duration").value_or(0), b.Number("proc").value_or(0)};
+      return std::tuple{b.Number(kAmount).value_or(0), b.Number(kDuration).value_or(0), b.Number(kProc).value_or(0)};
     };
     return std::ranges::all_of(rivals, [&](const Activate& y) {
-      return y.Text("stat") != x.attributes.Text("stat") || rank(y) < rank(x.attributes) ||
+      return y.Text(kStat) != x.attributes.Text(kStat) || rank(y) < rank(x.attributes) ||
              rank(a.attributes) < rank(y) || StrongerBoost(a.attributes, y);
     });
   }
   if (a.tag == "ActivateOnEquip" && a.text == "IncrementStat") {
-    const int stat = StatIndex(a.attributes.Text("stat"));
+    const int stat = StatIndex(a.attributes.Text(kStat));
     const bool lowers = stat >= 0 && down[static_cast<std::size_t>(stat)];
     const double more = number(a, "amount", 0) - number(x, "amount", 0);
     return (lowers ? more == 0 : more >= 0) && same_except({"amount"});
@@ -442,8 +445,8 @@ void Search::FindReadStats() {
   if (ability != nullptr) mark(read_, "WIS");
   const auto note = [&](const Activate& a, bool on_shoot) {
     if (on_shoot && !weapon_counts_) return;
-    mark(read_, a.Text("scalingStat"));
-    if (on_shoot) mark(boost_read_, a.Text("scalingStat"));
+    mark(read_, a.Text(kScalingStat));
+    if (on_shoot) mark(boost_read_, a.Text(kScalingStat));
   };
   for (const Activate& a : weapon.on_shoot) note(a, true);
   for (const Activate& a : weapon.on_ability) note(a, false);
@@ -521,8 +524,8 @@ void Search::CompileOptions() {
   // score, beyond stats.
   const auto special = [&](std::size_t slot, const Mutator& m) {
     if (m.tag == "AddOnPlayerShootActivate") {
-      const int stat = StatIndex(m.attributes.Text("stat"));
-      const double proc = m.attributes.Number("proc").value_or(1);
+      const int stat = StatIndex(m.attributes.Text(kStat));
+      const double proc = m.attributes.Number(kProc).value_or(1);
       if (m.text == "StatBoostSelf") {
         if (stat < 0 || !GearWorn(m.attributes, worn_)) return false;
         const auto st = static_cast<std::size_t>(stat);

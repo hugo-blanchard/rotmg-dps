@@ -9,6 +9,9 @@
 #include "rotmg/schema.hpp"
 
 namespace rotmg {
+
+// Effect parameters by key, like a.Number(kCooldown).
+using enum ParamKey;
 namespace {
 
 using nlohmann::json;
@@ -174,7 +177,7 @@ Enchantment ReadEnchantment(const json& j) {
       }
       // Flat stats are summed in tenths, exactly.
       if (out.tag == "ActivateOnEquip" && out.text == "IncrementStat") {
-        const double amount = out.attributes.Number("amount").value_or(0);
+        const double amount = out.attributes.Number(kAmount).value_or(0);
         if (std::abs(amount * 10 - std::round(amount * 10)) > 1e-6) {
           throw DatasetError("stat amount " + std::to_string(amount) + " in enchantment \"" + e.id +
                              "\" isn't a whole number of tenths");
@@ -428,36 +431,41 @@ const Enchantment* FindEnchantment(const Dataset& dataset, std::string_view id) 
   return Find(dataset.enchantments, dataset.index.enchantments, id, &Enchantment::id);
 }
 
-std::optional<double> Activate::Number(std::string_view key) const {
-  auto it = params.find(key);
-  if (it == params.end()) {
-    return std::nullopt;
-  }
-  if (const double* v = std::get_if<double>(&it->second)) {
-    return *v;
-  }
-  return std::nullopt;
+ParamKey ParamKeyOf(std::string_view name) {
+  const auto it = std::ranges::lower_bound(kParamNames, name);
+  return it != kParamNames.end() && *it == name ? static_cast<ParamKey>(it - kParamNames.begin()) : kOther;
 }
 
-std::string_view Activate::Text(std::string_view key) const {
-  auto it = params.find(key);
-  if (it == params.end()) {
-    return {};
-  }
-  if (const std::string* v = std::get_if<std::string>(&it->second)) {
-    return *v;
-  }
-  return {};
+namespace {
+
+const Activate::Value* Lookup(const Params& params, std::string_view key) {
+  const auto it = params.find(key);
+  return it == params.end() ? nullptr : &it->second;
 }
 
-bool Activate::Flag(std::string_view key) const {
-  auto it = params.find(key);
-  if (it == params.end()) {
-    return false;
-  }
-  const bool* v = std::get_if<bool>(&it->second);
-  return v != nullptr && *v;
+std::optional<double> NumberOf(const Activate::Value* v) {
+  const double* d = v == nullptr ? nullptr : std::get_if<double>(v);
+  return d == nullptr ? std::nullopt : std::optional<double>(*d);
 }
+
+std::string_view TextOf(const Activate::Value* v) {
+  const std::string* s = v == nullptr ? nullptr : std::get_if<std::string>(v);
+  return s == nullptr ? std::string_view() : std::string_view(*s);
+}
+
+bool FlagOf(const Activate::Value* v) {
+  const bool* b = v == nullptr ? nullptr : std::get_if<bool>(v);
+  return b != nullptr && *b;
+}
+
+}  // namespace
+
+std::optional<double> Activate::Number(ParamKey key) const { return NumberOf(params.Find(key)); }
+std::optional<double> Activate::Number(std::string_view key) const { return NumberOf(Lookup(params, key)); }
+std::string_view Activate::Text(ParamKey key) const { return TextOf(params.Find(key)); }
+std::string_view Activate::Text(std::string_view key) const { return TextOf(Lookup(params, key)); }
+bool Activate::Flag(ParamKey key) const { return FlagOf(params.Find(key)); }
+bool Activate::Flag(std::string_view key) const { return FlagOf(Lookup(params, key)); }
 
 Weapon Ability::AsWeapon() const {
   Weapon w;

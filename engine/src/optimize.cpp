@@ -21,6 +21,9 @@
 #include "rotmg/evaluate.hpp"
 
 namespace rotmg {
+
+// Effect parameters by key, like a.Number(kCooldown).
+using enum ParamKey;
 namespace {
 
 constexpr std::size_t kSlotCount = 4;
@@ -67,8 +70,8 @@ StatEffect EffectOf(const Enchantment& e) {
   StatEffect out;
   out.by_stats = !e.mutators.empty();
   for (const Mutator& m : e.mutators) {
-    const int stat = StatIndex(m.attributes.Text("stat"));
-    const double amount = m.attributes.Number("amount").value_or(0);
+    const int stat = StatIndex(m.attributes.Text(kStat));
+    const double amount = m.attributes.Number(kAmount).value_or(0);
     const bool equip = m.tag == "ActivateOnEquip";
     if (equip && m.text == "IncrementStat" && stat >= 0) {
       out.flat[static_cast<std::size_t>(stat)] += amount;
@@ -124,10 +127,10 @@ class BuildSearch {
       }
       const bool is_dual = std::ranges::find(e.labels, "DUALSTAT") != e.labels.end();
       for (const Mutator& m : e.mutators) {
-        const int stat = StatIndex(m.attributes.Text("stat"));
+        const int stat = StatIndex(m.attributes.Text(kStat));
         if (m.tag == "ActivateOnEquip" && m.text == "IncrementStat" && stat >= 0) {
           double& most = is_dual ? dual[static_cast<std::size_t>(stat)] : single[static_cast<std::size_t>(stat)];
-          most = std::max(most, m.attributes.Number("amount").value_or(0));
+          most = std::max(most, m.attributes.Number(kAmount).value_or(0));
         }
       }
     }
@@ -1743,12 +1746,12 @@ const Enchantment* BuildSearch::StatEnchantment(std::size_t slot, const std::str
     for (const Mutator& m : e->mutators) {
       const bool equip = m.tag == "ActivateOnEquip";
       if (equip && kind == Kind::kShare && m.text == "BonusStatRelative" &&
-          m.attributes.Text("stat") == kOptimizerStats[stat] &&
-          m.attributes.Text("statRelativeTo") == kOptimizerStats[from]) {
-        amount += m.attributes.Number("amount").value_or(0);
+          m.attributes.Text(kStat) == kOptimizerStats[stat] &&
+          m.attributes.Text(kStatRelativeTo) == kOptimizerStats[from]) {
+        amount += m.attributes.Number(kAmount).value_or(0);
       } else if (equip && kind != Kind::kShare && m.text == "IncrementStat") {
-        if (m.attributes.Text("stat") == kOptimizerStats[stat]) {
-          amount += m.attributes.Number("amount").value_or(0);
+        if (m.attributes.Text(kStat) == kOptimizerStats[stat]) {
+          amount += m.attributes.Number(kAmount).value_or(0);
         }
       } else {
         only_this = false;
@@ -1780,8 +1783,8 @@ const Enchantment* BuildSearch::ProcEnchantment(std::size_t slot, const std::str
       if (e->mutators.size() != 1 || !e->containers.empty()) continue;
       const Mutator& m = e->mutators[0];
       if (m.tag == "AddOnPlayerShootActivate" && m.text == "StatBoostSelf" &&
-          m.attributes.Text("stat") == kOptimizerStats[stat]) {
-        ranked.emplace_back(m.attributes.Number("amount").value_or(0) * m.attributes.Number("duration").value_or(0),
+          m.attributes.Text(kStat) == kOptimizerStats[stat]) {
+        ranked.emplace_back(m.attributes.Number(kAmount).value_or(0) * m.attributes.Number(kDuration).value_or(0),
                             e);
       }
     }
@@ -1869,7 +1872,7 @@ std::vector<Build> BuildSearch::Plans(const Build& items) {
             add(ProcEnchantment(s, b.items[s], *it, worn));
             if (chosen.size() > before) {
               // Boosts of the same stat don't add up when the data says so.
-              if (chosen.back()->mutators[0].attributes.Text("channel") == "noStack") {
+              if (chosen.back()->mutators[0].attributes.Text(kChannel) == "noStack") {
                 boosts.erase(it);
               }
               break;

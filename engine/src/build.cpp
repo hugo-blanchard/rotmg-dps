@@ -9,6 +9,9 @@
 #include <vector>
 
 namespace rotmg {
+
+// Effect parameters by key, like a.Number(kCooldown).
+using enum ParamKey;
 namespace {
 
 // Puts a set of buffs and debuffs up, on top of whatever the player chose.
@@ -48,7 +51,7 @@ std::vector<std::pair<double, Character>> BoostMixes(const Weapon& weapon, const
                                                      const std::vector<ChanceBoost>& all_boosts) {
   std::vector<std::string> read = {"ATT", "DEX"};
   for (const Activate& a : weapon.on_shoot) {
-    if (const std::string_view stat = a.Text("scalingStat"); !stat.empty() && std::ranges::find(read, stat) == read.end()) {
+    if (const std::string_view stat = a.Text(kScalingStat); !stat.empty() && std::ranges::find(read, stat) == read.end()) {
       read.emplace_back(stat);
     }
   }

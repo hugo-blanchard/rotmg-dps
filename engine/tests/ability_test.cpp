@@ -46,17 +46,17 @@ TEST_CASE("Character Stats: MP regen is 6.5/s at 50 WIS and 9.5/s at 75") {
 
 TEST_CASE("Character Stats: Burning Retribution gains 2.25 damage per WIS over 42") {
   const auto spell = Effect({{"scalingStat", std::string("WIS")}, {"statModScalingMin", 42.0}, {"statModDamage", 2.25}});
-  CHECK(rotmg::StatModBonus(spell, "statModDamage", {.wisdom = 60}) == Approx(40.5));
-  CHECK(rotmg::StatModBonus(spell, "statModDamage", {.wisdom = 30}) == 0);
+  CHECK(rotmg::StatModBonus(spell, rotmg::ParamKey::kStatModDamage, {.wisdom = 60}) == Approx(40.5));
+  CHECK(rotmg::StatModBonus(spell, rotmg::ParamKey::kStatModDamage, {.wisdom = 30}) == 0);
 }
 
 TEST_CASE("Character Stats: one more shot per 15 WIS over 42, in whole steps") {
   const auto spell =
       Effect({{"scalingStat", std::string("WIS")}, {"statModScalingMin", 42.0}, {"statModNumShots", 1.0 / 15}});
-  CHECK(rotmg::StatModCount(spell, "statModNumShots", {.wisdom = 56}) == 0);
-  CHECK(rotmg::StatModCount(spell, "statModNumShots", {.wisdom = 57}) == 1);
-  CHECK(rotmg::StatModCount(spell, "statModNumShots", {.wisdom = 71}) == 1);
-  CHECK(rotmg::StatModCount(spell, "statModNumShots", {.wisdom = 72}) == 2);
+  CHECK(rotmg::StatModCount(spell, rotmg::ParamKey::kStatModNumShots, {.wisdom = 56}) == 0);
+  CHECK(rotmg::StatModCount(spell, rotmg::ParamKey::kStatModNumShots, {.wisdom = 57}) == 1);
+  CHECK(rotmg::StatModCount(spell, rotmg::ParamKey::kStatModNumShots, {.wisdom = 71}) == 1);
+  CHECK(rotmg::StatModCount(spell, rotmg::ParamKey::kStatModNumShots, {.wisdom = 72}) == 2);
 }
 
 TEST_CASE("Helms: Helm of the Great General's Berserk lasts 4s, 6s at 50 WIS") {

@@ -136,3 +136,27 @@ TEST_CASE("finds items and enchantments by name, also after the lists change") {
   CHECK(rotmg::FindWeapon(d, "Copied Sword") != nullptr);
   CHECK(rotmg::FindWeapon(d, "Plain Sword")->name == "Plain Sword");
 }
+
+TEST_CASE("an effect's parameters are found by name or by key, in name order") {
+  rotmg::Activate a;
+  a.params.emplace("proc", 0.5);
+  a.params.emplace("cooldown", 2.0);
+  a.params.emplace("cooldown", 9.0);
+  a.params["stat"] = std::string("DEX");
+  a.params.emplace("someNewParameter", true);
+  CHECK(a.Number(rotmg::ParamKey::kCooldown) == 2.0);
+  CHECK(a.Number("cooldown") == 2.0);
+  CHECK(a.Text(rotmg::ParamKey::kStat) == "DEX");
+  CHECK(a.Flag("someNewParameter"));
+  CHECK_FALSE(a.Number(rotmg::ParamKey::kDuration).has_value());
+  CHECK(rotmg::ParamKeyOf("mustWearOR") == rotmg::ParamKey::kMustWearOR);
+  CHECK(rotmg::ParamKeyOf("someNewParameter") == rotmg::ParamKey::kOther);
+  std::vector<std::string> names;
+  for (const auto& [name, value] : a.params) names.push_back(name);
+  CHECK(names == std::vector<std::string>{"cooldown", "proc", "someNewParameter", "stat"});
+
+  a.params = {{"stat", std::string("ATT")}, {"amount", 5.0}};
+  CHECK(a.params.size() == 2);
+  CHECK(a.Number(rotmg::ParamKey::kAmount) == 5.0);
+  CHECK_FALSE(a.Number(rotmg::ParamKey::kProc).has_value());
+}

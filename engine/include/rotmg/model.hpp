@@ -1,14 +1,18 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
+#include <initializer_list>
 #include <map>
 #include <optional>
 #include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -88,19 +92,127 @@ struct Subattack {
   std::optional<double> burst_min_delay;
 };
 
+/// The effect parameters the engine reads, by name in the order of
+/// kParamNames, so finding one compares a number rather than text.
+enum class ParamKey : std::uint8_t {
+  kActivationCount, kAmount, kAoeActivationCount, kAoeArmorPierce, kAoeDamage, kAoeMaxTargets, kAoeRange, kAoeTime,
+  kArcDegrees, kArcGap, kArmTime, kArmorPierce, kBombCondEffect, kBombCondEffectDuration, kBombCount, kBombDamage,
+  kBombDelay, kBombRadius, kBombTriggerCount, kBombTriggerPeriod, kChannel, kCondDuration, kCondEffect, kCooldown,
+  kDamageBoost, kDecrDamage, kDuration, kEffect, kGapAngle, kGapTiles, kHpMinThresholdRelative, kHpRequiredRelative,
+  kIdMeter, kImpactDamage, kMaxDamage, kMaxDistance, kMaxTargets, kMeterCost, kMinDamage, kMinDistance,
+  kMinimumMeter, kMultiplier, kMustNotWear, kMustNotWearOR, kMustWear, kMustWearOR, kNumShots, kOffsetAngle, kProc,
+  kRadius, kRange, kRequiredConditions, kScalingStat, kSensitivity, kStat, kStatModActivationCount,
+  kStatModBombCondDuration, kStatModBombCount, kStatModBombDamage, kStatModBombRadius, kStatModDamage,
+  kStatModDamageBoost, kStatModDuration, kStatModImpactDamage, kStatModNumShots, kStatModPerTarget, kStatModRadius,
+  kStatModScalingMin, kStatModTrapCondDuration, kStatModTrapDamage, kStatModTrapRadius, kStatRelativeTo,
+  kSubAttackIndex, kSubAttackObject, kTargetMouse, kThrowTime, kTime, kTotalDamage, kType, kWisDamageBase, kWisMin,
+  kWisPerDuration, kWisPerTarget,
+  kOther,
+};
+
+inline constexpr std::array<std::string_view, static_cast<std::size_t>(ParamKey::kOther)> kParamNames = {
+    "activationCount", "amount", "aoeActivationCount", "aoeArmorPierce", "aoeDamage", "aoeMaxTargets", "aoeRange",
+    "aoeTime", "arcDegrees", "arcGap", "armTime", "armorPierce", "bombCondEffect", "bombCondEffectDuration",
+    "bombCount", "bombDamage", "bombDelay", "bombRadius", "bombTriggerCount", "bombTriggerPeriod", "channel",
+    "condDuration", "condEffect", "cooldown", "damageBoost", "decrDamage", "duration", "effect", "gapAngle",
+    "gapTiles", "hpMinThresholdRelative", "hpRequiredRelative", "idMeter", "impactDamage", "maxDamage",
+    "maxDistance", "maxTargets", "meterCost", "minDamage", "minDistance", "minimumMeter", "multiplier",
+    "mustNotWear", "mustNotWearOR", "mustWear", "mustWearOR", "numShots", "offsetAngle", "proc", "radius", "range",
+    "requiredConditions", "scalingStat", "sensitivity", "stat", "statModActivationCount", "statModBombCondDuration",
+    "statModBombCount", "statModBombDamage", "statModBombRadius", "statModDamage", "statModDamageBoost",
+    "statModDuration", "statModImpactDamage", "statModNumShots", "statModPerTarget", "statModRadius",
+    "statModScalingMin", "statModTrapCondDuration", "statModTrapDamage", "statModTrapRadius", "statRelativeTo",
+    "subAttackIndex", "subAttackObject", "targetMouse", "throwTime", "time", "totalDamage", "type", "wisDamageBase",
+    "wisMin", "wisPerDuration", "wisPerTarget"};
+
+/// The key for a parameter name, or kOther for one the engine doesn't read.
+ParamKey ParamKeyOf(std::string_view name);
+
+/// An effect's parameters, by name and in name order like a map, each with
+/// its ParamKey.
+class Params {
+ public:
+  using Value = std::variant<double, bool, std::string>;
+  using Entry = std::pair<std::string, Value>;
+  using const_iterator = std::vector<Entry>::const_iterator;
+
+  Params() = default;
+  Params(std::initializer_list<Entry> entries) { *this = entries; }
+  Params& operator=(std::initializer_list<Entry> entries) {
+    entries_.clear();
+    keys_.clear();
+    for (const Entry& e : entries) {
+      insert_or_assign(e.first, e.second);
+    }
+    return *this;
+  }
+
+  const_iterator begin() const { return entries_.begin(); }
+  const_iterator end() const { return entries_.end(); }
+  std::size_t size() const { return entries_.size(); }
+  bool empty() const { return entries_.empty(); }
+  const_iterator find(std::string_view name) const {
+    const auto it = Position(name);
+    return it != entries_.end() && it->first == name ? it : entries_.end();
+  }
+
+  /// Adds the parameter unless the effect has it already.
+  template <typename V>
+  void emplace(std::string_view name, V&& value) {
+    if (find(name) == end()) {
+      Insert(name, Value(std::forward<V>(value)));
+    }
+  }
+  void insert_or_assign(std::string_view name, Value value) { (*this)[name] = std::move(value); }
+  /// The parameter, added as 0 when the effect hasn't got it.
+  Value& operator[](std::string_view name) {
+    const auto it = Position(name);
+    if (it != entries_.end() && it->first == name) {
+      return entries_[static_cast<std::size_t>(it - entries_.begin())].second;
+    }
+    return Insert(name, Value(0.0));
+  }
+
+  /// The parameter with this key, or null.
+  const Value* Find(ParamKey key) const {
+    for (std::size_t i = 0; i < keys_.size(); ++i) {
+      if (keys_[i] == key) {
+        return &entries_[i].second;
+      }
+    }
+    return nullptr;
+  }
+
+ private:
+  const_iterator Position(std::string_view name) const {
+    return std::ranges::lower_bound(entries_, name, std::less<>{}, &Entry::first);
+  }
+  Value& Insert(std::string_view name, Value value) {
+    const auto at = Position(name) - entries_.begin();
+    keys_.insert(keys_.begin() + at, ParamKeyOf(name));
+    return entries_.insert(entries_.begin() + at, Entry(std::string(name), std::move(value)))->second;
+  }
+
+  std::vector<Entry> entries_;
+  std::vector<ParamKey> keys_;
+};
+
 /// One effect of using an item, with the client's parameters as they are:
 /// numbers, booleans or strings.
 struct Activate {
-  using Value = std::variant<double, bool, std::string>;
+  using Value = Params::Value;
 
   std::string type;
-  std::map<std::string, Value, std::less<>> params;
+  Params params;
 
+  std::optional<double> Number(ParamKey key) const;
   std::optional<double> Number(std::string_view key) const;
   /// Empty when the parameter is missing or isn't text. Valid while the
   /// effect is.
+  std::string_view Text(ParamKey key) const;
   std::string_view Text(std::string_view key) const;
   /// False when the parameter is missing or isn't a boolean.
+  bool Flag(ParamKey key) const;
   bool Flag(std::string_view key) const;
 };
 

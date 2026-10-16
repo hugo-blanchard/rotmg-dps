@@ -4,6 +4,9 @@
 
 namespace rotmg {
 
+// Effect parameters by key, like a.Number(kCooldown).
+using enum ParamKey;
+
 namespace {
 
 constexpr std::array<int Character::*, kStats> kFields = {
@@ -56,13 +59,13 @@ bool AddStatMutator(const Mutator& m, EnchantStats& to) {
   if (m.tag != "ActivateOnEquip" || (m.text != "IncrementStat" && m.text != "BonusStatRelative")) {
     return false;
   }
-  const int stat = StatIndex(m.attributes.Text("stat"));
-  const double amount = m.attributes.Number("amount").value_or(0);
+  const int stat = StatIndex(m.attributes.Text(kStat));
+  const double amount = m.attributes.Number(kAmount).value_or(0);
   if (m.text == "IncrementStat") {
     if (stat >= 0) {
       to.tenths[static_cast<std::size_t>(stat)] += static_cast<std::int32_t>(std::lround(amount * 10));
     }
-  } else if (const int from = StatIndex(m.attributes.Text("statRelativeTo")); stat >= 0 && from >= 0) {
+  } else if (const int from = StatIndex(m.attributes.Text(kStatRelativeTo)); stat >= 0 && from >= 0) {
     to.conversions.push_back({static_cast<std::uint8_t>(from), static_cast<std::uint8_t>(stat), amount, false});
   }
   return true;
@@ -73,10 +76,10 @@ bool AddOwnConversion(const Activate& a, std::vector<Conversion>& to) {
   if (!of_total && a.type != "BonusStatRelative") {
     return false;
   }
-  const int stat = StatIndex(a.Text("stat"));
-  const int from = StatIndex(a.Text("statRelativeTo"));
+  const int stat = StatIndex(a.Text(kStat));
+  const int from = StatIndex(a.Text(kStatRelativeTo));
   if (stat >= 0 && from >= 0) {
-    to.push_back({static_cast<std::uint8_t>(from), static_cast<std::uint8_t>(stat), a.Number("amount").value_or(0),
+    to.push_back({static_cast<std::uint8_t>(from), static_cast<std::uint8_t>(stat), a.Number(kAmount).value_or(0),
                   of_total});
   }
   return true;

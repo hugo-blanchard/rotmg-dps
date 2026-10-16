@@ -12,6 +12,9 @@
 #include "rotmg/fire_rate.hpp"
 
 namespace rotmg {
+
+// Effect parameters by key, like a.Number(kCooldown).
+using enum ParamKey;
 namespace {
 
 // The longest gap between shots: 1.5 attacks per second at 0 DEX
@@ -22,7 +25,7 @@ constexpr double kSlowestShotS = 1 / 1.5;
 const std::set<std::string, std::less<>> kHarmlessSelfEffects = {"Slowed", "Sick"};
 
 bool InCombatOnly(const Activate& a) {
-  const std::string_view required = a.Text("requiredConditions");
+  const std::string_view required = a.Text(kRequiredConditions);
   return required.empty() || required == "In Combat";
 }
 
@@ -31,17 +34,17 @@ bool InCombatOnly(const Activate& a) {
 // noStackItm) and don't depend on HP qualify; Chain Dagger's, which stacks
 // up to +10 (wiki), doesn't.
 bool IsWhileShooting(const Activate& a) {
-  const double duration = a.Number("duration").value_or(0);
-  return a.type == "StatBoostSelf" && a.Number("proc").value_or(1) == 1 && a.Text("channel") == "noStackItm" &&
-         InCombatOnly(a) && !a.Number("hpRequiredRelative") && !a.Number("hpMinThresholdRelative") &&
-         duration >= a.Number("cooldown").value_or(0) && duration >= kSlowestShotS;
+  const double duration = a.Number(kDuration).value_or(0);
+  return a.type == "StatBoostSelf" && a.Number(kProc).value_or(1) == 1 && a.Text(kChannel) == "noStackItm" &&
+         InCombatOnly(a) && !a.Number(kHpRequiredRelative) && !a.Number(kHpMinThresholdRelative) &&
+         duration >= a.Number(kCooldown).value_or(0) && duration >= kSlowestShotS;
 }
 
 // A poison released on the first shot after each cooldown, with nothing to
 // aim (Doku No Ken, Fire Blade).
 bool IsPoisonBurst(const Activate& a) {
-  return a.type == "PoisonGrenade" && a.Number("proc").value_or(1) == 1 && a.Text("requiredConditions").empty() &&
-         a.Text("mustWear").empty() && !a.Flag("targetMouse") && !a.Number("damageBoost") && a.Number("cooldown");
+  return a.type == "PoisonGrenade" && a.Number(kProc).value_or(1) == 1 && a.Text(kRequiredConditions).empty() &&
+         a.Text(kMustWear).empty() && !a.Flag(kTargetMouse) && !a.Number(kDamageBoost) && a.Number(kCooldown);
 }
 
 // Shots from one on-shoot proc going off to the next, for a proc with a
@@ -99,11 +102,11 @@ bool EachType(std::string_view list, bool any, const Test& test) {
 // (Wand of Geb), meter-gated ones (Staff of Esben) and ones that need a
 // status on you (Lethal Strike, Curse) aren't modelled.
 bool IsProcShot(const Weapon& w, const Activate& a) {
-  if (a.type != "BulletCreate" || a.Number("proc").value_or(1) != 1 || !a.Flag("targetMouse") ||
-      !a.Text("requiredConditions").empty() || a.Number("idMeter") || a.Number("meterCost")) {
+  if (a.type != "BulletCreate" || a.Number(kProc).value_or(1) != 1 || !a.Flag(kTargetMouse) ||
+      !a.Text(kRequiredConditions).empty() || a.Number(kIdMeter) || a.Number(kMeterCost)) {
     return false;
   }
-  const std::string_view type = a.Text("type");
+  const std::string_view type = a.Text(kType);
   return type.empty() ? !w.projectiles.empty()
                       : w.created_projectiles.contains(ParseType(type));
 }
@@ -111,9 +114,9 @@ bool IsProcShot(const Weapon& w, const Activate& a) {
 }  // namespace
 
 bool IsChanceBoost(const Activate& a) {
-  const double proc = a.Number("proc").value_or(1);
-  return a.type == "StatBoostSelf" && proc > 0 && proc < 1 && a.Number("duration").value_or(0) > 0 &&
-         InCombatOnly(a) && !a.Number("hpRequiredRelative") && !a.Number("hpMinThresholdRelative");
+  const double proc = a.Number(kProc).value_or(1);
+  return a.type == "StatBoostSelf" && proc > 0 && proc < 1 && a.Number(kDuration).value_or(0) > 0 &&
+         InCombatOnly(a) && !a.Number(kHpRequiredRelative) && !a.Number(kHpMinThresholdRelative);
 }
 
 // Wand of Geb's needs all four set pieces, matching its tooltip's "With Full
@@ -121,9 +124,9 @@ bool IsChanceBoost(const Activate& a) {
 bool GearWorn(const Activate& a, std::span<const int> worn) {
   const auto wearing = [&](int type) { return std::ranges::find(worn, type) != worn.end(); };
   const auto not_wearing = [&](int type) { return !wearing(type); };
-  const std::string_view any = a.Text("mustWearOR");
-  return EachType(a.Text("mustWear"), false, wearing) && (any.empty() || EachType(any, true, wearing)) &&
-         EachType(a.Text("mustNotWear"), false, not_wearing) && EachType(a.Text("mustNotWearOR"), false, not_wearing);
+  const std::string_view any = a.Text(kMustWearOR);
+  return EachType(a.Text(kMustWear), false, wearing) && (any.empty() || EachType(any, true, wearing)) &&
+         EachType(a.Text(kMustNotWear), false, not_wearing) && EachType(a.Text(kMustNotWearOR), false, not_wearing);
 }
 
 OnShootModel ModelOf(const Weapon& weapon, const Activate& a, std::span<const int> worn) {
@@ -143,14 +146,14 @@ OnShootModel ModelOf(const Weapon& weapon, const Activate& a, std::span<const in
 }
 
 bool CountsAsChanceBoost(const Weapon& weapon, const Activate& boost, std::span<const int> worn) {
-  const auto no_stack = [](const Activate& a) { return a.Text("channel").starts_with("noStack"); };
+  const auto no_stack = [](const Activate& a) { return a.Text(kChannel).starts_with("noStack"); };
   if (!no_stack(boost)) {
     return true;
   }
   // Which of two non-stacking boosts of a stat wins, as a tuple compared in
   // order; which one the game honours isn't documented.
   const auto rank = [](const Activate& a) {
-    return std::tuple{a.Number("amount").value_or(0), a.Number("duration").value_or(0), a.Number("proc").value_or(0)};
+    return std::tuple{a.Number(kAmount).value_or(0), a.Number(kDuration).value_or(0), a.Number(kProc).value_or(0)};
   };
   bool earlier = true;
   for (const Activate& other : weapon.on_shoot) {
@@ -158,7 +161,7 @@ bool CountsAsChanceBoost(const Weapon& weapon, const Activate& boost, std::span<
       earlier = false;
       continue;
     }
-    if (!IsChanceBoost(other) || !no_stack(other) || other.Text("stat") != boost.Text("stat") ||
+    if (!IsChanceBoost(other) || !no_stack(other) || other.Text(kStat) != boost.Text(kStat) ||
         !GearWorn(other, worn)) {
       continue;
     }
@@ -178,9 +181,9 @@ std::vector<ChanceBoost> ChanceBoosts(const Weapon& weapon, std::span<const int>
         shots_per_second <= 0) {
       continue;
     }
-    const double duration = *a.Number("duration");
-    const double cycle = a.Number("cooldown").value_or(0) + 1 / (*a.Number("proc") * shots_per_second);
-    out.push_back({{std::string(a.Text("stat")), static_cast<int>(a.Number("amount").value_or(0))},
+    const double duration = *a.Number(kDuration);
+    const double cycle = a.Number(kCooldown).value_or(0) + 1 / (*a.Number(kProc) * shots_per_second);
+    out.push_back({{std::string(a.Text(kStat)), static_cast<int>(a.Number(kAmount).value_or(0))},
                    duration,
                    std::min(1.0, duration / cycle)});
   }
@@ -191,7 +194,7 @@ std::vector<StatBonus> WhileShooting(const Weapon& weapon) {
   std::vector<StatBonus> out;
   for (const Activate& a : weapon.on_shoot) {
     if (IsWhileShooting(a)) {
-      out.push_back({std::string(a.Text("stat")), static_cast<int>(a.Number("amount").value_or(0))});
+      out.push_back({std::string(a.Text(kStat)), static_cast<int>(a.Number(kAmount).value_or(0))});
     }
   }
   return out;
@@ -244,7 +247,7 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
   // Only the explanation lists effects that aren't modelled.
   if (details) {
     for (const Activate& a : weapon.on_shoot) {
-      const bool harmless = a.type == "ConditionEffectSelf" && kHarmlessSelfEffects.contains(a.Text("effect"));
+      const bool harmless = a.type == "ConditionEffectSelf" && kHarmlessSelfEffects.contains(a.Text(kEffect));
       // An effect for gear that isn't worn doesn't go off, so it can't be missing.
       const bool off = !GearWorn(a, worn);
       if (!harmless && !off && !IsWhileShooting(a) && !IsPoisonBurst(a) && !IsProcShot(weapon, a) &&
@@ -334,9 +337,9 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
     }
     ProcResult p;
     p.name = "Poison burst";
-    p.per_second = shots_per_second / ShotsPerCycle(*a.Number("cooldown"), shots_per_second);
+    p.per_second = shots_per_second / ShotsPerCycle(*a.Number(kCooldown), shots_per_second);
     // Poison ignores DEF, and every poison stacks (RealmEye: Poisons).
-    p.damage = (a.Number("impactDamage").value_or(0) + a.Number("totalDamage").value_or(0)) * (target.cursed ? 1.25 : 1);
+    p.damage = (a.Number(kImpactDamage).value_or(0) + a.Number(kTotalDamage).value_or(0)) * (target.cursed ? 1.25 : 1);
     p.dps = p.per_second * p.damage;
     p.reference = "RealmEye: Poisons";
     out.dps += p.dps;
@@ -358,14 +361,14 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
     if (!IsProcShot(weapon, a) || !GearWorn(a, worn) || shots_per_second <= 0) {
       continue;
     }
-    const std::string_view type = a.Text("type");
+    const std::string_view type = a.Text(kType);
     const Projectile& p =
         type.empty() ? weapon.projectiles[0]
                      : weapon.created_projectiles.at(ParseType(type));
-    const double cooldown = a.Number("cooldown").value_or(0);
+    const double cooldown = a.Number(kCooldown).value_or(0);
     const double shots_between = ShotsPerCycle(cooldown, shots_per_second);
-    const int count = static_cast<int>(a.Number("numShots").value_or(1)) + StatModCount(a, "statModNumShots", geared);
-    const double each = ExpectedAbilityDamage(p.min_damage, p.max_damage - 1, StatModBonus(a, "statModDamage", geared),
+    const int count = static_cast<int>(a.Number(kNumShots).value_or(1)) + StatModCount(a, kStatModNumShots, geared);
+    const double each = ExpectedAbilityDamage(p.min_damage, p.max_damage - 1, StatModBonus(a, kStatModDamage, geared),
                                               target, p.armor_piercing);
     out.dps += shots_per_second / shots_between * count * each;
     any_shots = true;

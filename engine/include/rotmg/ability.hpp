@@ -20,10 +20,10 @@ double MpPerSecond(int wisdom);
 /// StatMod (RealmEye: Character Stats): `per_point` for every point of the
 /// effect's scaling stat over its threshold, nothing below it. Reads the
 /// scalingStat and statModScalingMin parameters.
-double StatModBonus(const Activate& effect, std::string_view per_point_key, const Character& character);
+double StatModBonus(const Activate& effect, ParamKey per_point_key, const Character& character);
 
 /// The same for counts, like extra shots, which only grow in whole steps.
-int StatModCount(const Activate& effect, std::string_view per_point_key, const Character& character);
+int StatModCount(const Activate& effect, ParamKey per_point_key, const Character& character);
 
 /// A buff on the player or a debuff on the target that changes weapon DPS
 /// while it lasts.

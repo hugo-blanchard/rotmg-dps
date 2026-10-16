@@ -11,6 +11,9 @@
 #include "rotmg/hits.hpp"
 
 namespace rotmg {
+
+// Effect parameters by key, like a.Number(kCooldown).
+using enum ParamKey;
 namespace {
 
 // Effects that can't change single-target DPS: healing, movement, stealth,
@@ -34,7 +37,7 @@ std::string NormalizeStatus(std::string effect) {
   return effect == "ArmorBroken" ? "Armor Broken" : effect;
 }
 
-double Param(const Activate& a, std::string_view key) { return a.Number(key).value_or(0); }
+double Param(const Activate& a, ParamKey key) { return a.Number(key).value_or(0); }
 
 }  // namespace
 
@@ -54,98 +57,98 @@ double Over(const Character& c, std::string_view stat, double threshold) {
 }  // namespace
 
 double LightningDamage(const Activate& a, const Character& c) {
-  return a.Number("totalDamage").value_or(0) +
-         Over(c, "WIS", a.Number("wisMin").value_or(50)) * a.Number("wisDamageBase").value_or(0) / 10;
+  return a.Number(kTotalDamage).value_or(0) +
+         Over(c, "WIS", a.Number(kWisMin).value_or(50)) * a.Number(kWisDamageBase).value_or(0) / 10;
 }
 
 int LightningTargets(const Activate& a, const Character& c) {
-  const double per = a.Number("wisPerTarget").value_or(10);
-  const double over = Over(c, "WIS", a.Number("wisMin").value_or(50));
-  return static_cast<int>(a.Number("maxTargets").value_or(1)) +
+  const double per = a.Number(kWisPerTarget).value_or(10);
+  const double over = Over(c, "WIS", a.Number(kWisMin).value_or(50));
+  return static_cast<int>(a.Number(kMaxTargets).value_or(1)) +
          (per > 0 ? static_cast<int>(std::floor(over / per + 1e-9)) : 0);
 }
 
 double ShockblastDamage(const Activate& a, const Character& c) {
-  const double over = Over(c, a.Text("scalingStat"), a.Number("statModScalingMin").value_or(0));
-  return a.Number("aoeDamage").value_or(0) + over * a.Number("statModDamage").value_or(0) / 10;
+  const double over = Over(c, a.Text(kScalingStat), a.Number(kStatModScalingMin).value_or(0));
+  return a.Number(kAoeDamage).value_or(0) + over * a.Number(kStatModDamage).value_or(0) / 10;
 }
 
 int ShockblastTargets(const Activate& a, const Character& c) {
-  const double per = a.Number("statModPerTarget").value_or(0);
-  const double over = Over(c, a.Text("scalingStat"), a.Number("statModScalingMin").value_or(0));
-  return static_cast<int>(a.Number("aoeMaxTargets").value_or(1)) +
+  const double per = a.Number(kStatModPerTarget).value_or(0);
+  const double over = Over(c, a.Text(kScalingStat), a.Number(kStatModScalingMin).value_or(0));
+  return static_cast<int>(a.Number(kAoeMaxTargets).value_or(1)) +
          (per > 0 ? static_cast<int>(std::floor(over / per + 1e-9)) : 0);
 }
 
 std::optional<Buff> BuffOf(const Activate& a, const Character& c) {
   if (a.type == "ConditionEffectSelf" || a.type == "ConditionEffectAura") {
-    const std::string_view effect = a.Text("effect");
+    const std::string_view effect = a.Text(kEffect);
     if (kPlayerStatuses.contains(effect)) {
-      return Buff{Buff::On::kPlayer, std::string(effect), 0, Param(a, "duration") + StatModBonus(a, "statModDuration", c)};
+      return Buff{Buff::On::kPlayer, std::string(effect), 0, Param(a, kDuration) + StatModBonus(a, kStatModDuration, c)};
     }
   } else if (a.type == "StatBoostSelf" || a.type == "StatBoostAura") {
-    const std::string_view stat = a.Text("stat");
+    const std::string_view stat = a.Text(kStat);
     if (stat == "ATT" || stat == "DEX") {
-      return Buff{Buff::On::kPlayer, std::string(stat), static_cast<int>(Param(a, "amount")), Param(a, "duration")};
+      return Buff{Buff::On::kPlayer, std::string(stat), static_cast<int>(Param(a, kAmount)), Param(a, kDuration)};
     }
   } else if (a.type == "EffectBlast") {
     // Duration grows by a second for every wisPerDuration WIS over wisMin
     // (RealmEye: Orbs gives "10 WIS -> +1 second" for wisPerDuration 10).
-    const std::string_view effect = a.Text("condEffect");
+    const std::string_view effect = a.Text(kCondEffect);
     if (kTargetStatuses.contains(effect)) {
-      double duration = Param(a, "condDuration");
-      const double per = Param(a, "wisPerDuration");
-      const double over = c.wisdom - Param(a, "wisMin");
+      double duration = Param(a, kCondDuration);
+      const double per = Param(a, kWisPerDuration);
+      const double over = c.wisdom - Param(a, kWisMin);
       if (per > 0 && over > 0) {
         duration += over / per;
       }
       return Buff{Buff::On::kTarget, NormalizeStatus(std::string(effect)), 0, duration};
     }
-  } else if (a.type == "PoisonGrenade" && a.Number("damageBoost").value_or(1) > 1) {
+  } else if (a.type == "PoisonGrenade" && a.Number(kDamageBoost).value_or(1) > 1) {
     // RealmEye, Poisons: what you poison takes more damage from you, the
     // highest boost if several. Baneserpent Poison's page gives its 9.5%
     // (+0.225% per WIS over 50) as damageBoost 1.095 and
     // statModDamageBoost 0.00225. That it lasts as long as the poison is an
     // assumption.
-    Buff boost{Buff::On::kTarget, kPoisonBoost, 0, Param(a, "duration")};
-    boost.factor = *a.Number("damageBoost") + StatModBonus(a, "statModDamageBoost", c);
+    Buff boost{Buff::On::kTarget, kPoisonBoost, 0, Param(a, kDuration)};
+    boost.factor = *a.Number(kDamageBoost) + StatModBonus(a, kStatModDamageBoost, c);
     return boost;
   }
   return std::nullopt;
 }
 
 double PoisonImpact(const Activate& a, const Character& c) {
-  return Param(a, "impactDamage") + StatModBonus(a, "statModImpactDamage", c) / 10;
+  return Param(a, kImpactDamage) + StatModBonus(a, kStatModImpactDamage, c) / 10;
 }
 
 double PoisonTotal(const Activate& a, const Character& c) {
-  return Param(a, "totalDamage") + StatModBonus(a, "statModDamage", c) / 10;
+  return Param(a, kTotalDamage) + StatModBonus(a, kStatModDamage, c) / 10;
 }
 
-double StatModBonus(const Activate& effect, std::string_view per_point_key, const Character& character) {
-  const std::string_view stat = effect.Text("scalingStat");
+double StatModBonus(const Activate& effect, ParamKey per_point_key, const Character& character) {
+  const std::string_view stat = effect.Text(kScalingStat);
   const auto per_point = effect.Number(per_point_key);
   if (stat.empty() || !per_point) {
     return 0;
   }
-  const double over = character.Stat(stat) - effect.Number("statModScalingMin").value_or(0);
+  const double over = character.Stat(stat) - effect.Number(kStatModScalingMin).value_or(0);
   return over > 0 ? *per_point * over : 0;
 }
 
-int StatModCount(const Activate& effect, std::string_view per_point_key, const Character& character) {
+int StatModCount(const Activate& effect, ParamKey per_point_key, const Character& character) {
   // A small epsilon: 0.0667 per point over 15 points is meant to be 1 shot,
   // not 0.9999... rounded down.
   return static_cast<int>(std::floor(StatModBonus(effect, per_point_key, character) + 1e-9));
 }
 
 bool GoesOffOnCast(const Activate& a) {
-  const std::string_view required = a.Text("requiredConditions");
-  return !a.Number("hpMinThresholdRelative") && !a.Number("idMeter") && !a.Number("minimumMeter") &&
-         !a.Number("meterCost") && (required.empty() || required == "In Combat");
+  const std::string_view required = a.Text(kRequiredConditions);
+  return !a.Number(kHpMinThresholdRelative) && !a.Number(kIdMeter) && !a.Number(kMinimumMeter) &&
+         !a.Number(kMeterCost) && (required.empty() || required == "In Combat");
 }
 
 double CastShare(const Activate& a, double casts_per_second) {
-  return CastShare(std::clamp(a.Number("proc").value_or(1), 0.0, 1.0), a.Number("cooldown").value_or(0),
+  return CastShare(std::clamp(a.Number(kProc).value_or(1), 0.0, 1.0), a.Number(kCooldown).value_or(0),
                    casts_per_second);
 }
 
@@ -234,8 +237,8 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   worn_for_refunds.push_back(ability.type);
   for (const Activate& a : ability.on_ability) {
     if (a.type == "Magic" && GearWorn(a, worn_for_refunds) && GoesOffOnCast(a)) {
-      out.refunds.push_back({Param(a, "amount"), std::clamp(a.Number("proc").value_or(1), 0.0, 1.0),
-                             a.Number("cooldown").value_or(0)});
+      out.refunds.push_back({Param(a, kAmount), std::clamp(a.Number(kProc).value_or(1), 0.0, 1.0),
+                             a.Number(kCooldown).value_or(0)});
     }
   }
   const auto refund_at = [&](double rate) {
@@ -306,7 +309,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   const auto apply = [&](const Activate& a) {
     if (a.type == "Shoot") {
       // Fires the item's own projectiles at the target, like a weapon volley.
-      const double bonus = StatModBonus(a, "statModDamage", c);
+      const double bonus = StatModBonus(a, kStatModDamage, c);
       const bool estimate = assumptions.distance.has_value() && HitModelFits(shots());
       double damage = 0;
       for (const Subattack& s : shots().subattacks) {
@@ -335,9 +338,9 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
         unsupported("BulletNova without a projectile");
         return;
       }
-      const int count = static_cast<int>(Param(a, "numShots")) + StatModCount(a, "statModNumShots", c);
+      const int count = static_cast<int>(Param(a, kNumShots)) + StatModCount(a, kStatModNumShots, c);
       const double each =
-          ExpectedAbilityDamage(p->min_damage, p->max_damage - 1, StatModBonus(a, "statModDamage", c), target,
+          ExpectedAbilityDamage(p->min_damage, p->max_damage - 1, StatModBonus(a, kStatModDamage, c), target,
                                 p->armor_piercing);
       assume("spells are aimed at the target's center, so every shot hits");
       add_part({details ? "Spell burst, " + std::to_string(count) + " shots" : "", count * each, "RealmEye: Spells"});
@@ -347,7 +350,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
       // crosshair" (RealmEye: Wakizashi). Some create another item's
       // projectile, named by `type` as a hex string.
       const Projectile* p = ability.projectiles.empty() ? nullptr : &ability.projectiles[0];
-      if (const std::string_view type = a.Text("type"); !type.empty()) {
+      if (const std::string_view type = a.Text(kType); !type.empty()) {
         const auto it = ability.created_projectiles.find(static_cast<int>(std::strtol(std::string(type).c_str(), nullptr, 0)));
         if (it == ability.created_projectiles.end()) {
           unsupported("BulletCreate shots of another projectile");
@@ -359,9 +362,9 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
         unsupported("BulletCreate without a projectile");
         return;
       }
-      const int count = static_cast<int>(Param(a, "numShots")) + StatModCount(a, "statModNumShots", c);
+      const int count = static_cast<int>(Param(a, kNumShots)) + StatModCount(a, kStatModNumShots, c);
       const double each =
-          ExpectedAbilityDamage(p->min_damage, p->max_damage - 1, StatModBonus(a, "statModDamage", c), target,
+          ExpectedAbilityDamage(p->min_damage, p->max_damage - 1, StatModBonus(a, kStatModDamage, c), target,
                                 p->armor_piercing);
       if (count > 0) {
         for (const ConditionEffect& e : p->condition_effects) {
@@ -373,17 +376,17 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
       assume("shots made at the cursor (like a wakizashi's slash) pass through the target, so every shot hits");
       add_part({details ? "Shots at the cursor, " + std::to_string(count) : "", count * each, "RealmEye: Wakizashi"});
     } else if (a.type == "DamageNova") {
-      const int count = static_cast<int>(Param(a, "activationCount")) + StatModCount(a, "statModActivationCount", c);
-      const double each = ExpectedAbilityDamage(static_cast<int>(Param(a, "minDamage")),
-                                                static_cast<int>(Param(a, "maxDamage")),
-                                                StatModBonus(a, "statModDamage", c), target, false);
+      const int count = static_cast<int>(Param(a, kActivationCount)) + StatModCount(a, kStatModActivationCount, c);
+      const double each = ExpectedAbilityDamage(static_cast<int>(Param(a, kMinDamage)),
+                                                static_cast<int>(Param(a, kMaxDamage)),
+                                                StatModBonus(a, kStatModDamage, c), target, false);
       assume("damage novas are aimed at the target and DEF applies to them");
       add_part({details ? "Damage nova, " + std::to_string(count) + " blasts" : "", count * each, "RealmEye: Tomes"});
     } else if (a.type == "Lightning") {
       const double damage = LightningDamage(a, c);
       const double first = ExpectedAbilityDamage(0, 0, damage, target, false);
       assume("lightning's first target takes the full damage, and DEF applies to it");
-      if (a.Number("aoeDamage")) {
+      if (a.Number(kAoeDamage)) {
         // RealmEye, Scepters: a struck enemy's shockblast "can deal damage to
         // other enemies".
         assume("a scepter's shockblast hits enemies around the one struck, not that one, so it adds nothing "
@@ -403,20 +406,20 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
       if (impact > 0) {
         add_part({"Poison impact", impact, "RealmEye: Poisons"});
       }
-      add_part({"Poison over time", total, "RealmEye: Poisons", Param(a, "duration")});
+      add_part({"Poison over time", total, "RealmEye: Poisons", Param(a, kDuration)});
     } else if (a.type == "Trap") {
       // A trap thrown onto an enemy goes off as it lands (RealmEye: Traps).
       // One trap has an armorPierce flag, so the rest go through DEF.
-      const int damage = static_cast<int>(Param(a, "totalDamage"));
-      const double hit = ExpectedAbilityDamage(damage, damage, StatModBonus(a, "statModTrapDamage", c), target,
-                                               a.Flag("armorPierce"));
+      const int damage = static_cast<int>(Param(a, kTotalDamage));
+      const double hit = ExpectedAbilityDamage(damage, damage, StatModBonus(a, kStatModTrapDamage, c), target,
+                                               a.Flag(kArmorPierce));
       add_part({"Trap", hit, "RealmEye: Traps"});
       // RealmEye, Giantcatcher Trap: a sticky bomb of bombDamage (+5 per WIS
       // over 34) goes off bombDelay after the trap, bombTriggerCount times.
-      if (a.Number("bombCount").value_or(0) > 0 && a.Number("bombDamage")) {
-        const double bomb_damage = Param(a, "bombDamage") + StatModBonus(a, "statModBombDamage", c);
+      if (a.Number(kBombCount).value_or(0) > 0 && a.Number(kBombDamage)) {
+        const double bomb_damage = Param(a, kBombDamage) + StatModBonus(a, kStatModBombDamage, c);
         const double bomb = ExpectedAbilityDamage(0, 0, bomb_damage, target, false);
-        const double times = std::max(1.0, Param(a, "bombTriggerCount"));
+        const double times = std::max(1.0, Param(a, kBombTriggerCount));
         assume("a trap's sticky bomb sticks to the target the trap hits and goes off on it");
         add_part({"Sticky bomb", times * bomb, "RealmEye: Giantcatcher Trap"});
       }
@@ -424,7 +427,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
                a.type == "StatBoostAura" || a.type == "EffectBlast") {
       if (const auto buff = BuffOf(a, c)) {
         add_buff(*buff);
-        if (buff->amount != 0 && a.Number("wisMin")) {
+        if (buff->amount != 0 && a.Number(kWisMin)) {
           unsupported("WIS scaling of stat boosts");
         }
       }
@@ -446,7 +449,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
       continue;
     }
     if (!GoesOffOnCast(a)) {
-      if (a.Number("hpMinThresholdRelative")) {
+      if (a.Number(kHpMinThresholdRelative)) {
         assume("you're at full HP, so item effects that need lower HP don't go off");
       } else {
         unsupported("on-use effects that need a meter or a status");
@@ -454,8 +457,8 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
       continue;
     }
     share = CastShare(a, out.casts_per_second);
-    chance = std::clamp(a.Number("proc").value_or(1), 0.0, 1.0);
-    cooldown = a.Number("cooldown").value_or(0);
+    chance = std::clamp(a.Number(kProc).value_or(1), 0.0, 1.0);
+    cooldown = a.Number(kCooldown).value_or(0);
     if (share <= 0) {
       continue;
     }

@@ -15,6 +15,9 @@
 #include "rotmg/fire_rate.hpp"
 
 namespace rotmg {
+
+// Effect parameters by key, like a.Number(kCooldown).
+using enum ParamKey;
 namespace {
 
 Scenario OneTarget(const Target& target, double distance, double radius) {
@@ -229,7 +232,7 @@ Simulation::Simulation(const Weapon& weapon, const Character& character, const S
   for (const Activate& act : weapon_.on_shoot) {
     Proc proc{&act, ModelOf(weapon_, act, worn), 0, 0, 0};
     if (proc.model == OnShootModel::kExtraShots) {
-      const std::string_view type = act.Text("type");
+      const std::string_view type = act.Text(kType);
       const Projectile& p =
           type.empty() ? weapon_.projectiles[0]
                        : weapon_.created_projectiles.at(static_cast<int>(std::strtol(std::string(type).c_str(), nullptr, 0)));
@@ -251,7 +254,7 @@ Simulation::Simulation(const Weapon& weapon, const Character& character, const S
   activate_group_.assign(a.activates.size(), -1);
   for (std::size_t i = 0; i < a.activates.size(); ++i) {
     const Activate& act = a.activates[i];
-    const double bonus = StatModBonus(act, "statModDamage", base_);
+    const double bonus = StatModBonus(act, kStatModDamage, base_);
     if (act.type == "Shoot" && shoot_groups_.empty()) {
       for (const Subattack& s : a.subattacks) {
         Group g{nullptr, {}, -1, bonus, From::kAbility};
@@ -292,7 +295,7 @@ int Simulation::ShotGroup(const Activate& act) {
     return -1;
   }
   const Projectile* p = a.projectiles.empty() ? nullptr : &a.projectiles[0];
-  if (const std::string_view type = act.Text("type"); !type.empty()) {
+  if (const std::string_view type = act.Text(kType); !type.empty()) {
     const auto it = a.created_projectiles.find(static_cast<int>(std::strtol(std::string(type).c_str(), nullptr, 0)));
     p = it == a.created_projectiles.end() ? nullptr : &it->second;
   }
@@ -300,14 +303,14 @@ int Simulation::ShotGroup(const Activate& act) {
 }
 
 std::size_t Simulation::AddGroup(const Projectile& projectile, const Activate& act, From from) {
-  const int count = static_cast<int>(act.Number("numShots").value_or(from == From::kProc ? 1 : 0)) +
-                    StatModCount(act, "statModNumShots", base_);
+  const int count = static_cast<int>(act.Number(kNumShots).value_or(from == From::kProc ? 1 : 0)) +
+                    StatModCount(act, kStatModNumShots, base_);
   // A path per shot even when they all go the same way: wavy shots
   // alternate which side they swing to.
   Subattack s;
   s.num_projectiles = std::max(1, count);
   s.arc_gap = act.type == "BulletNova" ? 360.0 / s.num_projectiles : 0;
-  Group g{&projectile, {}, -1, StatModBonus(act, "statModDamage", base_), from};
+  Group g{&projectile, {}, -1, StatModBonus(act, kStatModDamage, base_), from};
   for (int k = 0; k < s.num_projectiles; ++k) {
     g.paths.emplace_back(projectile, s, k);
   }
@@ -632,7 +635,7 @@ void Simulation::Cast() {
       continue;
     }
     // As with procs: chances add up over casts, or each cast rolls.
-    const double chance = act.Number("proc").value_or(1);
+    const double chance = act.Number(kProc).value_or(1);
     if (start_.random_rolls) {
       if (NextRandom(rolls_) >= chance) {
         continue;
@@ -644,9 +647,9 @@ void Simulation::Cast() {
       }
       e.chance = 0;
     }
-    const std::string_view channel = act.Text("channel");
+    const std::string_view channel = act.Text(kChannel);
     CastEffect(act, e.group, channel.starts_with("noStack") ? std::string(channel) : "on use " + std::to_string(i));
-    e.ready_ms = now + act.Number("cooldown").value_or(0) * 1000;
+    e.ready_ms = now + act.Number(kCooldown).value_or(0) * 1000;
   }
 }
 
@@ -660,7 +663,7 @@ void Simulation::CastEffect(const Activate& act, int group, const std::string& c
       Boost(buff->effect, buff->amount, buff->duration_s, channel);
     } else {
       // EffectBlast reaches every target within its radius of the cursor.
-      const double radius = act.Number("radius").value_or(0);
+      const double radius = act.Number(kRadius).value_or(0);
       for (std::size_t t = 0; t < world_.targets.size(); ++t) {
         if (Alive(t) && Distance(world_.targets[t].position, cursor) <= radius + world_.targets[t].radius) {
           Debuff(t, buff->effect, buff->duration_s);
@@ -686,10 +689,10 @@ void Simulation::CastEffect(const Activate& act, int group, const std::string& c
   } else if (act.type == "DamageNova") {
     // RealmEye, Tomes: an "on-cursor nova" that "explodes 2 times for 0.8
     // seconds". Blasts are spread evenly over `time`, the first at once.
-    const int count = static_cast<int>(act.Number("activationCount").value_or(1)) +
-                      StatModCount(act, "statModActivationCount", base_);
-    const double span = act.Number("time").value_or(0.8) * 1000;
-    const double radius = act.Number("radius").value_or(0) + StatModBonus(act, "statModRadius", base_);
+    const int count = static_cast<int>(act.Number(kActivationCount).value_or(1)) +
+                      StatModCount(act, kStatModActivationCount, base_);
+    const double span = act.Number(kTime).value_or(0.8) * 1000;
+    const double radius = act.Number(kRadius).value_or(0) + StatModBonus(act, kStatModRadius, base_);
     for (int k = 0; k < count; ++k) {
       pending_.push_back({Pending::Kind::kNovaBlast, now + (count > 1 ? span * k / (count - 1) : 0), cursor, radius,
                           &act, From::kAbility, 0});
@@ -701,9 +704,9 @@ void Simulation::CastEffect(const Activate& act, int group, const std::string& c
     // with another cone or a range have them as arcDegrees and range.
     const int count = LightningTargets(act, base_);
     const double damage = LightningDamage(act, base_);
-    const double drop = act.Number("decrDamage").value_or(0);
-    const double half_cone = act.Number("arcDegrees").value_or(30) / 2 * degrees;
-    const double reach = act.Number("range").value_or(1e9);
+    const double drop = act.Number(kDecrDamage).value_or(0);
+    const double half_cone = act.Number(kArcDegrees).value_or(30) / 2 * degrees;
+    const double reach = act.Number(kRange).value_or(1e9);
     std::vector<bool> struck(world_.targets.size(), false);
     std::optional<std::size_t> at;
     double best = 1e18;
@@ -728,12 +731,12 @@ void Simulation::CastEffect(const Activate& act, int group, const std::string& c
       bolt.chain.push_back(world_.targets[*at].position);
       // The struck enemy becomes a shockblast, pulsing aoeActivationCount
       // times over aoeTime; spacing them evenly from now is an assumption.
-      if (act.Number("aoeDamage").value_or(0) > 0) {
-        const int pulses = std::max(1, static_cast<int>(act.Number("aoeActivationCount").value_or(1)));
-        const double span = act.Number("aoeTime").value_or(0) * 1000;
+      if (act.Number(kAoeDamage).value_or(0) > 0) {
+        const int pulses = std::max(1, static_cast<int>(act.Number(kAoeActivationCount).value_or(1)));
+        const double span = act.Number(kAoeTime).value_or(0) * 1000;
         for (int n = 0; n < pulses; ++n) {
           pending_.push_back({Pending::Kind::kShockblast, now + (pulses > 1 ? span * n / (pulses - 1) : 0), {},
-                              act.Number("aoeRange").value_or(0), &act, From::kAbility, *at});
+                              act.Number(kAoeRange).value_or(0), &act, From::kAbility, *at});
         }
       }
       std::optional<std::size_t> next;
@@ -751,18 +754,18 @@ void Simulation::CastEffect(const Activate& act, int group, const std::string& c
   } else if (act.type == "PoisonGrenade") {
     // RealmEye, Poisons: thrown at the cursor, it lands 0.8 seconds later
     // unless the item says.
-    const double radius = act.Number("radius").value_or(0) + StatModBonus(act, "statModRadius", base_);
-    pending_.push_back({Pending::Kind::kPoisonLands, now + act.Number("throwTime").value_or(0.8) * 1000, cursor,
+    const double radius = act.Number(kRadius).value_or(0) + StatModBonus(act, kStatModRadius, base_);
+    pending_.push_back({Pending::Kind::kPoisonLands, now + act.Number(kThrowTime).value_or(0.8) * 1000, cursor,
                         radius, &act, From::kAbility, 0});
   } else if (act.type == "Trap") {
     // RealmEye, Traps: thrown at the cursor in 1 second, it lasts 10
     // seconds, goes off when an enemy comes within half its explosion
     // radius, at once if it lands on one, and at the end if nothing does.
-    const double radius = act.Number("radius").value_or(0) + StatModBonus(act, "statModTrapRadius", base_);
-    const double lands = now + act.Number("throwTime").value_or(1) * 1000;
-    traps_.push_back({cursor, lands, lands + act.Number("armTime").value_or(0) * 1000,
-                      lands + act.Number("duration").value_or(10) * 1000, radius,
-                      radius * act.Number("sensitivity").value_or(0.5), &act});
+    const double radius = act.Number(kRadius).value_or(0) + StatModBonus(act, kStatModTrapRadius, base_);
+    const double lands = now + act.Number(kThrowTime).value_or(1) * 1000;
+    traps_.push_back({cursor, lands, lands + act.Number(kArmTime).value_or(0) * 1000,
+                      lands + act.Number(kDuration).value_or(10) * 1000, radius,
+                      radius * act.Number(kSensitivity).value_or(0.5), &act});
   }
 }
 
@@ -775,21 +778,21 @@ void Simulation::CreateShots(std::size_t group, const Activate& act) {
   const Point cursor = TargetCenter();
   const double aim = AimAngle();
   constexpr double degrees = std::numbers::pi / 180;
-  const double reach = act.Number("maxDistance").value_or(4.4);
-  const double closest = act.Number("minDistance").value_or(0);
+  const double reach = act.Number(kMaxDistance).value_or(4.4);
+  const double closest = act.Number(kMinDistance).value_or(0);
   const double to_cursor = std::clamp(Distance(world_.player, cursor), closest, std::max(closest, reach));
   const Point centre = Add(world_.player, {std::sin(aim), std::cos(aim)}, to_cursor);
   // The evaluation counts a proc with no numShots as one shot, and an
   // ability's as none.
-  const int count = static_cast<int>(act.Number("numShots").value_or(groups_[group].from == From::kProc ? 1 : 0)) +
-                    StatModCount(act, "statModNumShots", base_);
-  const double heading = aim + act.Number("offsetAngle").value_or(0) * degrees;
-  const double spread = heading + act.Number("gapAngle").value_or(0) * degrees;
+  const int count = static_cast<int>(act.Number(kNumShots).value_or(groups_[group].from == From::kProc ? 1 : 0)) +
+                    StatModCount(act, kStatModNumShots, base_);
+  const double heading = aim + act.Number(kOffsetAngle).value_or(0) * degrees;
+  const double spread = heading + act.Number(kGapAngle).value_or(0) * degrees;
   for (int k = 0; k < count; ++k) {
     const double from_middle = k - (count - 1) / 2.0;
-    const double shot = heading + act.Number("arcGap").value_or(0) * degrees * from_middle;
+    const double shot = heading + act.Number(kArcGap).value_or(0) * degrees * from_middle;
     const Point spot =
-        Add(centre, {std::sin(spread), std::cos(spread)}, act.Number("gapTiles").value_or(0) * from_middle);
+        Add(centre, {std::sin(spread), std::cos(spread)}, act.Number(kGapTiles).value_or(0) * from_middle);
     const int index = k % static_cast<int>(groups_[group].paths.size());
     const ProjectilePath& path = groups_[group].paths[static_cast<std::size_t>(index)];
     const Point half = path.At(path.Steps() / 2);
@@ -824,7 +827,7 @@ void Simulation::OnShoot() {
       // Each shot adds its chance; the boost goes off when they add up to
       // one, so it comes as often as the chance says on average. With random
       // rolls each shot rolls instead.
-      const double chance = act.Number("proc").value_or(1);
+      const double chance = act.Number(kProc).value_or(1);
       if (start_.random_rolls) {
         if (NextRandom(rolls_) >= chance) {
           continue;
@@ -838,18 +841,18 @@ void Simulation::OnShoot() {
       }
       // Only one boost of a stat on a noStack channel is set up (see
       // CountsAsChanceBoost); any others stack.
-      const std::string_view channel = act.Text("channel");
-      Boost(std::string(act.Text("stat")), static_cast<int>(act.Number("amount").value_or(0)), act.Number("duration").value_or(0),
+      const std::string_view channel = act.Text(kChannel);
+      Boost(std::string(act.Text(kStat)), static_cast<int>(act.Number(kAmount).value_or(0)), act.Number(kDuration).value_or(0),
             channel.starts_with("noStack") ? std::string(channel) : "proc " + std::to_string(i));
     } else if (proc.model == OnShootModel::kPoisonBurst) {
       // Nothing aims it, so it bursts around the player.
-      pending_.push_back({Pending::Kind::kPoisonLands, now + act.Number("throwTime").value_or(0) * 1000,
-                          world_.player, act.Number("radius").value_or(0), &act, From::kProc, 0});
+      pending_.push_back({Pending::Kind::kPoisonLands, now + act.Number(kThrowTime).value_or(0) * 1000,
+                          world_.player, act.Number(kRadius).value_or(0), &act, From::kProc, 0});
     } else {
       CreateShots(proc.group, act);
     }
     ++proc_totals_.casts;
-    proc.ready_ms = now + act.Number("cooldown").value_or(0) * 1000;
+    proc.ready_ms = now + act.Number(kCooldown).value_or(0) * 1000;
   }
 }
 
@@ -886,7 +889,7 @@ void Simulation::RunPending() {
       near.resize(std::min(near.size(), static_cast<std::size_t>(std::max(0, ShockblastTargets(act, base_)))));
       const double damage = ShockblastDamage(act, base_);
       for (const auto& [d, t] : near) {
-        Damage(t, AbilityHit(0, 0, damage, t, act.Flag("aoeArmorPierce")), p.from);
+        Damage(t, AbilityHit(0, 0, damage, t, act.Flag(kAoeArmorPierce)), p.from);
       }
       effects_.push_back({Effect::Kind::kBlast, at, p.radius, now + 150, {}, false});
     } else if (p.kind == Pending::Kind::kStickyBomb) {
@@ -894,25 +897,25 @@ void Simulation::RunPending() {
         continue;
       }
       const Point at = world_.targets[p.source].position;
-      const double bonus = StatModBonus(act, "statModBombDamage", base_);
-      const std::string_view effect = act.Text("bombCondEffect");
+      const double bonus = StatModBonus(act, kStatModBombDamage, base_);
+      const std::string_view effect = act.Text(kBombCondEffect);
       for (std::size_t t = 0; t < world_.targets.size(); ++t) {
         if (Alive(t) && Distance(at, world_.targets[t].position) <= p.radius + world_.targets[t].radius) {
-          Damage(t, AbilityHit(0, 0, act.Number("bombDamage").value_or(0) + bonus, t, false), p.from);
+          Damage(t, AbilityHit(0, 0, act.Number(kBombDamage).value_or(0) + bonus, t, false), p.from);
           if (!effect.empty()) {
-            const double extra = StatModBonus(act, "statModBombCondDuration", base_);
-            Debuff(t, std::string(effect), act.Number("bombCondEffectDuration").value_or(0) + extra);
+            const double extra = StatModBonus(act, kStatModBombCondDuration, base_);
+            Debuff(t, std::string(effect), act.Number(kBombCondEffectDuration).value_or(0) + extra);
           }
         }
       }
       effects_.push_back({Effect::Kind::kBlast, at, p.radius, now + 200, {}, false});
     } else if (p.kind == Pending::Kind::kNovaBlast) {
-      const double bonus = StatModBonus(act, "statModDamage", base_);
+      const double bonus = StatModBonus(act, kStatModDamage, base_);
       for (std::size_t t = 0; t < world_.targets.size(); ++t) {
         if (inside(t)) {
           Damage(t,
-                 AbilityHit(static_cast<int>(act.Number("minDamage").value_or(0)),
-                            static_cast<int>(act.Number("maxDamage").value_or(0)), bonus, t, false),
+                 AbilityHit(static_cast<int>(act.Number(kMinDamage).value_or(0)),
+                            static_cast<int>(act.Number(kMaxDamage).value_or(0)), bonus, t, false),
                  p.from);
         }
       }
@@ -923,7 +926,7 @@ void Simulation::RunPending() {
       const double impact = PoisonImpact(act, base_);
       const double total = PoisonTotal(act, base_);
       // With no duration it all comes on the next step.
-      const double duration_ms = std::max(kStepMs, act.Number("duration").value_or(0) * 1000);
+      const double duration_ms = std::max(kStepMs, act.Number(kDuration).value_or(0) * 1000);
       Poison poison{{}, total * kStepMs / duration_ms, total, p.from};
       for (std::size_t t = 0; t < world_.targets.size(); ++t) {
         // A poison landing on an invulnerable enemy doesn't take.
@@ -940,8 +943,8 @@ void Simulation::RunPending() {
         if (const auto boost = BuffOf(act, base_)) {
           Debuff(t, boost->effect, boost->duration_s, 0, boost->factor);
         }
-        if (const std::string_view effect = act.Text("condEffect"); !effect.empty()) {
-          Debuff(t, std::string(effect), act.Number("condDuration").value_or(0));
+        if (const std::string_view effect = act.Text(kCondEffect); !effect.empty()) {
+          Debuff(t, std::string(effect), act.Number(kCondDuration).value_or(0));
         }
       }
       poisons_.push_back(std::move(poison));
@@ -997,17 +1000,17 @@ void Simulation::CheckTraps() {
 
 void Simulation::Explode(const Trap& trap) {
   const Activate& act = *trap.activate;
-  const int damage = static_cast<int>(act.Number("totalDamage").value_or(0));
-  const double bonus = StatModBonus(act, "statModTrapDamage", base_);
-  const std::string_view effect = act.Text("condEffect");
+  const int damage = static_cast<int>(act.Number(kTotalDamage).value_or(0));
+  const double bonus = StatModBonus(act, kStatModTrapDamage, base_);
+  const std::string_view effect = act.Text(kCondEffect);
   std::vector<std::pair<double, std::size_t>> caught;
   for (std::size_t t = 0; t < world_.targets.size(); ++t) {
     const double d = Distance(world_.targets[t].position, trap.at);
     if (Alive(t) && d <= trap.radius + world_.targets[t].radius) {
       caught.push_back({d, t});
-      Damage(t, AbilityHit(damage, damage, bonus, t, act.Flag("armorPierce")), From::kAbility);
+      Damage(t, AbilityHit(damage, damage, bonus, t, act.Flag(kArmorPierce)), From::kAbility);
       if (!effect.empty()) {
-        Debuff(t, std::string(effect), act.Number("condDuration").value_or(0) + StatModBonus(act, "statModTrapCondDuration", base_));
+        Debuff(t, std::string(effect), act.Number(kCondDuration).value_or(0) + StatModBonus(act, kStatModTrapCondDuration, base_));
       }
     }
   }
@@ -1017,16 +1020,16 @@ void Simulation::Explode(const Trap& trap) {
   // enemies caught go off bombDelay later, bombTriggerCount times. Sticking
   // to the ones closest to the trap is an assumption.
   const int bombs =
-      static_cast<int>(act.Number("bombCount").value_or(0)) + StatModCount(act, "statModBombCount", base_);
-  if (bombs <= 0 || !act.Number("bombDamage")) {
+      static_cast<int>(act.Number(kBombCount).value_or(0)) + StatModCount(act, kStatModBombCount, base_);
+  if (bombs <= 0 || !act.Number(kBombDamage)) {
     return;
   }
   std::ranges::sort(caught);
   caught.resize(std::min(caught.size(), static_cast<std::size_t>(bombs)));
-  const double radius = act.Number("bombRadius").value_or(0) + StatModBonus(act, "statModBombRadius", base_);
-  const int times = std::max(1, static_cast<int>(act.Number("bombTriggerCount").value_or(1)));
-  const double delay_ms = act.Number("bombDelay").value_or(0) * 1000;
-  const double period_ms = act.Number("bombTriggerPeriod").value_or(0) * 1000;
+  const double radius = act.Number(kBombRadius).value_or(0) + StatModBonus(act, kStatModBombRadius, base_);
+  const int times = std::max(1, static_cast<int>(act.Number(kBombTriggerCount).value_or(1)));
+  const double delay_ms = act.Number(kBombDelay).value_or(0) * 1000;
+  const double period_ms = act.Number(kBombTriggerPeriod).value_or(0) * 1000;
   for (const auto& [d, t] : caught) {
     for (int k = 0; k < times; ++k) {
       const double at = TimeMs() + delay_ms + k * period_ms;
