@@ -1421,6 +1421,9 @@ std::optional<EnchantResult> Search::Run(double incumbent) {
       bool cut = false;
     };
     constexpr std::size_t kBatch = 64;
+    std::size_t layouts = 1;
+    for (const auto& sets : special_sets) layouts *= sets.size();
+    std::size_t started = 0;
     bool restart = false;
     bool more = true;
     bool first = true;
@@ -1446,6 +1449,7 @@ std::optional<EnchantResult> Search::Run(double incumbent) {
           pick[slot] = 0;
         }
         more = slot < kSlots;
+        ++started;
       }
       const double before = best_;
       ParallelFor(batch.size(), [&](std::size_t i) {
@@ -1454,7 +1458,14 @@ std::optional<EnchantResult> Search::Run(double incumbent) {
         p.unread = UnreadStat(*p.layout);
         if (p.unread < 0) p.cut = CutByOpen(*p.layout, p.specials, before);
       });
+      std::size_t through = started - batch.size();
+      // The share of layouts finished, as each next one starts.
+      const auto report = [&] {
+        if (settings_.progress) settings_.progress(static_cast<double>(through) / static_cast<double>(layouts));
+        ++through;
+      };
       for (const Pending& p : batch) {
+        report();
         if (p.layout == nullptr) continue;
         if (p.unread >= 0) {
           read_[static_cast<std::size_t>(p.unread)] = true;

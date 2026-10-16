@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -22,6 +23,9 @@ struct EnchantSettings {
   /// Whether enchantments that only an artifact or an engraving puts on an
   /// item count.
   bool artifacts = true;
+  /// Called now and then with the share of the search done, 0 to 1, on the
+  /// thread that started it.
+  std::function<void(double)> progress = {};
 };
 
 struct EnchantResult {

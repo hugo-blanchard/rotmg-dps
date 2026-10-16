@@ -10,6 +10,7 @@
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 
 #include <nlohmann/json.hpp>
@@ -22,6 +23,7 @@
 #include "rotmg/optimize.hpp"
 #include "rotmg/sets.hpp"
 #include "request.hpp"
+#include "search/bounded.hpp"
 #include "shared_map.hpp"
 
 // Request:
@@ -706,6 +708,17 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 //   {"done", "baseline", "evaluated", "builds"}
 // with "done" from 0 to 1, a rough guess, and the best builds so far.
 //
+// With "exact": {"armors": [...], "rings": [...]} in "optimize", it's the
+// exact bounded search instead: the request's weapon and ability, which it
+// needs, one of the armors and one of the rings listed by name ("" for none;
+// the request's own when a list is missing), and the best enchantments on
+// all four under "slots" and "artifacts". Other options don't apply, and
+// burst isn't supported. It returns the one best build, as above, with
+//   {"ok": true, "proven": true, "pairs", "baseline", "evaluated", "builds"}
+// ("evaluated" counts pairs) and reports progress as
+//   {"done", "pairs": [searched, of], "baseline", "evaluated", "builds"}
+// with the best build so far.
+//
 // ExplainBuild takes the same request and returns, for the request's own
 // build in the units the search ranks by,
 //   {"ok": true, "score", "items": {"ability": <loss without it>, "armor", "ring"},
@@ -778,6 +791,104 @@ json Estimate(const Dataset& d, const OptimizerProblem& problem) {
     high *= 0.2;
   }
   return {{"ok", true}, {"evaluationS", each}, {"evaluations", {low, high}}, {"seconds", {low * each, high * each}}};
+}
+
+// The exact bounded search: the request's weapon and ability, one of the
+// armors and one of the rings `exact` lists ("armors", "rings", by name; the
+// request's own when missing), and the best enchantments on all four, under
+// the problem's per-item and artifact settings. Answers like a search, with
+// "proven" when it finished.
+std::string RunExact(const Dataset& d, const json& base, const json& exact, const OptimizerProblem& problem,
+                     bool burst, search::Weights weights, const std::function<void(const std::string&)>& progress,
+                     const std::function<json(const OptimizerResult&)>& builds) {
+  if (burst) {
+    return Error("the exact search ranks builds by sustained DPS, not burst damage").dump();
+  }
+  const auto index = [](const auto& list, const std::string& name) {
+    const auto it = std::ranges::find(list, name, [](const auto& x) { return x.name; });
+    return it == list.end() ? -1 : static_cast<std::int32_t>(it - list.begin());
+  };
+  const std::int32_t weapon = index(d.weapons, base.value("weapon", std::string()));
+  const std::int32_t ability = index(d.abilities, base.value("ability", std::string()));
+  if (weapon < 0 || ability < 0) {
+    return Error("the exact search needs a weapon and an ability").dump();
+  }
+  search::BoundedSettings settings;
+  settings.enchant.per_item = problem.per_item;
+  settings.enchant.artifacts = problem.artifacts;
+  for (const auto& [key, own, list, into] :
+       {std::tuple{"armors", "armor", &d.armors, &settings.armors}, {"rings", "ring", &d.rings, &settings.rings}}) {
+    std::vector<std::string> names = exact.value(key, std::vector<std::string>{});
+    if (names.empty()) {
+      names.push_back(base.value(own, std::string()));
+    }
+    for (const std::string& name : names) {
+      const std::int32_t i = name.empty() ? -1 : index(*list, name);
+      if (!name.empty() && i < 0) {
+        return Error(std::string("no ") + own + " named \"" + name + "\"").dump();
+      }
+      if (std::ranges::find(*into, i) == into->end()) {
+        into->push_back(i);
+      }
+    }
+  }
+  const search::Model model(d, ReadSpec(base));
+  // The request's own build's score, enchantments and all, when it
+  // evaluates.
+  OptimizerBuild own = problem.start;
+  own.enchants[0] = base.value("enchantments", std::vector<std::string>{});
+  const json gear = base.value("gearEnchantments", json::object());
+  for (const auto& [slot, key] : {std::pair{1, "ability"}, {2, "armor"}, {3, "ring"}}) {
+    own.enchants[static_cast<std::size_t>(slot)] = gear.value(key, std::vector<std::string>{});
+  }
+  const double baseline = problem.score(own, {}).value_or(0);
+  const auto result = [&](const std::optional<search::EnchantResult>& best, std::size_t pairs) {
+    OptimizerResult out;
+    out.baseline = baseline;
+    out.evaluated = static_cast<long>(pairs);
+    if (best) {
+      OptimizerBuild b;
+      for (std::size_t s = 0; s < search::kSlots; ++s) {
+        if (best->build.items[s] >= 0) {
+          b.items[s] = model.ItemName(s, best->build.items[s]);
+        }
+        for (const std::int32_t e : best->build.enchants[s]) {
+          b.enchants[s].push_back(model.enchantment(e).id);
+        }
+      }
+      out.builds.emplace_back(best->score, std::move(b));
+    }
+    return out;
+  };
+  using Clock = std::chrono::steady_clock;
+  auto last = Clock::now();
+  if (progress) {
+    settings.progress = [&](const search::BoundedProgress& p) {
+      if (Clock::now() - last < std::chrono::duration<double>(problem.progress_every_s)) {
+        return;
+      }
+      last = Clock::now();
+      const double done = (static_cast<double>(p.done) + p.within) / static_cast<double>(std::max<std::size_t>(1, p.pairs));
+      progress(json{{"done", done},
+                    {"pairs", {p.done, p.pairs}},
+                    {"baseline", baseline},
+                    {"evaluated", p.done},
+                    {"builds", builds(result(p.best, p.done))}}
+                   .dump());
+    };
+  }
+  const std::size_t pairs = settings.armors.size() * settings.rings.size();
+  const std::optional<search::EnchantResult> best = search::BestBoundedBuild(model, weights, weapon, ability, settings);
+  if (!best) {
+    return Error("no build with these items evaluates").dump();
+  }
+  return json{{"ok", true},
+              {"proven", true},
+              {"pairs", pairs},
+              {"baseline", baseline},
+              {"evaluated", pairs},
+              {"builds", builds(result(best, pairs))}}
+      .dump();
 }
 
 // What RunOptimize does with the request: search, estimate how long a
@@ -1024,6 +1135,10 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
       }
       return out;
     };
+    if (const auto exact = opt.find("exact"); exact != opt.end() && run == Run::kSearch) {
+      return RunExact(d, base, *exact, problem, burst.has_value(), {weapon_weight, ability_weight}, progress,
+                      [&](const OptimizerResult& r) { return builds(r); });
+    }
     if (run == Run::kEstimate) {
       return Estimate(d, problem).dump();
     }

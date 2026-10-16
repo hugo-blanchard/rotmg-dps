@@ -858,3 +858,49 @@ TEST_CASE("the optimizer only uses enchantments the items can get") {
   CHECK(uses(optimize("true"), "Alien_OnShoot_Attack_Boost"));
   CHECK_FALSE(uses(optimize("false"), "Alien_OnShoot_Attack_Boost"));
 }
+
+TEST_CASE("the exact search proves the best armor, ring and enchantments for a weapon and ability") {
+  rotmg::Api api = LoadedApi();
+  const auto optimize = [&](const std::string& exact) {
+    return json::parse(api.Optimize(R"({"class": "Swordsman", "weapon": "Plain Sword", "ability": "Plain Spell",
+        "armor": "Plain Mail", "attack": 75, "dexterity": 50, "wisdom": 60, "hitModel": {"distance": 3},
+        "optimize": {"slots": 1, "exact": )" + exact + "}}"));
+  };
+  const json res = optimize(R"({"rings": ["Plain Ring", "Plain Amulet"]})");
+  REQUIRE(res["ok"] == true);
+  CHECK(res["proven"] == true);
+  CHECK(res["pairs"] == 2);
+  CHECK(res["builds"][0]["score"].get<double>() >= res["baseline"].get<double>());
+  const json& best = res["builds"][0];
+  CHECK(best["weapon"] == "Plain Sword");
+  CHECK(best["ability"] == "Plain Spell");
+  CHECK(best["armor"] == "Plain Mail");
+  // No other choice beats it: each ring on its own does no better.
+  for (const char* ring : {"Plain Ring", "Plain Amulet"}) {
+    const json one = optimize(std::string(R"({"rings": [")") + ring + R"("]})");
+    REQUIRE(one["ok"] == true);
+    CHECK(one["builds"][0]["score"].get<double>() <= best["score"].get<double>());
+  }
+
+  CHECK(json::parse(api.Optimize(R"({"class": "Swordsman", "weapon": "Plain Sword",
+      "optimize": {"exact": {}}})"))["ok"] == false);
+  CHECK(optimize(R"({"rings": ["No Such Ring"]})")["ok"] == false);
+
+  // The baseline is the request's build as it is, enchantments and all: the
+  // best build, proven again, is no gain on itself.
+  const json& e = best["enchantments"];
+  const json again = json::parse(api.Optimize(json{{"class", "Swordsman"}, {"weapon", best["weapon"]},
+                                                   {"ability", best["ability"]}, {"armor", best["armor"]},
+                                                   {"ring", best["ring"]}, {"attack", 75}, {"dexterity", 50},
+                                                   {"wisdom", 60}, {"hitModel", {{"distance", 3}}},
+                                                   {"enchantments", e["weapon"]},
+                                                   {"gearEnchantments", {{"ability", e["ability"]},
+                                                                         {"armor", e["armor"]},
+                                                                         {"ring", e["ring"]}}},
+                                                   {"optimize", {{"slots", 1}, {"exact", json::object()}}}}
+                                                  .dump()));
+  REQUIRE(again["ok"] == true);
+  CHECK(again["builds"][0]["score"].get<double>() == Catch::Approx(again["baseline"].get<double>()));
+  CHECK(json::parse(api.Optimize(R"({"class": "Swordsman", "weapon": "Plain Sword", "ability": "Plain Spell",
+      "optimize": {"exact": {}, "burst": {"window": 1, "every": 10}}})"))["ok"] == false);
+}
