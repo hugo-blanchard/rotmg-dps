@@ -143,3 +143,68 @@ TEST_CASE("the search's scorer gives the engine's character and DPS for any buil
   }
   CHECK(compared > 300);
 }
+
+TEST_CASE("items prepared once take any enchantments like a request prepared whole") {
+  const rotmg::Dataset d = LoadSmallDataset();
+  std::mt19937 rng(11);
+  int compared = 0;
+  for (const rotmg::Class& c : d.classes) {
+    rotmg::RequestSpec spec;
+    spec.class_id = c.id;
+    spec.character = {.attack = c.attack.max, .dexterity = c.dexterity.max, .wisdom = c.wisdom.max};
+    spec.target.defense = 30;
+    const std::array<std::vector<std::int32_t>, kSlots> items = {
+        OfType(d.weapons, c.weapon_slot_type), OfType(d.abilities, c.ability_slot_type),
+        OfType(d.armors, c.armor_slot_type), OfType(d.rings, c.ring_slot_type)};
+    for (int trial = 0; trial < 40; ++trial) {
+      std::array<std::int32_t, kSlots> pick{};
+      for (std::size_t s = 0; s < kSlots; ++s) {
+        pick[s] = items[s].empty() || (s != 0 && rng() % 4 == 0) ? -1 : items[s][rng() % items[s].size()];
+      }
+      if (pick[0] < 0) {
+        continue;
+      }
+      const auto at = [](const auto& list, std::int32_t i) { return list[static_cast<std::size_t>(i)]; };
+      rotmg::RequestSpec bare = spec;
+      bare.weapon = at(d.weapons, pick[0]).name;
+      if (pick[1] >= 0) bare.ability = at(d.abilities, pick[1]).name;
+      if (pick[2] >= 0) bare.armor = at(d.armors, pick[2]).name;
+      if (pick[3] >= 0) bare.ring = at(d.rings, pick[3]).name;
+      const rotmg::PreparedItems prepared = rotmg::PrepareItems(bare, d);
+      // The same prepared items, with several sets of enchantments.
+      for (int round = 0; round < 3; ++round) {
+        const auto ids = [&](const auto& list, std::int32_t i) {
+          std::vector<std::string> out;
+          if (i >= 0) {
+            for (const std::int32_t e : RandomEnchantments(d, at(list, i), rng)) {
+              out.push_back(d.enchantments[static_cast<std::size_t>(e)].id);
+            }
+          }
+          return out;
+        };
+        rotmg::RequestSpec full = bare;
+        full.enchantments = ids(d.weapons, pick[0]);
+        full.gear_enchantments.emplace();
+        (*full.gear_enchantments)["ability"] = ids(d.abilities, pick[1]);
+        (*full.gear_enchantments)["armor"] = ids(d.armors, pick[2]);
+        (*full.gear_enchantments)["ring"] = ids(d.rings, pick[3]);
+        const rotmg::Request whole = rotmg::Assemble(full, d);
+        const rotmg::Request reused = rotmg::Finish(rotmg::PrepareEnchantments(prepared, full, d), full.character);
+        CHECK(reused.character.attack == whole.character.attack);
+        CHECK(reused.character.dexterity == whole.character.dexterity);
+        CHECK(reused.weapon->on_shoot.size() == whole.weapon->on_shoot.size());
+        CHECK((reused.ability == nullptr) == (whole.ability == nullptr));
+        if (whole.ability != nullptr) {
+          CHECK(reused.ability->mp_cost == whole.ability->mp_cost);
+          CHECK(reused.ability->on_ability.size() == whole.ability->on_ability.size());
+        }
+        const auto dps = [](const rotmg::Request& r) {
+          return rotmg::EvaluateBuild(*r.weapon, r.ability, r.character, r.target, r.assumptions).dps;
+        };
+        CHECK(dps(reused) == dps(whole));
+        ++compared;
+      }
+    }
+  }
+  CHECK(compared > 50);
+}

@@ -85,6 +85,35 @@ struct Prepared {
 // Throws on malformed JSON.
 RequestSpec ReadSpec(const nlohmann::json& req);
 
+// What a request's items decide, before their enchantments, for preparing
+// many sets of enchantments on the same items.
+struct PreparedItems {
+  // The weapon and ability as they are, without the effects below.
+  Prepared prepared;
+  // The other items' on-shoot effects, which join the weapon's after its
+  // enchantments', and the projectiles they create, in order.
+  std::vector<Activate> joined_shoot;
+  std::vector<std::pair<int, Projectile>> joined_projectiles;
+  bool joins = false;
+  // The weapon with them, for a request without enchantments.
+  std::shared_ptr<const Weapon> joined;
+  // The ability with the other items' on-ability effects, when they have any.
+  std::shared_ptr<const Ability> ability;
+  // The gear's AbilityUseDiscount multipliers, all multiplied together.
+  double discount = 1;
+};
+
+// The spec's items looked up, with what they decide. Throws on an unknown
+// armor or ring; an unknown weapon leaves `weapon` null.
+PreparedItems PrepareItems(const RequestSpec& spec, const Dataset& dataset);
+
+// Adds the joined effects to a weapon.
+void Join(const PreparedItems& items, Weapon& weapon);
+
+// The prepared items with the spec's enchantments. Throws on an unknown
+// enchantment or one the item can't have.
+Prepared PrepareEnchantments(const PreparedItems& items, const RequestSpec& spec, const Dataset& dataset);
+
 // Everything in the spec but its base stats, looked up. Throws on an
 // unknown armor, ring or enchantment; an unknown weapon leaves `weapon` null.
 Prepared Prepare(const RequestSpec& spec, const Dataset& dataset);

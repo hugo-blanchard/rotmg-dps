@@ -78,8 +78,9 @@ RequestSpec ReadSpec(const json& req) {
   return spec;
 }
 
-Prepared Prepare(const RequestSpec& spec, const Dataset& dataset) {
-  Prepared out;
+PreparedItems PrepareItems(const RequestSpec& spec, const Dataset& dataset) {
+  PreparedItems items;
+  Prepared& out = items.prepared;
   Request& r = out.request;
   r.weapon = FindWeapon(dataset, spec.weapon);
   if (spec.ability) {
@@ -120,6 +121,118 @@ Prepared Prepare(const RequestSpec& spec, const Dataset& dataset) {
     r.character = r.character.With(s.stats);
   }
   r.character.worn = ItemTypes(worn);
+  // The items' own on-equip effects besides flat stats.
+  double discount = 1;
+  const auto equip = [&](const std::vector<Activate>& on_equip) {
+    for (const Activate& a : on_equip) {
+      if (AddOwnConversion(a, out.stats.own)) {
+        continue;
+      }
+      if (a.type == "AbilityUseDiscount") {
+        // RealmEye, The Twilight Gemstone: its cut stacks with other gear's.
+        discount *= a.Number("multiplier").value_or(1);
+      } else if (const std::string tag = "ActivateOnEquip " + a.type;
+                 std::ranges::find(r.gear_unsupported, tag) == r.gear_unsupported.end()) {
+        r.gear_unsupported.push_back(tag);
+      }
+    }
+  };
+  if (r.weapon != nullptr) {
+    equip(r.weapon->on_equip);
+  }
+  if (r.ability != nullptr) {
+    equip(r.ability->on_equip);
+  }
+  for (const Gear* g : {r.armor, r.ring}) {
+    if (g != nullptr) {
+      equip(g->on_equip);
+    }
+  }
+  items.discount = discount;
+  const auto found = std::ranges::find(dataset.classes, spec.class_id, &Class::id);
+  out.cls = found == dataset.classes.end() ? nullptr : &*found;
+  out.stats.before = ToStats(r.character);
+  if (r.weapon != nullptr) {
+    out.stats.item_bonuses = ToStats(r.weapon->stat_bonuses);
+  }
+  if (r.ability != nullptr) {
+    const Stats ability = ToStats(r.ability->stat_bonuses);
+    for (std::size_t s = 0; s < kStats; ++s) {
+      out.stats.item_bonuses[s] += ability[s];
+    }
+  }
+  if (out.cls != nullptr) {
+    out.stats.has_class = true;
+    out.stats.class_max = {out.cls->attack.max,   out.cls->dexterity.max, out.cls->speed.max,
+                           out.cls->wisdom.max,   out.cls->vitality.max,  out.cls->defense.max,
+                           out.cls->max_hit_points.max, out.cls->max_magic_points.max};
+  }
+  // The other gear's on-shoot effects go off as the weapon fires, like its
+  // own, and some create their projectiles. They join the weapon after its
+  // enchantments' effects.
+  const auto join = [&](const std::vector<Activate>& on_shoot, const std::map<int, Projectile>& created,
+                        const Ability* own) {
+    if (on_shoot.empty() || r.weapon == nullptr) {
+      return;
+    }
+    for (Activate a : on_shoot) {
+      // An ability's shots without a `type` are its own projectile, which
+      // the weapon knows by the ability's type.
+      if (own != nullptr && a.Text("type").empty() && !own->projectiles.empty()) {
+        a.params["type"] = std::to_string(own->type);
+        items.joined_projectiles.emplace_back(own->type, own->projectiles[0]);
+      }
+      items.joined_shoot.push_back(std::move(a));
+    }
+    items.joined_projectiles.insert(items.joined_projectiles.end(), created.begin(), created.end());
+    items.joins = true;
+  };
+  if (r.ability != nullptr) {
+    join(r.ability->on_shoot, r.ability->created_projectiles, r.ability);
+  }
+  for (const Gear* g : {r.armor, r.ring}) {
+    if (g != nullptr) {
+      join(g->on_shoot, g->created_projectiles, nullptr);
+    }
+  }
+  if (items.joins) {
+    Weapon w = *r.weapon;
+    Join(items, w);
+    items.joined = std::make_shared<const Weapon>(std::move(w));
+  }
+  // What the other gear does when the ability is used goes with the
+  // ability's own on-use effects.
+  if (r.ability != nullptr) {
+    Ability with = *r.ability;
+    const auto add = [&](const std::vector<Activate>& on_ability, const std::map<int, Projectile>& created) {
+      with.on_ability.insert(with.on_ability.end(), on_ability.begin(), on_ability.end());
+      with.created_projectiles.insert(created.begin(), created.end());
+    };
+    if (r.weapon != nullptr) {
+      add(r.weapon->on_ability, r.weapon->created_projectiles);
+    }
+    for (const Gear* g : {r.armor, r.ring}) {
+      if (g != nullptr) {
+        add(g->on_ability, g->created_projectiles);
+      }
+    }
+    if (with.on_ability.size() != r.ability->on_ability.size()) {
+      items.ability = std::make_shared<const Ability>(std::move(with));
+    }
+  }
+  return items;
+}
+
+void Join(const PreparedItems& items, Weapon& weapon) {
+  weapon.on_shoot.insert(weapon.on_shoot.end(), items.joined_shoot.begin(), items.joined_shoot.end());
+  for (const auto& [type, projectile] : items.joined_projectiles) {
+    weapon.created_projectiles.emplace(type, projectile);
+  }
+}
+
+Prepared PrepareEnchantments(const PreparedItems& items, const RequestSpec& spec, const Dataset& dataset) {
+  Prepared out = items.prepared;
+  Request& r = out.request;
   // Reads one item's enchantment ids, checking the item can have each, that
   // none clash and that they fit in its slots.
   const bool artifacts = spec.artifacts;
@@ -161,6 +274,7 @@ Prepared Prepare(const RequestSpec& spec, const Dataset& dataset) {
   };
   const auto& on_weapon = spec.enchantments;
   const auto& on_gear = spec.gear_enchantments;
+  double mp_cost = 1;
   if ((on_weapon || on_gear) && r.weapon != nullptr) {
     const std::vector<const Enchantment*> picked =
         !on_weapon
@@ -191,123 +305,41 @@ Prepared Prepare(const RequestSpec& spec, const Dataset& dataset) {
       on_slot("ability", "ABILITY", r.ability);
     }
     Enchanted en = Enchant(*r.weapon, picked, gear);
-    if (en.mp_cost != 1 && r.ability != nullptr && r.ability->mp_cost) {
-      Ability cheaper = *r.ability;
-      cheaper.mp_cost = *cheaper.mp_cost * en.mp_cost;
-      r.enchanted_ability = std::make_shared<const Ability>(std::move(cheaper));
-      r.ability = r.enchanted_ability.get();
-    }
+    mp_cost = en.mp_cost;
     // Any stat the flat amounts move by a point or more, after rounding down.
     if (std::ranges::any_of(en.stats.tenths, [](std::int32_t t) { return t < 0 || t >= 10; })) {
       r.notes.emplace_back("fractional stat bonuses from enchantments add up and the total rounds down");
     }
     out.enchantments = std::move(en.stats);
     en.weapon.unsupported.insert(en.weapon.unsupported.end(), en.unsupported.begin(), en.unsupported.end());
+    Join(items, en.weapon);
     r.enchanted = std::make_shared<const Weapon>(std::move(en.weapon));
     r.weapon = r.enchanted.get();
+  } else if (items.joined) {
+    r.enchanted = items.joined;
+    r.weapon = r.enchanted.get();
   }
-  // The items' own on-equip effects besides flat stats.
-  double discount = 1;
-  const auto equip = [&](const std::vector<Activate>& on_equip) {
-    for (const Activate& a : on_equip) {
-      if (AddOwnConversion(a, out.stats.own)) {
-        continue;
-      }
-      if (a.type == "AbilityUseDiscount") {
-        // RealmEye, The Twilight Gemstone: its cut stacks with other gear's.
-        discount *= a.Number("multiplier").value_or(1);
-      } else if (const std::string tag = "ActivateOnEquip " + a.type;
-                 std::ranges::find(r.gear_unsupported, tag) == r.gear_unsupported.end()) {
-        r.gear_unsupported.push_back(tag);
-      }
-    }
-  };
-  if (r.weapon != nullptr) {
-    equip(r.weapon->on_equip);
+  // The enchantments' MP cost multipliers, then the gear's discounts.
+  if (items.ability) {
+    r.enchanted_ability = items.ability;
+    r.ability = r.enchanted_ability.get();
   }
-  if (r.ability != nullptr) {
-    equip(r.ability->on_equip);
-  }
-  for (const Gear* g : {r.armor, r.ring}) {
-    if (g != nullptr) {
-      equip(g->on_equip);
-    }
-  }
-  if (discount != 1 && r.ability != nullptr && r.ability->mp_cost) {
+  if ((mp_cost != 1 || items.discount != 1) && r.ability != nullptr && r.ability->mp_cost) {
     Ability cheaper = *r.ability;
-    cheaper.mp_cost = *cheaper.mp_cost * discount;
+    if (mp_cost != 1) {
+      cheaper.mp_cost = *cheaper.mp_cost * mp_cost;
+    }
+    if (items.discount != 1) {
+      cheaper.mp_cost = *cheaper.mp_cost * items.discount;
+    }
     r.enchanted_ability = std::make_shared<const Ability>(std::move(cheaper));
     r.ability = r.enchanted_ability.get();
   }
-  const auto found = std::ranges::find(dataset.classes, spec.class_id, &Class::id);
-  out.cls = found == dataset.classes.end() ? nullptr : &*found;
-  out.stats.before = ToStats(r.character);
-  if (r.weapon != nullptr) {
-    out.stats.item_bonuses = ToStats(r.weapon->stat_bonuses);
-  }
-  if (r.ability != nullptr) {
-    const Stats ability = ToStats(r.ability->stat_bonuses);
-    for (std::size_t s = 0; s < kStats; ++s) {
-      out.stats.item_bonuses[s] += ability[s];
-    }
-  }
-  if (out.cls != nullptr) {
-    out.stats.has_class = true;
-    out.stats.class_max = {out.cls->attack.max,   out.cls->dexterity.max, out.cls->speed.max,
-                           out.cls->wisdom.max,   out.cls->vitality.max,  out.cls->defense.max,
-                           out.cls->max_hit_points.max, out.cls->max_magic_points.max};
-  }
-  // The other gear's on-shoot effects go off as the weapon fires, like its
-  // own, and some create their projectiles.
-  const auto join = [&](const std::vector<Activate>& on_shoot, const std::map<int, Projectile>& created,
-                        const Ability* own) {
-    if (on_shoot.empty() || r.weapon == nullptr) {
-      return;
-    }
-    Weapon w = *r.weapon;
-    for (Activate a : on_shoot) {
-      // An ability's shots without a `type` are its own projectile, which
-      // the weapon knows by the ability's type.
-      if (own != nullptr && a.Text("type").empty() && !own->projectiles.empty()) {
-        a.params["type"] = std::to_string(own->type);
-        w.created_projectiles.emplace(own->type, own->projectiles[0]);
-      }
-      w.on_shoot.push_back(std::move(a));
-    }
-    w.created_projectiles.insert(created.begin(), created.end());
-    r.enchanted = std::make_shared<const Weapon>(std::move(w));
-    r.weapon = r.enchanted.get();
-  };
-  if (r.ability != nullptr) {
-    join(r.ability->on_shoot, r.ability->created_projectiles, r.ability);
-  }
-  for (const Gear* g : {r.armor, r.ring}) {
-    if (g != nullptr) {
-      join(g->on_shoot, g->created_projectiles, nullptr);
-    }
-  }
-  // What the other gear does when the ability is used goes with the
-  // ability's own on-use effects.
-  if (r.ability != nullptr) {
-    Ability with = *r.ability;
-    const auto add = [&](const std::vector<Activate>& on_ability, const std::map<int, Projectile>& created) {
-      with.on_ability.insert(with.on_ability.end(), on_ability.begin(), on_ability.end());
-      with.created_projectiles.insert(created.begin(), created.end());
-    };
-    if (const Weapon* w = FindWeapon(dataset, spec.weapon)) {
-      add(w->on_ability, w->created_projectiles);
-    }
-    for (const Gear* g : {r.armor, r.ring}) {
-      if (g != nullptr) {
-        add(g->on_ability, g->created_projectiles);
-      }
-    }
-    if (with.on_ability.size() != r.ability->on_ability.size()) {
-      r.enchanted_ability = std::make_shared<const Ability>(std::move(with));
-      r.ability = r.enchanted_ability.get();
-    }
-  }
   return out;
+}
+
+Prepared Prepare(const RequestSpec& spec, const Dataset& dataset) {
+  return PrepareEnchantments(PrepareItems(spec, dataset), spec, dataset);
 }
 
 StatBase StatBaseOf(const Prepared& prepared, const Character& base) {

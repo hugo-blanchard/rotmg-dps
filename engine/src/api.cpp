@@ -7,9 +7,11 @@
 #include <exception>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
 
 #include <nlohmann/json.hpp>
@@ -902,9 +904,22 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
     constexpr std::array<int Character::*, 8> kStatFields = {
         &Character::attack,   &Character::dexterity, &Character::speed,          &Character::wisdom,
         &Character::vitality, &Character::defense,   &Character::max_hit_points, &Character::max_magic_points};
-    // The build's items and enchantments looked up, or nothing for a build
-    // the engine rejects.
-    const auto prepare = [&](const OptimizerBuild& b) -> std::optional<Prepared> {
+    // The build's items looked up, once per set of items: the search tries
+    // many sets of enchantments on the same items. Null for items the engine
+    // rejects.
+    std::mutex items_mu;
+    std::unordered_map<std::string, std::shared_ptr<const PreparedItems>> items_cache;
+    const auto items_of = [&](const OptimizerBuild& b) -> std::shared_ptr<const PreparedItems> {
+      std::string key;
+      for (const std::string& item : b.items) {
+        key += item + "\n";
+      }
+      {
+        std::lock_guard lock(items_mu);
+        if (const auto it = items_cache.find(key); it != items_cache.end()) {
+          return it->second;
+        }
+      }
       RequestSpec spec = base_spec;
       const auto named = [](const std::string& name) {
         return name.empty() ? std::nullopt : std::optional<std::string>(name);
@@ -913,16 +928,34 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
       spec.ability = named(b.items[1]);
       spec.armor = named(b.items[2]);
       spec.ring = named(b.items[3]);
+      std::shared_ptr<const PreparedItems> items;
+      try {
+        PreparedItems made = PrepareItems(spec, d);
+        if (made.prepared.request.weapon != nullptr && !made.prepared.request.unknown_ability) {
+          items = std::make_shared<const PreparedItems>(std::move(made));
+        }
+      } catch (const std::exception&) {
+        // Items the engine rejects, like an armor it doesn't know.
+      }
+      std::lock_guard lock(items_mu);
+      return items_cache.try_emplace(key, items).first->second;
+    };
+    // The build's items and enchantments looked up, or nothing for a build
+    // the engine rejects.
+    const auto prepare = [&](const OptimizerBuild& b) -> std::optional<Prepared> {
+      const std::shared_ptr<const PreparedItems> items = items_of(b);
+      if (items == nullptr) {
+        return std::nullopt;
+      }
+      RequestSpec spec;
+      spec.artifacts = base_spec.artifacts;
       spec.enchantments = b.enchants[0];
       spec.gear_enchantments.emplace();
       (*spec.gear_enchantments)["ability"] = b.enchants[1];
       (*spec.gear_enchantments)["armor"] = b.enchants[2];
       (*spec.gear_enchantments)["ring"] = b.enchants[3];
       try {
-        Prepared p = Prepare(spec, d);
-        if (p.request.weapon != nullptr && !p.request.unknown_ability) {
-          return p;
-        }
+        return PrepareEnchantments(*items, spec, d);
       } catch (const std::exception&) {
         // A combination the engine rejects, like an enchantment that no
         // longer fits, just doesn't count.
