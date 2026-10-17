@@ -53,6 +53,10 @@ class Api {
   /// build, scored as Optimize would. Shapes are in api.cpp.
   std::string ExplainBuild(std::string_view request_json) const;
 
+  /// The stats some damage source a class can use scales with, which are
+  /// the ones Optimize can build around. Shapes are in api.cpp.
+  std::string DamageStats(std::string_view request_json) const;
+
  private:
   std::optional<Dataset> dataset_;
   std::unique_ptr<Simulation> simulation_;

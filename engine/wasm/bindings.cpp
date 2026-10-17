@@ -33,6 +33,9 @@ EMSCRIPTEN_BINDINGS(rotmg) {
       .function("explainBuild", optional_override([](const rotmg::Api& api, const std::string& json) {
                   return api.ExplainBuild(json);
                 }))
+      .function("damageStats", optional_override([](const rotmg::Api& api, const std::string& json) {
+                  return api.DamageStats(json);
+                }))
       .function("estimateOptimize", optional_override([](const rotmg::Api& api, const std::string& json) {
                   return api.EstimateOptimize(json);
                 }));

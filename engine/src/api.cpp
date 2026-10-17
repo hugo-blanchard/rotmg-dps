@@ -473,6 +473,63 @@ std::string Api::Evaluate(std::string_view request_json) const {
 //   {"ok": true, "dps": <the request's own>, "options": [<dps or null>, ...]}
 // in the same order, null for an option the engine rejects, like an
 // enchantment the item can't hold.
+// A damage stats request names the class, {"class": "Knight"}, and returns
+//   {"ok": true, "stats": ["ATT", "DEX", "WIS", ...]}
+// in kStatNames order: the stats some damage source the class can use
+// scales with, as DpsWeights::stat counts them. Every weapon's shots scale
+// with ATT and DEX; an ability's, an armor's, a ring's or an enchantment's
+// effect with the stat DamageScaling gives it. Reskins and unobtainable
+// items are left out, as Optimize leaves them out.
+std::string Api::DamageStats(std::string_view request_json) const {
+  if (!dataset_) {
+    return Error("no dataset loaded").dump();
+  }
+  try {
+    const json req = json::parse(request_json);
+    const std::string id = req.value("class", std::string());
+    const Dataset& d = *dataset_;
+    const auto cls = std::ranges::find(d.classes, id, &Class::id);
+    if (cls == d.classes.end()) {
+      return Error("no class \"" + id + "\"").dump();
+    }
+    std::set<std::string, std::less<>> found = {"ATT", "DEX"};
+    const auto note = [&](const std::vector<Activate>& effects) {
+      for (const Activate& a : effects) {
+        if (std::string stat = DamageScaling(a); !stat.empty()) found.insert(std::move(stat));
+      }
+    };
+    const auto usable = [](const auto& item, int slot_type) {
+      return item.slot_type == slot_type && item.reskin_of.empty() && !item.unobtainable;
+    };
+    for (const Weapon& w : d.weapons) {
+      if (usable(w, cls->weapon_slot_type)) note(w.on_shoot);
+    }
+    for (const Ability& a : d.abilities) {
+      if (!usable(a, cls->ability_slot_type)) continue;
+      note(a.activates);
+      note(a.on_shoot);
+      note(a.on_ability);
+    }
+    for (const auto& [list, slot_type] : {std::pair{&d.armors, cls->armor_slot_type}, std::pair{&d.rings, cls->ring_slot_type}}) {
+      for (const Gear& g : *list) {
+        if (!usable(g, slot_type)) continue;
+        note(g.on_shoot);
+        note(g.on_ability);
+      }
+    }
+    for (const Enchantment& e : d.enchantments) {
+      for (const Mutator& m : e.mutators) note({m.attributes});
+    }
+    json stats = json::array();
+    for (const char* name : kStatNames) {
+      if (found.contains(name)) stats.push_back(name);
+    }
+    return json{{"ok", true}, {"stats", stats}}.dump();
+  } catch (const std::exception& e) {
+    return Error(e.what()).dump();
+  }
+}
+
 std::string Api::EvaluateChoices(std::string_view request_json) const {
   if (!dataset_) {
     return Error("no dataset loaded").dump();

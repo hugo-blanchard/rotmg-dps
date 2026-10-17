@@ -707,6 +707,16 @@ TEST_CASE("the optimizer around a stat ranks by the damage that scales with it")
   CHECK(best["score"].get<double>() < best["abilityDps"].get<double>());
 }
 
+TEST_CASE("a class's damage stats are the ones something it uses deals damage that scales with") {
+  rotmg::Api api = LoadedApi();
+  // The sword's shots scale with ATT and DEX, Plain Spell's burst with WIS;
+  // the helms' and the seal's WIS only makes their buffs last longer.
+  const json res = json::parse(api.DamageStats(R"({"class": "Swordsman"})"));
+  REQUIRE(res["ok"] == true);
+  CHECK(res["stats"] == json::array({"ATT", "DEX", "WIS"}));
+  CHECK(json::parse(api.DamageStats(R"({"class": "Nobody"})"))["ok"] == false);
+}
+
 TEST_CASE("a burst window adds the damage dealt in each") {
   rotmg::Api api = LoadedApi();
   const json res = json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "ability": "Plain Spell",
