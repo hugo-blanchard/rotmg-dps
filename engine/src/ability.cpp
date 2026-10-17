@@ -460,8 +460,9 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   worn.push_back(ability.type);
   prefix = "On use, ";
   for (const Activate& a : ability.on_ability) {
-    // MP given back is counted above, in how often you can cast.
-    if (!GearWorn(a, worn) || a.type == "Magic") {
+    // MP given back is counted above, in how often you can cast. A meter
+    // filled only matters for switching modes.
+    if (!GearWorn(a, worn) || a.type == "Magic" || a.type == "FillMeter") {
       continue;
     }
     if (!GoesOffOnCast(a)) {

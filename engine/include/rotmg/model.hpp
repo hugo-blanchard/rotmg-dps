@@ -262,6 +262,37 @@ struct Weapon {
   int StatBonusFor(std::string_view stat) const;
 };
 
+/// One way of using an ability the player switches between, like a
+/// Druid's normal ability and its form: what it costs and what it does when
+/// used, when its holder shoots, when they switch to it, when they hit an
+/// enemy and when they heal.
+struct AbilityMode {
+  std::string name;
+  /// The ability's subattack its shots use.
+  std::optional<int> attack_index;
+  std::optional<double> mp_cost;
+  std::optional<double> cooldown;
+  std::optional<double> mp_cost_per_second;
+  std::optional<double> mp_end_cost;
+  /// How long the mode lasts once switched to, in seconds.
+  std::optional<double> ability_time;
+  std::optional<double> switch_time;
+  bool multi_phase = false;
+  std::vector<Activate> activates;
+  std::vector<Activate> on_shoot;
+  std::vector<Activate> on_ability;
+  std::vector<Activate> on_switch;
+  std::vector<Activate> on_enemy_hit;
+  std::vector<Activate> on_heal;
+};
+
+/// An item's bar that its modes fill and spend.
+struct Meter {
+  int id = 0;
+  double max_value = 0;
+  double start_value = 0;
+};
+
 struct Ability {
   int type = 0;
   std::string id;
@@ -284,6 +315,13 @@ struct Ability {
   /// Projectiles of other items, by type, that activates and other effects
   /// name in their `type` parameter.
   std::map<int, Projectile> created_projectiles;
+  /// The ways of using the ability the player switches between, if it has
+  /// several. Until switching is modelled, it's used in its first: the
+  /// fields above hold that mode's effects and costs, and `subattacks` only
+  /// its subattack, with every mode's in `mode_subattacks`.
+  std::vector<AbilityMode> modes;
+  std::vector<Subattack> mode_subattacks;
+  std::optional<Meter> meter;
   std::vector<std::string> labels;
   Enchanting enchanting;
   std::string reskin_of;

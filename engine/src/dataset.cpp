@@ -237,6 +237,45 @@ Gear ReadGear(const json& j) {
   return g;
 }
 
+AbilityMode ReadAbilityMode(const json& j) {
+  AbilityMode m;
+  ReadDefault(j, "name", m.name);
+  ReadOptional(j, "attackIndex", m.attack_index);
+  ReadOptional(j, "mpCost", m.mp_cost);
+  ReadOptional(j, "cooldown", m.cooldown);
+  ReadOptional(j, "mpCostPerSecond", m.mp_cost_per_second);
+  ReadOptional(j, "mpEndCost", m.mp_end_cost);
+  ReadOptional(j, "abilityTime", m.ability_time);
+  ReadOptional(j, "switchTime", m.switch_time);
+  ReadDefault(j, "multiPhase", m.multi_phase);
+  m.activates = ReadActivates(j, "activates");
+  m.on_shoot = ReadActivates(j, "onShoot");
+  m.on_ability = ReadActivates(j, "onAbility");
+  m.on_switch = ReadActivates(j, "onSwitch");
+  m.on_enemy_hit = ReadActivates(j, "onEnemyHit");
+  m.on_heal = ReadActivates(j, "onHeal");
+  return m;
+}
+
+// An ability with modes is used in its first until switching between them
+// is modelled: its effects and costs, and with an attack index only that
+// subattack.
+void UseFirstMode(Ability& a) {
+  if (a.modes.empty() || !a.activates.empty() || !a.on_shoot.empty()) {
+    return;
+  }
+  const AbilityMode& m = a.modes.front();
+  a.activates = m.activates;
+  a.on_shoot = m.on_shoot;
+  a.on_ability.insert(a.on_ability.end(), m.on_ability.begin(), m.on_ability.end());
+  if (!a.mp_cost) a.mp_cost = m.mp_cost;
+  if (!a.cooldown) a.cooldown = m.cooldown;
+  a.mode_subattacks = a.subattacks;
+  if (m.attack_index && *m.attack_index >= 0 && static_cast<std::size_t>(*m.attack_index) < a.subattacks.size()) {
+    a.subattacks = {a.mode_subattacks[static_cast<std::size_t>(*m.attack_index)]};
+  }
+}
+
 Ability ReadAbility(const json& j) {
   Ability a;
   j.at("type").get_to(a.type);
@@ -262,12 +301,21 @@ Ability ReadAbility(const json& j) {
   a.on_ability = ReadActivates(j, "onAbility");
   a.on_equip = ReadActivates(j, "onEquip");
   a.created_projectiles = ReadCreatedProjectiles(j);
+  if (auto it = j.find("modes"); it != j.end()) {
+    for (const json& m : *it) {
+      a.modes.push_back(ReadAbilityMode(m));
+    }
+  }
+  if (auto it = j.find("meter"); it != j.end()) {
+    a.meter = Meter{it->value("id", 0), it->at("maxValue").get<double>(), it->value("startValue", 0.0)};
+  }
   ReadDefault(j, "labels", a.labels);
   a.enchanting = ReadEnchanting(j);
   ReadDefault(j, "reskinOf", a.reskin_of);
   ReadDefault(j, "variantOf", a.variant_of);
   ReadDefault(j, "unobtainable", a.unobtainable);
   ReadDefault(j, "unsupported", a.unsupported);
+  UseFirstMode(a);
   return a;
 }
 

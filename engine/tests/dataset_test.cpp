@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "fixture.hpp"
 #include "rotmg/dataset.hpp"
 
@@ -159,4 +161,33 @@ TEST_CASE("an effect's parameters are found by name or by key, in name order") {
   CHECK(a.params.size() == 2);
   CHECK(a.Number(rotmg::ParamKey::kAmount) == 5.0);
   CHECK_FALSE(a.Number(rotmg::ParamKey::kProc).has_value());
+}
+
+TEST_CASE("an ability with modes is used in its first, with that mode's subattack") {
+  nlohmann::json d = nlohmann::json::parse(ReadSmallDatasetText());
+  nlohmann::json sigil = d["abilities"][0];
+  sigil["name"] = "Two Mode Sigil";
+  sigil["type"] = 990;
+  sigil.erase("activates");
+  sigil.erase("mpCost");
+  sigil["subattacks"] = {{{"projectileId", 0}, {"numProjectiles", 1}, {"rateOfFire", 1}},
+                         {{"projectileId", 0}, {"numProjectiles", 2}, {"rateOfFire", 1}}};
+  sigil["modes"] = {{{"name", "Normal Ability"}, {"attackIndex", 0}, {"mpCost", 100},
+                     {"activates", {{{"type", "Shoot"}}}}},
+                    {{"name", "Form"}, {"attackIndex", 1}, {"mpCost", 100}, {"abilityTime", 9.6},
+                     {"activates", {{{"type", "Shoot"}}, {{"type", "BulletCreate"}}}}}};
+  sigil["meter"] = {{"id", 0}, {"maxValue", 500}};
+  d["abilities"].push_back(sigil);
+  const rotmg::Dataset data = rotmg::ParseDataset(d.dump());
+  const rotmg::Ability* a = rotmg::FindAbility(data, "Two Mode Sigil");
+  REQUIRE(a != nullptr);
+  REQUIRE(a->modes.size() == 2);
+  CHECK(a->modes[1].ability_time == 9.6);
+  CHECK(a->meter->max_value == 500);
+  REQUIRE(a->activates.size() == 1);
+  CHECK(a->activates[0].type == "Shoot");
+  CHECK(a->mp_cost == 100);
+  REQUIRE(a->subattacks.size() == 1);
+  CHECK(a->subattacks[0].num_projectiles == 1);
+  CHECK(a->mode_subattacks.size() == 2);
 }
