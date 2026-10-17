@@ -691,6 +691,22 @@ TEST_CASE("the optimizer ranks by the weapon and ability DPS weighted as asked")
   CHECK(none["ok"] == false);
 }
 
+TEST_CASE("the optimizer around a stat ranks by the damage that scales with it") {
+  rotmg::Api api = LoadedApi();
+  // Of the Swordsman abilities only Plain Spell deals damage that scales with
+  // WIS; the helms, the seal and the orb buff the sword or curse the target.
+  const json res = json::parse(api.Optimize(R"({"class": "Swordsman", "weapon": "Plain Sword", "ability": "War Helm",
+      "armor": "Plain Mail", "ring": "Plain Amulet", "attack": 75, "dexterity": 50, "wisdom": 60,
+      "hitModel": {"distance": 3}, "optimize": {"enchantments": "none", "around": "WIS"}})"));
+  REQUIRE(res["ok"] == true);
+  const json& best = res["builds"][0];
+  CHECK(best["ability"] == "Plain Spell");
+  // The score is what WIS adds to the spell: some of its damage it deals
+  // with none.
+  CHECK(best["score"].get<double>() > 0);
+  CHECK(best["score"].get<double>() < best["abilityDps"].get<double>());
+}
+
 TEST_CASE("a burst window adds the damage dealt in each") {
   rotmg::Api api = LoadedApi();
   const json res = json::parse(api.Evaluate(R"({"weapon": "Plain Sword", "ability": "Plain Spell",

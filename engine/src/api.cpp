@@ -40,7 +40,7 @@
 //    "curve": {"from": 0, "to": 150, "step": 5},
 //    "hitCurve": {"from": 0.5, "to": 10, "step": 0.25},
 //    "burst": {"window": 1, "every": 10},
-//    "weights": {"weapon": 1, "ability": 1}}
+//    "weights": {"weapon": 1, "ability": 1, "stat": "VIT"}}
 // Only "weapon" is required. "armor" and "ring" name the armor and ring worn:
 // their stats add to the character's, and they count for sets and for what
 // on-shoot effects need. "wearing" lists the item types of other gear worn
@@ -56,7 +56,8 @@
 // that many seconds (0 for a single moment) every so many seconds, as
 // EvaluateBurst works it out. "weights" say how much the weapon's and the
 // ability's DPS count when choosing how often to cast (both 1 by default),
-// so a build found by a search that only counts one of them shows at the
+// or with "stat" that only the damage that scales with it counts, so a
+// build found by a search that only counts part of the damage shows at the
 // rhythm that search scored.
 //
 // Response:
@@ -694,8 +695,11 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 // that scales best with: every one (the default), none, which is quicker,
 // or just one. Builds are ranked by their weapon DPS, with the ability's
 // buffs, and the ability's own DPS, each times its weight, which is 1 for
-// both unless set. With "burst", they're ranked by the weapon's and the
-// ability's damage in each burst window instead, weighted the same way.
+// both unless set. Around one stat, they're ranked by the DPS the stat adds
+// to the sources that scale with it instead, as DpsWeights::stat counts
+// them: what they deal less what they'd deal with none of the stat. The
+// weights don't apply then. With "burst", they're ranked by the same damage
+// in each burst window instead.
 // "thorough" searches much longer, for checking the normal search. Returns
 //   {"ok": true, "baseline", "evaluated",
 //    "builds": [{"score", "dps", "weaponDps", "abilityDps", "burst",
@@ -993,10 +997,12 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
     for (std::size_t i = 0; i < kOptimizerStats.size(); ++i) {
       problem.restart_stats[i] = around == "every stat" || around == kOptimizerStats[i];
     }
-    if (around != "every stat" && around != "nothing" &&
-        std::ranges::find(kOptimizerStats, around) == kOptimizerStats.end()) {
+    const bool around_stat = std::ranges::find(kOptimizerStats, around) != kOptimizerStats.end();
+    if (around != "every stat" && around != "nothing" && !around_stat) {
       return Error("can't build around \"" + around + "\"").dump();
     }
+    // Built around a stat, a build only counts the damage that scales with it.
+    const std::string counted_stat = around_stat ? around : "";
     const json weights = opt.value("weights", json::object());
     const double weapon_weight = std::max(0.0, weights.value("weapon", 1.0));
     const double ability_weight = std::max(0.0, weights.value("ability", 1.0));
@@ -1079,23 +1085,35 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
       return p ? std::optional<Request>(finish(*p, extra)) : std::nullopt;
     };
     // Cast at the rhythm that does the most for what the search counts.
-    const DpsWeights search_weights{weapon_weight, ability_weight};
+    const DpsWeights search_weights{weapon_weight, ability_weight, counted_stat};
     const auto evaluate = [&](const Request& p) {
       return EvaluateBuild(*p.weapon, p.ability, p.character, p.target, p.assumptions, search_weights);
     };
     const auto evaluate_burst = [&](const Request& p) {
-      return EvaluateBurst(*p.weapon, p.ability, p.character, p.target, p.assumptions, *burst);
+      return EvaluateBurst(*p.weapon, p.ability, p.character, p.target, p.assumptions, *burst, counted_stat);
     };
     const auto ability_dps = [](const BuildBreakdown& b) { return b.ability ? b.ability->dps : 0.0; };
+    // The build with none of the stat. What its sources deal then is the part
+    // the stat doesn't add; counting their whole damage would let a build win
+    // by casting more often with no VIT at all.
+    const auto without_stat = [&](Request p) {
+      Stats stats = ToStats(p.character);
+      stats[static_cast<std::size_t>(StatIndex(counted_stat))] = 0;
+      p.character = WithStats(p.character, stats);
+      return p;
+    };
+    // Ties, common when a weight is 0 or few sources scale with the stat,
+    // go to the build with the most damage in all.
     const auto score_of = [&](const Request& p) {
-      // Ties, common when a weight is 0, go to the build with the most
-      // damage in all: a millionth of it is enough to tell them apart.
-      constexpr double kTieBreak = 1e-6;
       if (burst) {
         const BurstBreakdown e = evaluate_burst(p);
+        if (!counted_stat.empty()) {
+          return e.stat_damage - evaluate_burst(without_stat(p)).stat_damage + kTieBreak * e.damage;
+        }
         return weapon_weight * e.weapon_damage + ability_weight * e.ability_damage + kTieBreak * e.damage;
       }
       const BuildBreakdown e = evaluate(p);
+      if (!counted_stat.empty()) return e.stat_dps - evaluate(without_stat(p)).stat_dps + kTieBreak * e.dps;
       return weapon_weight * e.weapon_dps + ability_weight * ability_dps(e) + kTieBreak * e.dps;
     };
     problem.score = [&](const OptimizerBuild& b, const std::array<int, 8>& extra) -> std::optional<double> {

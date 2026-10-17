@@ -68,6 +68,7 @@ RequestSpec ReadSpec(const json& req) {
   if (auto it = req.find("weights"); it != req.end()) {
     spec.weights.weapon = std::max(0.0, it->value("weapon", 1.0));
     spec.weights.ability = std::max(0.0, it->value("ability", 1.0));
+    spec.weights.stat = it->value("stat", std::string());
   }
   if (auto it = req.find("enchantments"); it != req.end()) {
     spec.enchantments = it->get<std::vector<std::string>>();
