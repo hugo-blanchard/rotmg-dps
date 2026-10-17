@@ -6,6 +6,7 @@
 #include <functional>
 #include <random>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -256,5 +257,85 @@ TEST_CASE("projectile speed is ignored only where it can't change the hits") {
     INFO("distance " << distance);
     CHECK(ignored == (distance < 3));
     MatchesBruteForce(d, spec, items, 2);
+  }
+}
+
+namespace {
+
+// Plain Ring with its own effect `stat` +25% of itself and `other` a share
+// of `stat`, like Faded Heart Scarab (DEX, ATT, -15%) and Fractured Hannya
+// (ATT, DEX, -15%).
+nlohmann::json TradeRing(const nlohmann::json& d, const std::string& name, int type, const std::string& stat,
+                         const std::string& other, int penalty) {
+  nlohmann::json ring = *std::ranges::find_if(d["rings"], [](const auto& r) { return r["name"] == "Plain Ring"; });
+  ring["type"] = type;
+  ring["id"] = name;
+  ring["name"] = name;
+  ring["onEquip"] = {
+      {{"type", "IncrementStatRelative"}, {"params", {{"amount", 25}, {"stat", stat}, {"statRelativeTo", stat}}}},
+      {{"type", "IncrementStatRelative"}, {"params", {{"amount", penalty}, {"stat", other}, {"statRelativeTo", stat}}}}};
+  return ring;
+}
+
+// An enchantment any item rolls that adds flat DEX and ATT and stacks with
+// everything.
+nlohmann::json FlatStats(const std::string& id, int type, double dex, double att) {
+  nlohmann::json mutators = nlohmann::json::array();
+  for (const auto& [stat, amount] : {std::pair{"DEX", dex}, std::pair{"ATT", att}}) {
+    if (amount == 0) continue;
+    mutators.push_back(
+        {{"tag", "ActivateOnEquip"}, {"value", "IncrementStat"}, {"params", {{"stat", stat}, {"amount", amount}}}});
+  }
+  return {{"type", type},      {"id", id},          {"name", id}, {"compatible", {"EQUIPMENT"}},
+          {"labels", {"STAT", id}}, {"mutators", mutators}};
+}
+
+}  // namespace
+
+TEST_CASE("a ring that trades one read stat for another still gets its best enchantments") {
+  // More DEX with the DEX ring is more DEX but less ATT; the fixture's
+  // Dexterity To Attack Bonus converts DEX into ATT the other way. With the
+  // harsher rings and more ways to add DEX and ATT, the best builds don't
+  // take all the DEX they can.
+  nlohmann::json json = nlohmann::json::parse(ReadSmallDatasetText());
+  for (const auto& [name, type, stat, other, penalty] :
+       std::vector<std::tuple<std::string, int, std::string, std::string, int>>{
+           {"DEX Trade Ring", 904, "DEX", "ATT", -15},
+           {"ATT Trade Ring", 905, "ATT", "DEX", -15},
+           {"Harsh DEX Trade Ring", 906, "DEX", "ATT", -80},
+           {"Harsh ATT Trade Ring", 907, "ATT", "DEX", -80}}) {
+    json["rings"].push_back(TradeRing(json, name, type, stat, other, penalty));
+  }
+  int type = 910;
+  for (const auto& [id, dex, att] : std::vector<std::tuple<std::string, double, double>>{
+           {"Big_Dexterity", 4.6, 0}, {"Dexterity_Some_Attack", 3, 0.5}, {"Big_Attack", 0, 2.6}, {"Even", 1.2, 1.6}}) {
+    json["enchantments"].push_back(FlatStats(id, type++, dex, att));
+    json["enchantmentPools"][0]["enchantments"].push_back(id);
+  }
+  const rotmg::Dataset d = rotmg::ParseDataset(json.dump());
+  for (const rotmg::Class& c : d.classes) {
+    rotmg::RequestSpec spec;
+    spec.class_id = c.id;
+    spec.character = {.attack = c.attack.max,
+                      .dexterity = c.dexterity.max,
+                      .wisdom = c.wisdom.max,
+                      .vitality = c.vitality.max,
+                      .defense = c.defense.max,
+                      .speed = c.speed.max,
+                      .max_hit_points = c.max_hit_points.max,
+                      .max_magic_points = c.max_magic_points.max};
+    spec.target.defense = 30;
+    spec.assumptions.distance = 2.0;
+    // The class's first item of each kind, or none.
+    const auto first = [](const std::vector<std::int32_t>& list) { return list.empty() ? -1 : list.front(); };
+    const std::int32_t weapon = first(OfType(d.weapons, c.weapon_slot_type));
+    const std::int32_t ability = first(OfType(d.abilities, c.ability_slot_type));
+    const std::int32_t armor = first(OfType(d.armors, c.armor_slot_type));
+    for (const std::string ring : {"DEX Trade Ring", "ATT Trade Ring", "Harsh DEX Trade Ring", "Harsh ATT Trade Ring"}) {
+      INFO(c.id << " with " << ring);
+      const std::int32_t r = NamedIndex(d.rings, ring);
+      MatchesBruteForce(d, spec, {weapon, ability, armor, r}, 1);
+      MatchesBruteForce(d, spec, {weapon, -1, -1, r}, 2);
+    }
   }
 }

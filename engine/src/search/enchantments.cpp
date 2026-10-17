@@ -5,6 +5,7 @@
 #include <functional>
 #include <initializer_list>
 #include <string_view>
+#include <tuple>
 #include <limits>
 #include <map>
 #include <memory>
@@ -40,6 +41,12 @@
 // by a final already reached is dropped early. What's left is every final
 // that could be the best, and the layout's best build is among them.
 //
+// An item's own conversion can make a stat raise one read stat and lower
+// another (Faded Heart Scarab: more DEX, less ATT). Sums then compare only
+// when equal in it, so a sum is also dropped when another has enough of
+// the rest to make up for it (Outdoes), and a best completion takes each
+// read stat at its own best (Ceilings).
+//
 // Layouts that leave the same stat options open share these finals. Each
 // layout's are scored with ceilings: the score at the most of every read
 // stat of a group of finals bounds every final in the group.
@@ -52,6 +59,90 @@ namespace {
 
 using Tenths = std::array<std::int32_t, kStats>;
 using Mask = std::array<bool, kStats>;
+// Tenths to points, rounded down as FinalStats does.
+std::int32_t PointsOf(std::int32_t tenths) { return tenths >= 0 ? tenths / 10 : -((-tenths + 9) / 10); }
+
+// The most each read stat reaches over every flat sum between `least` and
+// `most`, under one choice of conversions. With no stat moving read stats
+// both ways, that's the stats at one corner. Otherwise each read stat is
+// bounded part by part: FinalStats floors its flat sum, the enchantments'
+// conversions into it and the items' own apart, and each part grows with
+// every stat it takes a positive share of and shrinks with every stat it
+// takes a negative one of. A stat that does both within one part leaves
+// that read stat with no best case.
+class Ceilings {
+ public:
+  Ceilings(const std::vector<std::size_t>& read, const Mask& is_read, std::span<const Conversion> conversions,
+           const StatBase& base)
+      : read_(&read), base_(&base) {
+    std::array<std::array<Mask, kStats>, 2> raises{};
+    std::array<std::array<Mask, kStats>, 2> lowers{};
+    Mask up = is_read;
+    Mask down{};
+    const auto note = [&](std::span<const Conversion> list, std::size_t part) {
+      for (const Conversion& c : list) {
+        if (!is_read[c.to] || c.percent == 0) continue;
+        (c.percent > 0 ? raises : lowers)[part][c.to][c.from] = true;
+        (c.percent > 0 ? up : down)[c.from] = true;
+        if (!c.of_total && !base.has_class) continue;
+        terms_[c.to][part].push_back({c.from, c.percent / 100, c.of_total, c.percent < 0});
+      }
+    };
+    note(conversions, 0);
+    note(base.own, 1);
+    for (std::size_t s = 0; s < kStats; ++s) {
+      mixed_ = mixed_ || (up[s] && down[s]);
+      lower_[s] = down[s] && !up[s];
+      for (std::size_t part = 0; part < 2; ++part) {
+        for (const std::size_t r : read) bounded_ = bounded_ && !(raises[part][r][s] && lowers[part][r][s]);
+      }
+    }
+  }
+
+  bool bounded() const { return bounded_; }
+
+  Stats Of(const Tenths& most, const Tenths& least, std::span<const Conversion> conversions) const {
+    if (!mixed_) {
+      Tenths corner;
+      for (std::size_t s = 0; s < kStats; ++s) corner[s] = lower_[s] ? least[s] : most[s];
+      return FinalStats(*base_, corner, conversions);
+    }
+    // As detail::Converted adds each share up, from the corner each one
+    // needs.
+    Stats out{};
+    for (const std::size_t r : *read_) {
+      out[r] = base_->before[r] + PointsOf(most[r]);
+      for (const std::vector<Term>& part : terms_[r]) {
+        double sum = 0;
+        for (const Term& t : part) {
+          const int everything = base_->before[t.from] + PointsOf(t.lowers ? least[t.from] : most[t.from]) +
+                                 base_->item_bonuses[t.from];
+          sum += t.share * (t.of_total ? everything : std::max(0, everything - base_->class_max[t.from]));
+        }
+        out[r] += static_cast<int>(std::floor(sum + 1e-9));
+      }
+    }
+    return out;
+  }
+
+ private:
+  struct Term {
+    std::size_t from;
+    double share;
+    bool of_total;
+    bool lowers;
+  };
+
+  const std::vector<std::size_t>* read_;
+  const StatBase* base_;
+  bool mixed_ = false;
+  bool bounded_ = true;
+  // The stats more of which only lower read stats.
+  Mask lower_{};
+  // Per read stat, the enchantments' conversions into it, then the items'
+  // own.
+  std::array<std::array<std::vector<Term>, 2>, kStats> terms_;
+};
 
 constexpr std::size_t kMaxCompared = 12;
 
@@ -235,6 +326,119 @@ struct Sum {
   std::array<std::uint16_t, kSlots> pick{};
 };
 
+// Whether one flat sum, as a point on the compared stats, ends at least as
+// high as another on every read stat whatever is added to both. Comparing
+// points needs a stat that moves read stats both ways to be equal (with
+// Faded Heart Scarab more DEX is more DEX but less ATT); this lets more of
+// it through when the rest makes up for it. A read stat is the floor of its
+// flat sum plus the floor of each list's conversions into it (FinalStats).
+// Adding the same to both sums, a floor of tenths/10 moves by at least the
+// floor of the difference/10, and a stat a conversion reads by between the
+// floor and the ceiling of it.
+template <std::size_t D>
+class Outdoes {
+ public:
+  Outdoes(const std::vector<std::pair<std::size_t, int>>& dims, const std::vector<std::size_t>& read,
+          std::span<const Conversion> conversions, const StatBase& base) {
+    std::array<int, kStats> plus;
+    std::array<int, kStats> minus;
+    plus.fill(-1);
+    minus.fill(-1);
+    for (std::size_t k = 0; k < dims.size(); ++k) {
+      (dims[k].second > 0 ? plus : minus)[dims[k].first] = static_cast<int>(k);
+    }
+    // A stat's difference read from its coordinate. A stat not compared
+    // moves no read stat.
+    const auto coordinate = [&](std::size_t s) -> std::pair<std::size_t, int> {
+      if (plus[s] >= 0) return {static_cast<std::size_t>(plus[s]), 1};
+      return {static_cast<std::size_t>(std::max(minus[s], 0)), minus[s] >= 0 ? -1 : 0};
+    };
+    for (const std::size_t r : read) {
+      Stat stat;
+      std::tie(stat.k, std::ignore) = coordinate(r);
+      stat.first = terms_.size();
+      const auto add = [&](std::span<const Conversion> list, std::size_t which) {
+        for (const Conversion& c : list) {
+          if (c.to != r || c.percent == 0 || (!c.of_total && !base.has_class)) continue;
+          // Shares in millionths: the data's percents are whole hundredths.
+          const double millionths = c.percent * 1e4;
+          const auto share = static_cast<std::int64_t>(std::llround(millionths));
+          if (std::abs(millionths - static_cast<double>(share)) > 1e-6) exact_ = false;
+          const auto [k, sign] = coordinate(c.from);
+          if (sign != 0) terms_.push_back({k, sign, share, c.of_total, which});
+        }
+      };
+      add(conversions, 0);
+      add(base.own, 1);
+      stat.last = terms_.size();
+      stats_.push_back(stat);
+    }
+    // Read stats nothing converts into are the quickest to rule a point out.
+    std::ranges::stable_sort(stats_, {}, [](const Stat& st) { return st.last - st.first; });
+  }
+
+  bool operator()(const Point<D>& x, const Point<D>& y) const {
+    if (!exact_) return false;
+    for (const Stat& st : stats_) {
+      std::int32_t least = PointsOf(x[st.k] - y[st.k]);
+      if (st.first == st.last) {
+        if (least < 0) return false;
+        continue;
+      }
+      std::array<std::int64_t, 2> moved{};
+      for (std::size_t i = st.first; i < st.last; ++i) {
+        const Term& t = terms_[i];
+        const std::int32_t d = t.sign * (x[t.k] - y[t.k]);
+        std::int32_t lo = PointsOf(d);
+        std::int32_t hi = -PointsOf(-d);
+        // A share of the bonus over the class max moves less, or not at all.
+        if (!t.of_total) {
+          lo = std::min(lo, 0);
+          hi = std::max(hi, 0);
+        }
+        moved[t.list] += t.share * (t.share > 0 ? lo : hi);
+      }
+      for (const std::int64_t m : moved) least += static_cast<std::int32_t>(FloorDiv(m, 1'000'000));
+      if (least < 0) return false;
+    }
+    return true;
+  }
+
+ private:
+  struct Stat {
+    std::size_t k = 0;
+    std::size_t first = 0;
+    std::size_t last = 0;
+  };
+  struct Term {
+    std::size_t k;
+    int sign;
+    std::int64_t share;
+    bool of_total;
+    std::size_t list;
+  };
+
+  static std::int64_t FloorDiv(std::int64_t a, std::int64_t b) { return a >= 0 ? a / b : -((-a + b - 1) / b); }
+
+  // False when a share isn't whole millionths; nothing is outdone then.
+  bool exact_ = true;
+  std::vector<Stat> stats_;
+  std::vector<Term> terms_;
+};
+
+// Drops the items another kept one outdoes, the strongest by `order` first.
+template <std::size_t D, typename T, typename Get, typename Order>
+void DropOutdone(std::vector<T>& items, const Get& point, const Order& order, const Outdoes<D>& outdoes) {
+  std::ranges::stable_sort(items, std::greater<>{}, order);
+  std::size_t kept = 0;
+  for (std::size_t i = 0; i < items.size(); ++i) {
+    const bool outdone = std::any_of(items.begin(), items.begin() + static_cast<std::ptrdiff_t>(kept),
+                                     [&](const T& k) { return outdoes(point(k), point(items[i])); });
+    if (!outdone) items[kept++] = items[i];
+  }
+  items.resize(kept);
+}
+
 // Buffers a thread reuses from one merge to the next, so a merge allocates
 // only while they grow.
 template <std::size_t D>
@@ -346,6 +550,14 @@ class Search {
   void FindFinals(Profile& profile);
   void Directions(std::span<const Conversion> conversions, const PreparedLayout& layout, Mask& up,
                   Mask& down) const;
+  // Read stats come first among the compared, and the strongest points
+  // are those with the most of them.
+  template <std::size_t D>
+  std::int64_t Strength(const Point<D>& p) const {
+    std::int64_t total = 0;
+    for (std::size_t k = 0; k < read_list_.size(); ++k) total += p[k];
+    return total;
+  }
   template <std::size_t D>
   std::vector<Final> Merge(const Profile& profile, const Assignment& a, const Reached& reached) const;
   template <std::size_t D>
@@ -420,10 +632,13 @@ struct Search::Assignment {
   std::vector<Conversion> conversions;
   // The stats sums are compared on, read stats first, each with the way
   // more of it moves the read stats: +1 up, -1 down (an item's own negative
-  // share of it). A stat that does both is there twice, and then a sum's
-  // best completion isn't a bound, so early dropping is off.
+  // share of it). A stat that does both, like DEX with Faded Heart Scarab
+  // (more DEX, less ATT), is there twice, so only sums equal in it compare.
   std::vector<std::pair<std::size_t, int>> dims;
+  // Some stat moves read stats both ways.
   bool mixed = false;
+  // A best completion's stats, with early dropping off when there's none.
+  std::optional<Ceilings> ceilings;
 };
 
 void Search::FindReadStats() {
@@ -883,7 +1098,7 @@ void Search::Directions(std::span<const Conversion> conversions, const PreparedL
   up = read_;
   down = {};
   for (const Conversion& c : conversions) {
-    if (read_[c.to]) up[c.from] = true;
+    if (read_[c.to]) (c.percent >= 0 ? up : down)[c.from] = true;
   }
   for (const Conversion& c : layout.stats.own) {
     if (!read_[c.to] || c.percent == 0) continue;
@@ -954,7 +1169,7 @@ void Search::FindFinals(Profile& profile) {
     std::array<std::size_t, kSlots> conv;
     Stats best;
     std::int64_t order;
-    // False when some stat moves read stats both ways: no best case then.
+    // False when some stat moves one read stat both ways: no best case then.
     bool bounded;
   };
   std::vector<Planned> planned;
@@ -975,23 +1190,20 @@ void Search::FindFinals(Profile& profile) {
         const Pick& pick = profile.conversions[slot][conv[slot]];
         conversions.insert(conversions.end(), pick.conversions.begin(), pick.conversions.end());
       }
-      Mask up{};
-      Mask down{};
-      Directions(conversions, layout, up, down);
-      // Each stat at its best for the read stats: the most of it where more
-      // raises them, the least where more lowers them.
-      Tenths tenths = profile.fixed;
-      bool bounded = true;
+      const Ceilings ceilings(read_list_, read_, conversions, layout.stats);
+      // Each read stat at its best: the most of every stat that raises it,
+      // the least of every stat that lowers it.
+      Tenths most = profile.fixed;
+      Tenths least = profile.fixed;
       for (std::size_t slot = 0; slot < kSlots; ++slot) {
         const Pick& pick = profile.conversions[slot][conv[slot]];
+        const FlatSets& sets = *profile.flats[slot][conv[slot]];
         for (std::size_t s = 0; s < kStats; ++s) {
-          tenths[s] += pick.tenths[s];
-          bounded = bounded && !(up[s] && down[s]);
-          const FlatSets& sets = *profile.flats[slot][conv[slot]];
-          tenths[s] += down[s] && !up[s] ? sets.least[s] : sets.most[s];
+          most[s] += pick.tenths[s] + sets.most[s];
+          least[s] += pick.tenths[s] + sets.least[s];
         }
       }
-      Planned plan{conv, scorer_.FinalStats(layout, tenths, conversions), 0, bounded};
+      Planned plan{conv, ceilings.Of(most, least, conversions), 0, ceilings.bounded()};
       for (const std::size_t s : read_list_) plan.order += plan.best[s];
       planned.push_back(plan);
     }
@@ -1062,6 +1274,7 @@ std::vector<Final> Search::FinalsOf(const Profile& profile, const std::array<std
     if (down[s]) a.dims.emplace_back(s, -1);
     a.mixed = a.mixed || (up[s] && down[s]);
   }
+  a.ceilings.emplace(read_list_, read_, a.conversions, layout.stats);
   switch (a.dims.size()) {
     case 1: return Merge<1>(profile, a, reached);
     case 2: return Merge<2>(profile, a, reached);
@@ -1115,14 +1328,22 @@ std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, co
   };
   // Each item's sets that nothing else of its own matches or beats on
   // these stats. They depend only on the item's sets and the stats, so
-  // they're kept for other assignments.
+  // they're kept for other assignments. With a stat compared both ways,
+  // those that another outdoes go too.
   std::uint32_t signature = 0;
   for (const auto& [stat, sign] : a.dims) signature |= 1u << (stat + (sign < 0 ? kStats : 0));
+  std::optional<Outdoes<D>> outdoes;
+  if (a.mixed) outdoes.emplace(a.dims, read_list_, a.conversions, layout.stats);
   auto& own = scratch.own;
   for (std::size_t slot = 0; slot < kSlots; ++slot) {
     own[slot].clear();
     const std::vector<FlatSet>& sets = profile.flats[slot][a.conv[slot]]->sets;
     for (const std::uint16_t i : OwnFrontier<D>(sets, a, signature)) own[slot].emplace_back(point_of(sets[i]), i);
+    if (outdoes) {
+      DropOutdone(
+          own[slot], [](const auto& o) -> const Point<D>& { return o.first; },
+          [&](const auto& o) { return Strength(o.first); }, *outdoes);
+    }
   }
   // The most the items after each can add to each compared stat.
   std::array<Point<D>, kSlots> rest{};
@@ -1153,10 +1374,30 @@ std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, co
   };
   // A sum whose best completion is matched by a final already reached.
   const auto hopeless = [&](const Point<D>& at, std::size_t slot) {
-    if (a.mixed) return false;
+    if (!a.ceilings->bounded()) return false;
     Point<D> best = at;
     for (std::size_t k = 0; k < D; ++k) best[k] += rest[slot][k];
-    return reached.Covers(final_of(best));
+    if (!a.mixed) return reached.Covers(final_of(best));
+    // A stat compared both ways has its most on one coordinate and its
+    // least, negated, on the other.
+    Tenths most = a.fixed;
+    Tenths least = a.fixed;
+    Mask taken{};
+    for (std::size_t k = 0; k < D; ++k) {
+      const auto [s, sign] = a.dims[k];
+      if (sign > 0) {
+        most[s] += best[k];
+        least[s] += best[k];
+        taken[s] = true;
+      }
+    }
+    for (std::size_t k = 0; k < D; ++k) {
+      const auto [s, sign] = a.dims[k];
+      if (sign > 0) continue;
+      least[s] = a.fixed[s] - best[k];
+      if (!taken[s]) most[s] = least[s];
+    }
+    return reached.Covers(a.ceilings->Of(most, least, a.conversions));
   };
   // The most of every coordinate over a range.
   const auto corner = [](auto first, auto last, auto point) {
@@ -1213,6 +1454,11 @@ std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, co
                       scratch.kept);
       sums.clear();
       for (const std::uint32_t i : scratch.kept) sums.push_back(grown[i]);
+      if (outdoes) {
+        DropOutdone(
+            sums, [](const Sum<D>& x) -> const Point<D>& { return x.at; },
+            [&](const Sum<D>& x) { return Strength(x.at); }, *outdoes);
+      }
       continue;
     }
     // Nothing comes after the last item: compare final stats.
