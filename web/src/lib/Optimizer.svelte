@@ -25,6 +25,7 @@
   import { itemIcon, type Sprites } from "./sprites";
 
   let {
+    active,
     engine,
     request,
     dataset,
@@ -35,6 +36,8 @@
     burst = $bindable(),
     castWeights = $bindable(),
   }: {
+    /** Whether its tab is showing: it only estimates then. */
+    active: boolean;
     engine: Engine | null;
     /** The current build, which the search starts from. */
     request: EvaluateRequest;
@@ -50,7 +53,6 @@
   } = $props();
 
   const slotNames: Record<Slot, string> = { weapon: "Weapon", ability: "Ability", armor: "Armor", ring: "Ring" };
-  let open = $state(false);
   let mode = $state<"exact" | "wide">("exact");
   // The armors and rings the exact search chooses from, by name ("" for
   // none): the build's own until you change the list.
@@ -226,7 +228,7 @@
   let asked = 0;
   $effect(() => {
     const ask = { ...$state.snapshot(request), optimize: options() };
-    if (!open || !engine || searching || mode === "exact" || (goal === "burst" && !burstValid)) return;
+    if (!active || !engine || searching || mode === "exact" || (goal === "burst" && !burstValid)) return;
     const id = ++asked;
     const timer = setTimeout(async () => {
       const res = await engine.estimateOptimize(ask);
@@ -323,14 +325,11 @@
 </script>
 
 <div class="optimizer">
-  <div class="row">
-    <button type="button" class="primary" aria-expanded={open} onclick={() => (open = !open)}>
-      Optimize this build
-    </button>
-    {#if previous}
-      <button type="button" onclick={undo}>Undo</button>
-    {/if}
-  </div>
+  {#if previous}
+    <div class="row">
+      <button type="button" onclick={undo}>Undo taking the last build</button>
+    </div>
+  {/if}
   {#if castWeights}
     <p class="hint">
       The ability is cast as often as helps {castBalance === undefined ? "the weighted DPS" : castText[castBalance]},
@@ -338,253 +337,251 @@
       <button type="button" onclick={() => (castWeights = undefined)}>Cast for the total DPS</button>
     </p>
   {/if}
-  {#if open}
-    <div class="panel">
-      <fieldset class="modes">
-        <legend class="visually-hidden">Search</legend>
-        <label class:chosen={mode === "exact"}>
-          <input type="radio" name="search-mode" value="exact" bind:group={mode} disabled={searching} />
-          Exact bounded search
-        </label>
-        <label class:chosen={mode === "wide"}>
-          <input type="radio" name="search-mode" value="wide" bind:group={mode} disabled={searching} />
-          Wide search
-        </label>
-      </fieldset>
-      {#if mode === "exact"}
-        <p class="hint">
-          Keeps your weapon and ability and finds the armor, ring and enchantments with the most DPS among the armors
-          and rings listed here. It checks every possibility, so the build it returns is the best there is for these
-          choices with this calculator's numbers. It ranks by sustained DPS. It chooses every enchantment itself, so the
-          ones on your items are left out.
-        </p>
-        {#if !canExact}
-          <p role="alert">The exact search needs a weapon and an ability: choose an ability first.</p>
-        {/if}
-        {#each ["armor", "ring"] as const as slot (slot)}
-          {#if hasSlot(slot)}
-            <fieldset class="candidates">
-              <legend>{slot === "armor" ? "Armors" : "Rings"} to choose from</legend>
-              {#each slot === "armor" ? armorList : ringList as name (name)}
-                <span class="chip">
-                  {name || `No ${slot}`}
-                  <button type="button" aria-label={`Remove ${name || `no ${slot}`}`} onclick={() => remove(slot, name)}>
-                    ×
-                  </button>
-                </span>
-              {/each}
-              <button type="button" disabled={searching} onclick={() => startAdding(slot)}>Add</button>
-            </fieldset>
-          {/if}
-        {/each}
-      {:else}
-        <fieldset>
-          <legend>Keep</legend>
-          {#each usableSlots as slot (slot)}
-            <label><input type="checkbox" bind:checked={lock[slot]} /> {slotNames[slot]}</label>
-          {/each}
-        </fieldset>
-        <fieldset>
-          <legend>Try items that are</legend>
-          <label><input type="checkbox" bind:checked={pools.tiered} /> Tiered</label>
-          <label><input type="checkbox" bind:checked={pools.untiered} /> Untiered</label>
-          <label><input type="checkbox" bind:checked={pools.set} /> Set pieces</label>
-        </fieldset>
-        <label class="mode">
-          Enchantments
-          <select bind:value={enchantMode}>
-            <option value="best">Find the best</option>
-            <option value="keep">Keep mine where they fit</option>
-            <option value="none">None</option>
-          </select>
-        </label>
-      {/if}
-      {#if mode === "exact" || enchantMode === "best"}
-        <label class="mode">
-          Enchantments per item
-          <select bind:value={perItem}>
-            {#each [1, 2, 3, 4] as n (n)}
-              <option value={n}>{n}</option>
-            {/each}
-          </select>
-        </label>
-      {/if}
-      {#if mode === "exact" || enchantMode !== "none"}
-        <label><input type="checkbox" bind:checked={artifacts} /> Also ones that need an artifact or engraving</label>
-      {/if}
-      {#if mode === "wide"}
-        <label class="mode">
-          Build around
-          <select bind:value={around}>
-            <option value="every stat">Every stat</option>
-            <option value="nothing">Nothing, just improve yours (quicker)</option>
-            {#each stats as [id, name] (id)}
-              <option value={id}>{name}</option>
-            {/each}
-          </select>
-        </label>
-        <label class="mode">
-          Optimize for
-          <select bind:value={goal}>
-            <option value="sustained">Sustained DPS</option>
-            <option value="burst">Burst damage</option>
-          </select>
-        </label>
-        {#if goal === "burst"}
-          <div class="burst">
-            <label>A window of <input type="number" min="0" max="60" step="0.1" bind:value={burst.window} /> s</label>
-            <label>every <input type="number" min="1" max="600" step="1" bind:value={burst.every} /> s</label>
-          </div>
-          {#if !burstValid}
-            <p role="alert">The window has to be 0 to 60 seconds, and shorter than the time between windows.</p>
-          {/if}
-          <p class="hint">
-            For bosses you can only hurt now and then. A window of 0 s is a single moment: one volley and one cast. Only
-            what you fire or cast in the window counts, and of a poison only what lands in it. The ability is cast as
-            the window opens and again as soon as cooldown and MP allow, and over many windows each only gets the MP
-            that regenerates in between.
-          </p>
-        {/if}
-      {/if}
-      <label class="mode">
-        Rank by
-        <input type="range" min="0" max="1" step="0.25" bind:value={balance} />
-        <span class="balance">{balanceText[balance]}</span>
+  <div class="panel">
+    <fieldset class="modes">
+      <legend class="visually-hidden">Search</legend>
+      <label class:chosen={mode === "exact"}>
+        <input type="radio" name="search-mode" value="exact" bind:group={mode} disabled={searching} />
+        Exact bounded search
       </label>
-      {#if searching}
-        <div class="progress">
-          <progress max="1" value={progress?.done ?? 0}></progress>
-          <span>
-            {#if progress?.pairs}Armor and ring combination {Math.min(progress.pairs[0] + 1, progress.pairs[1])} of
-              {progress.pairs[1]}.
-            {/if}
-            {secondsLeft === null
-              ? "Working out how long this takes…"
-              : `About ${duration(Math.max(1, secondsLeft))} left`}
-          </span>
-          <button type="button" onclick={stop}>Stop</button>
-        </div>
-      {:else}
-        {#if mode === "exact"}
-          <button type="button" class="primary" onclick={search} disabled={!engine || !canExact || exactPairs === 0}>
-            Find the proven best
-          </button>
-          <p class="hint">
-            {exactPairs} armor and ring {exactPairs === 1 ? "combination" : "combinations"} to search. Each usually takes a
-            few seconds or less. When the damage depends on a fourth stat besides ATT, DEX and WIS, like Brutal Buckler's
-            VIT, each can take a few minutes.
-          </p>
-        {:else}
-          <button type="button" class="primary" onclick={search} disabled={!engine || (goal === "burst" && !burstValid)}>
-            {goal === "burst" ? "Find the most burst damage" : "Find the most DPS"}
-          </button>
-          {#if estimateText}<p class="hint">{estimateText}</p>{/if}
-        {/if}
+      <label class:chosen={mode === "wide"}>
+        <input type="radio" name="search-mode" value="wide" bind:group={mode} disabled={searching} />
+        Wide search
+      </label>
+    </fieldset>
+    {#if mode === "exact"}
+      <p class="hint">
+        Keeps your weapon and ability and finds the armor, ring and enchantments with the most DPS among the armors
+        and rings listed here. It checks every possibility, so the build it returns is the best there is for these
+        choices with this calculator's numbers. It ranks by sustained DPS. It chooses every enchantment itself, so the
+        ones on your items are left out.
+      </p>
+      {#if !canExact}
+        <p role="alert">The exact search needs a weapon and an ability: choose an ability first.</p>
       {/if}
-      {#if mode === "wide"}
-        <p class="hint">
-          Against the target and distance below, using the calculated numbers. It first measures how each item's damage
-          grows with each stat and keeps the items that are best somewhere, like a spell that wins at low WIS next to
-          one that wins at high WIS. It tries the most promising sets of those with whole enchantment plans, like
-          stacking ATT and turning it into DEX, then improves the best one or two slots at a time.
-        </p>
-        <p class="caution">
-          This search approximates: to stay fast it skips most combinations, so it can miss a better build, though it
-          never returns one worse than yours. "Prove it" on a result checks that build's enchantments with the exact
-          search.
-        </p>
-      {/if}
-      {#if shown && !shown.ok}
-        <p role="alert">{shown.error}</p>
-      {:else if shown}
-        {#if searching}
-          <p class="hint">Best so far:</p>
-        {:else if stopped && searchedMode === "exact"}
-          <p class="caution">Stopped early: this is the best build it had found, not proven.</p>
-        {:else if stopped}
-          <p class="hint">Stopped early. These are the best builds it had found.</p>
-        {:else if found?.ok && found.proven}
-          <p class="proven">
-            Proven best for this weapon and ability with the armors and rings listed: no other choice of them and
-            their enchantments does more.
-          </p>
-        {/if}
-        <ol class="builds">
-          {#each shown.builds as b, i (i)}
-            <li>
-              <div class="icons">
-                {#each slots as slot (slot)}
-                  {#if b[slot]}<Sprite {sprites} rect={icon(slot, b[slot])} size={28} label={b[slot]} />{/if}
-                {/each}
-              </div>
-              <div class="figures">
-                {#if b.burst}
-                  <strong>{whole.format(b.burst.damage)} per window</strong>
-                  <span>
-                    {whole.format(b.burst.weaponDamage)} weapon, {whole.format(b.burst.abilityDamage)} ability from
-                    {casts(b.burst.casts)}, {whole.format(b.dps)} DPS sustained,
-                  </span>
-                {:else}
-                  <strong>{whole.format(b.dps)} DPS</strong>
-                  {#if b.abilityDps > 0}
-                    <span>{whole.format(b.weaponDps)} weapon, {whole.format(b.abilityDps)} ability,</span>
-                  {/if}
-                {/if}
-                <span>
-                  {signed(b.score - shown.baseline)}{scoreUnit} on yours{#if enchantCount(b)},
-                    {enchantCount(b)} enchantments{/if}
-                </span>
-              </div>
-              <div class="actions">
-                <button type="button" onclick={() => take(b)}>Use</button>
-                {#if searchedMode === "wide" && b.ability && !searching}
-                  <button type="button" onclick={() => prove(b)}>Prove it</button>
-                {/if}
-                <button type="button" aria-expanded={opened === i} onclick={() => details(i, b)}>
-                  Details
+      {#each ["armor", "ring"] as const as slot (slot)}
+        {#if hasSlot(slot)}
+          <fieldset class="candidates">
+            <legend>{slot === "armor" ? "Armors" : "Rings"} to choose from</legend>
+            {#each slot === "armor" ? armorList : ringList as name (name)}
+              <span class="chip">
+                {name || `No ${slot}`}
+                <button type="button" aria-label={`Remove ${name || `no ${slot}`}`} onclick={() => remove(slot, name)}>
+                  ×
                 </button>
-              </div>
-              {#if opened === i}
-                <ul class="details">
-                  {#each slots as slot (slot)}
-                    {@const item = b[slot] ? itemsFor(dataset, cls, slot).find((x) => x.name === b[slot]) : undefined}
-                    {@const e = explained?.ok ? explained : null}
-                    {#if item}
-                      <li>
-                        <strong>{item.name}</strong>{#if statSummary(item)}: {statSummary(item)}{/if}{#if slot !== "weapon"}{without(
-                            e?.items[slot],
-                          )}{/if}
-                        {#each b.enchantments[slot] as id, k (k)}
-                          <span>{enchantmentName(id)}{without(e?.enchantments[slot][k])}</span>
-                        {/each}
-                        {#each itemEffects(item) as line, k (k)}<span class="effect">{line}</span>{/each}
-                      </li>
-                    {/if}
-                  {/each}
-                  {#if explained?.ok}
-                    {#if statWorth(explained)}
-                      <li>Each point of a stat adds: {statWorth(explained)}</li>
-                    {/if}
-                    {#if explained.burst && explained.burst.windowCasts > 0}
-                      {@const w = explained.burst}
-                      <li>
-                        {tenths.format(w.casts)} casts per window: the cooldown and a full MP pool fit {w.windowCasts} in
-                        it{#if w.paidCasts >= 0}, and the MP regenerated between windows pays for {tenths.format(
-                            w.paidCasts,
-                          )}{/if}.
-                      </li>
-                    {/if}
-                  {:else if explained && !explained.ok}
-                    <li role="alert">{explained.error}</li>
-                  {/if}
-                </ul>
-              {/if}
-            </li>
+              </span>
+            {/each}
+            <button type="button" disabled={searching} onclick={() => startAdding(slot)}>Add</button>
+          </fieldset>
+        {/if}
+      {/each}
+    {:else}
+      <fieldset>
+        <legend>Keep</legend>
+        {#each usableSlots as slot (slot)}
+          <label><input type="checkbox" bind:checked={lock[slot]} /> {slotNames[slot]}</label>
+        {/each}
+      </fieldset>
+      <fieldset>
+        <legend>Try items that are</legend>
+        <label><input type="checkbox" bind:checked={pools.tiered} /> Tiered</label>
+        <label><input type="checkbox" bind:checked={pools.untiered} /> Untiered</label>
+        <label><input type="checkbox" bind:checked={pools.set} /> Set pieces</label>
+      </fieldset>
+      <label class="mode">
+        Enchantments
+        <select bind:value={enchantMode}>
+          <option value="best">Find the best</option>
+          <option value="keep">Keep mine where they fit</option>
+          <option value="none">None</option>
+        </select>
+      </label>
+    {/if}
+    {#if mode === "exact" || enchantMode === "best"}
+      <label class="mode">
+        Enchantments per item
+        <select bind:value={perItem}>
+          {#each [1, 2, 3, 4] as n (n)}
+            <option value={n}>{n}</option>
           {/each}
-        </ol>
+        </select>
+      </label>
+    {/if}
+    {#if mode === "exact" || enchantMode !== "none"}
+      <label><input type="checkbox" bind:checked={artifacts} /> Also ones that need an artifact or engraving</label>
+    {/if}
+    {#if mode === "wide"}
+      <label class="mode">
+        Build around
+        <select bind:value={around}>
+          <option value="every stat">Every stat</option>
+          <option value="nothing">Nothing, just improve yours (quicker)</option>
+          {#each stats as [id, name] (id)}
+            <option value={id}>{name}</option>
+          {/each}
+        </select>
+      </label>
+      <label class="mode">
+        Optimize for
+        <select bind:value={goal}>
+          <option value="sustained">Sustained DPS</option>
+          <option value="burst">Burst damage</option>
+        </select>
+      </label>
+      {#if goal === "burst"}
+        <div class="burst">
+          <label>A window of <input type="number" min="0" max="60" step="0.1" bind:value={burst.window} /> s</label>
+          <label>every <input type="number" min="1" max="600" step="1" bind:value={burst.every} /> s</label>
+        </div>
+        {#if !burstValid}
+          <p role="alert">The window has to be 0 to 60 seconds, and shorter than the time between windows.</p>
+        {/if}
+        <p class="hint">
+          For bosses you can only hurt now and then. A window of 0 s is a single moment: one volley and one cast. Only
+          what you fire or cast in the window counts, and of a poison only what lands in it. The ability is cast as
+          the window opens and again as soon as cooldown and MP allow, and over many windows each only gets the MP
+          that regenerates in between.
+        </p>
       {/if}
-    </div>
-  {/if}
+    {/if}
+    <label class="mode">
+      Rank by
+      <input type="range" min="0" max="1" step="0.25" bind:value={balance} />
+      <span class="balance">{balanceText[balance]}</span>
+    </label>
+    {#if searching}
+      <div class="progress">
+        <progress max="1" value={progress?.done ?? 0}></progress>
+        <span>
+          {#if progress?.pairs}Armor and ring combination {Math.min(progress.pairs[0] + 1, progress.pairs[1])} of
+            {progress.pairs[1]}.
+          {/if}
+          {secondsLeft === null
+            ? "Working out how long this takes…"
+            : `About ${duration(Math.max(1, secondsLeft))} left`}
+        </span>
+        <button type="button" onclick={stop}>Stop</button>
+      </div>
+    {:else}
+      {#if mode === "exact"}
+        <button type="button" class="primary" onclick={search} disabled={!engine || !canExact || exactPairs === 0}>
+          Find the proven best
+        </button>
+        <p class="hint">
+          {exactPairs} armor and ring {exactPairs === 1 ? "combination" : "combinations"} to search. Each usually takes a
+          few seconds or less. When the damage depends on a fourth stat besides ATT, DEX and WIS, like Brutal Buckler's
+          VIT, each can take a few minutes.
+        </p>
+      {:else}
+        <button type="button" class="primary" onclick={search} disabled={!engine || (goal === "burst" && !burstValid)}>
+          {goal === "burst" ? "Find the most burst damage" : "Find the most DPS"}
+        </button>
+        {#if estimateText}<p class="hint">{estimateText}</p>{/if}
+      {/if}
+    {/if}
+    {#if mode === "wide"}
+      <p class="hint">
+        Against the target and distance below, using the calculated numbers. It first measures how each item's damage
+        grows with each stat and keeps the items that are best somewhere, like a spell that wins at low WIS next to
+        one that wins at high WIS. It tries the most promising sets of those with whole enchantment plans, like
+        stacking ATT and turning it into DEX, then improves the best one or two slots at a time.
+      </p>
+      <p class="caution">
+        This search approximates: to stay fast it skips most combinations, so it can miss a better build, though it
+        never returns one worse than yours. "Prove it" on a result checks that build's enchantments with the exact
+        search.
+      </p>
+    {/if}
+    {#if shown && !shown.ok}
+      <p role="alert">{shown.error}</p>
+    {:else if shown}
+      {#if searching}
+        <p class="hint">Best so far:</p>
+      {:else if stopped && searchedMode === "exact"}
+        <p class="caution">Stopped early: this is the best build it had found, not proven.</p>
+      {:else if stopped}
+        <p class="hint">Stopped early. These are the best builds it had found.</p>
+      {:else if found?.ok && found.proven}
+        <p class="proven">
+          Proven best for this weapon and ability with the armors and rings listed: no other choice of them and
+          their enchantments does more.
+        </p>
+      {/if}
+      <ol class="builds">
+        {#each shown.builds as b, i (i)}
+          <li>
+            <div class="icons">
+              {#each slots as slot (slot)}
+                {#if b[slot]}<Sprite {sprites} rect={icon(slot, b[slot])} size={28} label={b[slot]} />{/if}
+              {/each}
+            </div>
+            <div class="figures">
+              {#if b.burst}
+                <strong>{whole.format(b.burst.damage)} per window</strong>
+                <span>
+                  {whole.format(b.burst.weaponDamage)} weapon, {whole.format(b.burst.abilityDamage)} ability from
+                  {casts(b.burst.casts)}, {whole.format(b.dps)} DPS sustained,
+                </span>
+              {:else}
+                <strong>{whole.format(b.dps)} DPS</strong>
+                {#if b.abilityDps > 0}
+                  <span>{whole.format(b.weaponDps)} weapon, {whole.format(b.abilityDps)} ability,</span>
+                {/if}
+              {/if}
+              <span>
+                {signed(b.score - shown.baseline)}{scoreUnit} on yours{#if enchantCount(b)},
+                  {enchantCount(b)} enchantments{/if}
+              </span>
+            </div>
+            <div class="actions">
+              <button type="button" onclick={() => take(b)}>Use</button>
+              {#if searchedMode === "wide" && b.ability && !searching}
+                <button type="button" onclick={() => prove(b)}>Prove it</button>
+              {/if}
+              <button type="button" aria-expanded={opened === i} onclick={() => details(i, b)}>
+                Details
+              </button>
+            </div>
+            {#if opened === i}
+              <ul class="details">
+                {#each slots as slot (slot)}
+                  {@const item = b[slot] ? itemsFor(dataset, cls, slot).find((x) => x.name === b[slot]) : undefined}
+                  {@const e = explained?.ok ? explained : null}
+                  {#if item}
+                    <li>
+                      <strong>{item.name}</strong>{#if statSummary(item)}: {statSummary(item)}{/if}{#if slot !== "weapon"}{without(
+                          e?.items[slot],
+                        )}{/if}
+                      {#each b.enchantments[slot] as id, k (k)}
+                        <span>{enchantmentName(id)}{without(e?.enchantments[slot][k])}</span>
+                      {/each}
+                      {#each itemEffects(item) as line, k (k)}<span class="effect">{line}</span>{/each}
+                    </li>
+                  {/if}
+                {/each}
+                {#if explained?.ok}
+                  {#if statWorth(explained)}
+                    <li>Each point of a stat adds: {statWorth(explained)}</li>
+                  {/if}
+                  {#if explained.burst && explained.burst.windowCasts > 0}
+                    {@const w = explained.burst}
+                    <li>
+                      {tenths.format(w.casts)} casts per window: the cooldown and a full MP pool fit {w.windowCasts} in
+                      it{#if w.paidCasts >= 0}, and the MP regenerated between windows pays for {tenths.format(
+                          w.paidCasts,
+                        )}{/if}.
+                    </li>
+                  {/if}
+                {:else if explained && !explained.ok}
+                  <li role="alert">{explained.error}</li>
+                {/if}
+              </ul>
+            {/if}
+          </li>
+        {/each}
+      </ol>
+    {/if}
+  </div>
 </div>
 
 <Picker

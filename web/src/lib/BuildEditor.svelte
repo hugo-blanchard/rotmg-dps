@@ -1,9 +1,8 @@
 <script lang="ts">
   import EquipmentPanel from "./EquipmentPanel.svelte";
-  import Optimizer from "./Optimizer.svelte";
   import SavedBuilds from "./SavedBuilds.svelte";
   import { itemsFor, maxStats, slots, type Dataset, type Slot } from "./dataset";
-  import type { BurstWindow, DpsWeights, Engine, EvaluateRequest, PlayerStatus, Target, WornSet } from "./engine";
+  import type { Engine, EvaluateRequest, PlayerStatus, Target, WornSet } from "./engine";
   import type { Sprites } from "./sprites";
 
   let {
@@ -19,8 +18,6 @@
     target = $bindable(),
     distance = $bindable(),
     radius = $bindable(),
-    burst = $bindable(),
-    castWeights = $bindable(),
     link,
     dps,
     onopen,
@@ -31,7 +28,7 @@
     sprites: Sprites | null;
     advanced: boolean;
     engine: Engine | null;
-    /** The build as the engine sees it, for the optimizer to start from. */
+    /** The build as the engine sees it. */
     request: EvaluateRequest;
     classId: string;
     items: Record<Slot, string>;
@@ -40,8 +37,6 @@
     target: Target;
     distance: number;
     radius: number;
-    burst: BurstWindow;
-    castWeights: DpsWeights | undefined;
     /** The build's link query, for saving it. */
     link: string;
     dps: number | undefined;
@@ -120,7 +115,6 @@
   <fieldset>
     <legend>Build</legend>
     <EquipmentPanel {dataset} {sprites} {engine} {request} bind:classId bind:items bind:enchants />
-    <Optimizer {engine} {request} {dataset} {cls} {sprites} bind:items bind:enchants bind:burst bind:castWeights />
     <SavedBuilds {link} {dps} {onopen} suggestedName="{classId}: {items.weapon}" />
   </fieldset>
 

@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import BuildEditor from "./lib/BuildEditor.svelte";
   import LineChart from "./lib/LineChart.svelte";
+  import Optimizer from "./lib/Optimizer.svelte";
   import Results from "./lib/Results.svelte";
   import SimulationView from "./lib/SimulationView.svelte";
   import { defaultSimOptions, simFromQuery, simToQuery, type SimOptions } from "./lib/scenario";
@@ -43,7 +44,7 @@
   // Advanced shows more of the numbers and the simulation; the build is the
   // same in both.
   let advanced = $state(false);
-  let tab = $state<"numbers" | "simulation">("numbers");
+  let tab = $state<"numbers" | "simulation" | "optimizer">("numbers");
 
   let classId = $state("");
   let items = $state<Record<Slot, string>>({ weapon: "", ability: "", armor: "", ring: "" });
@@ -200,7 +201,8 @@
       const d = loaded.dataset;
       const query = new URLSearchParams(location.search);
       advanced = query.get("view") === "advanced";
-      tab = query.get("tab") === "simulation" ? "simulation" : "numbers";
+      const linkedTab = query.get("tab");
+      tab = linkedTab === "simulation" || linkedTab === "optimizer" ? linkedTab : "numbers";
       if (!open(location.search, d)) {
         const start = d.classes.find((c) => c.id === "Wizard") ?? d.classes[0];
         classId = start.id;
@@ -248,7 +250,7 @@
     }
     const q = new URLSearchParams(buildLink);
     if (advanced) q.set("view", "advanced");
-    if (tab === "simulation") q.set("tab", "simulation");
+    if (tab !== "numbers") q.set("tab", tab);
     history.replaceState(null, "", `${location.pathname}?${q}`);
   });
 
@@ -311,8 +313,6 @@
       bind:target
       bind:distance
       bind:radius
-      bind:burst
-      bind:castWeights
       link={buildLink}
       dps={result?.build.dps}
       onopen={(link) => dataset && open(link, dataset)}
@@ -335,87 +335,120 @@
           aria-controls="panel"
           onclick={() => (tab = "simulation")}>Simulation</button
         >
+        <button
+          type="button"
+          role="tab"
+          id="tab-optimizer"
+          aria-selected={tab === "optimizer"}
+          aria-controls="panel"
+          onclick={() => (tab = "optimizer")}>Optimizer</button
+        >
       </div>
       <div id="panel" role="tabpanel" aria-labelledby="tab-{tab}">
-        {#if !result}
-          {#if response && !response.ok}
-            <p role="alert">{response.error}</p>
+        <!-- Kept while hidden, so a search and its builds outlast a look at the numbers. -->
+        {#if cls}
+          <div hidden={tab !== "optimizer"}>
+            <Optimizer
+              active={tab === "optimizer"}
+              {engine}
+              {request}
+              {dataset}
+              {cls}
+              {sprites}
+              bind:items
+              bind:enchants
+              bind:burst
+              bind:castWeights
+            />
+          </div>
+        {/if}
+        {#if tab !== "optimizer"}
+          {#if !result}
+            {#if response && !response.ok}
+              <p role="alert">{response.error}</p>
+            {/if}
+          {:else if tab === "numbers"}
+            {#if castWeights}
+              <p class="note">
+                The ability is cast as often as helps the part of the DPS the optimizer ranked this build by, not the total.
+                <button type="button" onclick={() => (castWeights = undefined)}>Cast for the total DPS</button>
+              </p>
+            {/if}
+            <Results
+              breakdown={result.breakdown}
+              build={result.build}
+              ability={result.ability}
+              burstResult={result.burst}
+              bind:burst
+              {advanced}
+              {defense}
+              distance={hitDistance}
+              {hitOverrides}
+              onhits={(i, hits) => {
+                const next = [...hitOverrides];
+                next[i] = hits;
+                hitOverrides = next;
+              }}
+            >
+              {#snippet chart()}
+                {#if result.curve}
+                  <LineChart
+                    caption="DPS against target DEF"
+                    points={result.curve.map((p) => ({ x: p.defense, y: p.dps }))}
+                    selected={defense}
+                    onpick={(d) => (target.defense = d)}
+                    formatX={(d) => `${d} DEF`}
+                    formatY={(v) => `${whole.format(v)} DPS`}
+                    sliderLabel="Target DEF on the DPS chart"
+                    keyStep={1}
+                    tableEvery={10}
+                  />
+                {/if}
+                {#if advanced && result.hitModelGaps?.length}
+                  <p class="note">
+                    The hit estimate can't follow {result.hitModelGaps.join(" or ")}, so it assumes every shot hits.
+                  </p>
+                {:else if advanced && result.hitCurve}
+                  <LineChart
+                    caption="Estimated hits per volley against distance"
+                    points={result.hitCurve.map((p) => ({ x: p.distance, y: p.hits }))}
+                    selected={hitDistance}
+                    onpick={(d) => (distance = d)}
+                    formatX={(d) => `${d} tiles`}
+                    formatY={(h) => `${h} of ${totalProjectiles} hits`}
+                    sliderLabel="Distance to the target on the hits chart"
+                    keyStep={0.25}
+                    stepped
+                    integerY
+                    yAtLeast={totalProjectiles}
+                    tableEvery={1}
+                  />
+                {/if}
+              {/snippet}
+            </Results>
+          {:else if engine && weapon}
+            <SimulationView
+              {engine}
+              {request}
+              {weapon}
+              {ability}
+              {advanced}
+              className={classId}
+              {sprites}
+              expectedDps={result.breakdown.subattacks.reduce((n, s) => n + s.dps, 0)}
+              expectedHits={result.breakdown.subattacks.reduce((n, s) => n + s.hitsPerVolley, 0)}
+              expectedAbilityDps={result.ability?.dps}
+              expectedProcDps={result.breakdown.procs.reduce((n, p) => n + p.dps, 0)}
+              expectedTotalDps={result.build?.dps ?? result.breakdown.dps}
+              bosses={dataset?.targets ?? []}
+              bind:options={simOptions}
+              {pinned}
+              expectedUptimes={result.build?.uptimes ?? []}
+              unmodelled={result.breakdown.unsupported.length + (result.ability?.unsupported.length ?? 0) > 0}
+              onpin={pin}
+              onunpin={() => (pinned = null)}
+            />
           {/if}
-        {:else if tab === "numbers"}
-          <Results
-            breakdown={result.breakdown}
-            build={result.build}
-            ability={result.ability}
-            burstResult={result.burst}
-            bind:burst
-            {advanced}
-            {defense}
-            distance={hitDistance}
-            {hitOverrides}
-            onhits={(i, hits) => {
-              const next = [...hitOverrides];
-              next[i] = hits;
-              hitOverrides = next;
-            }}
-          >
-            {#snippet chart()}
-              {#if result.curve}
-                <LineChart
-                  caption="DPS against target DEF"
-                  points={result.curve.map((p) => ({ x: p.defense, y: p.dps }))}
-                  selected={defense}
-                  onpick={(d) => (target.defense = d)}
-                  formatX={(d) => `${d} DEF`}
-                  formatY={(v) => `${whole.format(v)} DPS`}
-                  sliderLabel="Target DEF on the DPS chart"
-                  keyStep={1}
-                  tableEvery={10}
-                />
-              {/if}
-              {#if advanced && result.hitModelGaps?.length}
-                <p class="note">
-                  The hit estimate can't follow {result.hitModelGaps.join(" or ")}, so it assumes every shot hits.
-                </p>
-              {:else if advanced && result.hitCurve}
-                <LineChart
-                  caption="Estimated hits per volley against distance"
-                  points={result.hitCurve.map((p) => ({ x: p.distance, y: p.hits }))}
-                  selected={hitDistance}
-                  onpick={(d) => (distance = d)}
-                  formatX={(d) => `${d} tiles`}
-                  formatY={(h) => `${h} of ${totalProjectiles} hits`}
-                  sliderLabel="Distance to the target on the hits chart"
-                  keyStep={0.25}
-                  stepped
-                  integerY
-                  yAtLeast={totalProjectiles}
-                  tableEvery={1}
-                />
-              {/if}
-            {/snippet}
-          </Results>
-        {:else if engine && weapon}
-          <SimulationView
-            {engine}
-            {request}
-            {weapon}
-            {ability}
-            {advanced}
-            className={classId}
-            {sprites}
-            expectedDps={result.breakdown.subattacks.reduce((n, s) => n + s.dps, 0)}
-            expectedHits={result.breakdown.subattacks.reduce((n, s) => n + s.hitsPerVolley, 0)}
-            expectedAbilityDps={result.ability?.dps}
-            expectedProcDps={result.breakdown.procs.reduce((n, p) => n + p.dps, 0)}
-            expectedTotalDps={result.build?.dps ?? result.breakdown.dps}
-            bosses={dataset?.targets ?? []}
-            bind:options={simOptions}
-            {pinned}
-            expectedUptimes={result.build?.uptimes ?? []}
-            unmodelled={result.breakdown.unsupported.length + (result.ability?.unsupported.length ?? 0) > 0}
-            onpin={pin}
-            onunpin={() => (pinned = null)}
-          />
         {/if}
       </div>
     </div>
