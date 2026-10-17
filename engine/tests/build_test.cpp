@@ -232,7 +232,8 @@ TEST_CASE("MP given back in a burst window pays toward the next window's casts")
 TEST_CASE("a build's numbers alone match its full evaluation exactly") {
   std::vector<const rotmg::Ability*> abilities = {nullptr};
   for (const rotmg::Ability& a : Data().abilities) abilities.push_back(&a);
-  for (const rotmg::DpsWeights weights : {rotmg::DpsWeights{1, 1}, rotmg::DpsWeights{1, 0}, rotmg::DpsWeights{0, 1}}) {
+  for (const rotmg::DpsWeights& weights : {rotmg::DpsWeights{1, 1}, rotmg::DpsWeights{1, 0}, rotmg::DpsWeights{0, 1},
+                                            rotmg::DpsWeights{1, 1, "WIS"}, rotmg::DpsWeights{1, 1, "ATT"}}) {
     for (const rotmg::Weapon& w : Data().weapons) {
       for (const rotmg::Ability* a : abilities) {
         for (const int wisdom : {0, 40, 75}) {
@@ -243,6 +244,7 @@ TEST_CASE("a build's numbers alone match its full evaluation exactly") {
           CHECK(numbers.dps == full.dps);
           CHECK(numbers.weapon_dps == full.weapon_dps);
           CHECK(numbers.ability_dps == (full.ability ? full.ability->dps : 0.0));
+          CHECK(numbers.stat_dps == full.stat_dps);
         }
       }
     }
@@ -274,4 +276,40 @@ TEST_CASE("an ability that weakens its caster is only cast as often as helps") {
   REQUIRE(ability_only.ability.has_value());
   CHECK(ability_only.ability->casts_per_second > 0);
   CHECK(ability_only.dps < weapon_alone);
+}
+
+TEST_CASE("an effect's damage scales with its scaling stat when a statMod amount adds to it") {
+  CHECK(rotmg::DamageScaling(Find("Plain Spell")->activates[0]) == "WIS");
+  CHECK(rotmg::DamageScaling(Find("Shock Scepter")->activates[0]) == "WIS");
+  // War Helm's aura only lasts longer with WIS.
+  CHECK(rotmg::DamageScaling(Find("War Helm")->activates[0]).empty());
+  rotmg::Activate shield;
+  shield.type = "Shoot";
+  shield.params.emplace("scalingStat", std::string("VIT"));
+  shield.params.emplace("statModDamage", 3.0);
+  CHECK(rotmg::DamageScaling(shield) == "VIT");
+}
+
+TEST_CASE("only damage from sources that scale with the stat counts for it") {
+  const auto with = [](const char* ability, const char* stat) {
+    return EvaluateBuild(Sword(), Find(ability), kChar, {}, {}, {1, 1, stat});
+  };
+  // Plain Spell's burst scales with WIS; the sword's shots with ATT and DEX.
+  const auto wis = with("Plain Spell", "WIS");
+  REQUIRE(wis.ability);
+  CHECK(wis.stat_dps == Approx(wis.ability->dps));
+  const auto att = with("Plain Spell", "ATT");
+  CHECK(att.stat_dps == Approx(att.weapon_dps));
+  CHECK(with("Plain Spell", "VIT").stat_dps == 0);
+  // War Helm deals no damage of its own: its buff raises the sword's.
+  CHECK(with("War Helm", "WIS").stat_dps == 0);
+  const auto helm = with("War Helm", "DEX");
+  CHECK(helm.stat_dps == Approx(helm.weapon_dps));
+
+  const auto burst = [](const char* stat) {
+    return rotmg::EvaluateBurst(Sword(), Find("Plain Spell"), WithMp(200), {}, {}, {3, 10}, stat);
+  };
+  CHECK(burst("WIS").stat_damage == Approx(burst("WIS").ability_damage));
+  CHECK(burst("ATT").stat_damage == Approx(burst("ATT").weapon_damage));
+  CHECK(burst("VIT").stat_damage == 0);
 }

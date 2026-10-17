@@ -121,6 +121,8 @@ struct ProcResult {
   double damage = 0;
   double dps = 0;
   std::string reference;
+  /// The stat its damage scales with (DamageScaling), or empty.
+  std::string scaling = {};
 };
 
 struct Breakdown {

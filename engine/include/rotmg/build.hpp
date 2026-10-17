@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "rotmg/ability.hpp"
@@ -21,6 +22,9 @@ struct BuildBreakdown {
   double dps = 0;
   /// The weapon's DPS averaged over a cast cycle of the ability.
   double weapon_dps = 0;
+  /// The part of `dps` from sources that scale with the weights' stat, when
+  /// they name one.
+  double stat_dps = 0;
   /// The weapon on its own, with the ability's stat bonuses but none of its effects.
   Breakdown weapon;
   std::optional<AbilityBreakdown> ability;
@@ -32,7 +36,16 @@ struct BuildBreakdown {
 struct DpsWeights {
   double weapon = 1;
   double ability = 1;
+  /// When set, only damage from sources that scale with this stat counts,
+  /// and the weights don't: the weapon's shots for ATT and DEX, and an
+  /// on-shoot effect or a part of the ability for the stat its damage
+  /// scales with (DamageScaling). A buff counts through what it raises.
+  std::string stat = {};
 };
+
+/// A millionth of the total, added to a score that counts only part of the
+/// damage, so that ties go to the build with the most damage in all.
+inline constexpr double kTieBreak = 1e-6;
 
 /// A weapon and, optionally, an ability. Each cast's buffs and debuffs start
 /// together and run for their duration, capped at the time until the next
@@ -51,6 +64,7 @@ struct BuildNumbers {
   double dps = 0;
   double weapon_dps = 0;
   double ability_dps = 0;
+  double stat_dps = 0;
 };
 BuildNumbers EvaluateBuildNumbers(const Weapon& weapon, const Ability* ability, const Character& character,
                                   const Target& target, const Assumptions& assumptions,
@@ -79,6 +93,8 @@ struct BurstBreakdown {
   /// pays for, -1 for an ability that costs none.
   int window_casts = 0;
   double paid_casts = -1;
+  /// The part of `damage` from sources that scale with the stat asked for.
+  double stat_damage = 0;
   std::vector<std::string> assumptions;
 };
 
@@ -87,7 +103,10 @@ struct BurstBreakdown {
 /// whenever its cooldown and MP allow, and MP regenerates in between, up to
 /// the max. Only what's fired or cast in the window counts, and of damage
 /// dealt over time only what lands in it.
+/// With `stat`, stat_damage is the part from sources that scale with it, as
+/// DpsWeights counts them.
 BurstBreakdown EvaluateBurst(const Weapon& weapon, const Ability* ability, const Character& character,
-                             const Target& target, const Assumptions& assumptions, const BurstWindow& window);
+                             const Target& target, const Assumptions& assumptions, const BurstWindow& window,
+                             std::string_view stat = {});
 
 }  // namespace rotmg

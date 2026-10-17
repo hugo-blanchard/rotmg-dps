@@ -1,11 +1,13 @@
 #include "rotmg/build.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <map>
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace rotmg {
@@ -35,11 +37,45 @@ void Apply(const std::vector<const Buff*>& active, Character& character, Target&
   }
 }
 
+// A DPS, and the part of it from sources that scale with the stat asked
+// about (DpsWeights::stat), 0 when none is.
+struct Dps {
+  double total = 0;
+  double stat = 0;
+};
+
+// Whether the weapon's shots count for `stat`: ATT raises their damage and
+// DEX their rate.
+bool ShotsScaleWith(std::string_view stat) { return stat == "ATT" || stat == "DEX"; }
+
 // The weapon's DPS with a set of buffs and debuffs up.
-double WeaponDps(const Weapon& weapon, Character character, Target target, const Assumptions& assumptions,
-                 const std::vector<const Buff*>& active) {
+Dps WeaponDps(const Weapon& weapon, Character character, Target target, const Assumptions& assumptions,
+              const std::vector<const Buff*>& active, std::string_view stat) {
   Apply(active, character, target);
-  return EvaluateWeaponDps(weapon, character, target, assumptions);
+  if (stat.empty()) {
+    return {EvaluateWeaponDps(weapon, character, target, assumptions), 0};
+  }
+  const Breakdown b = EvaluateWeaponNumbers(weapon, character, target, assumptions);
+  Dps out{b.dps, 0};
+  for (const SubattackResult& s : b.subattacks) {
+    if (ShotsScaleWith(stat)) out.stat += s.dps;
+  }
+  for (const ProcResult& p : b.procs) {
+    if (p.scaling == stat) out.stat += p.dps;
+  }
+  return out;
+}
+
+// The ability's DPS from the parts that scale with `stat`.
+double AbilityStatDps(const AbilityBreakdown& a, std::string_view stat) {
+  if (stat.empty()) {
+    return 0;
+  }
+  double per_cast = 0;
+  for (const AbilityPart& p : a.parts) {
+    if (p.scaling == stat) per_cast += p.damage;
+  }
+  return per_cast * a.casts_per_second;
 }
 
 // The mixes of the weapon's chance boosts, each up or not on its own, as
@@ -92,24 +128,26 @@ std::vector<std::pair<double, Character>> BoostMixes(const Weapon& weapon, const
 
 // The weapon's DPS averaged over its chance boosts, with whatever else is
 // up.
-double MixedDps(const Weapon& weapon, const Character& character, const Target& target,
-                const Assumptions& assumptions, const std::vector<const Buff*>& active,
-                const std::vector<ChanceBoost>& boosts) {
-  double total = 0;
+Dps MixedDps(const Weapon& weapon, const Character& character, const Target& target,
+             const Assumptions& assumptions, const std::vector<const Buff*>& active,
+             const std::vector<ChanceBoost>& boosts, std::string_view stat) {
+  Dps total;
   for (const auto& [weight, c] : BoostMixes(weapon, character, boosts)) {
-    total += weight * WeaponDps(weapon, c, target, assumptions, active);
+    const Dps d = WeaponDps(weapon, c, target, assumptions, active, stat);
+    total.total += weight * d.total;
+    total.stat += weight * d.stat;
   }
   return total;
 }
 
 void WithAbility(BuildBreakdown& out, const Weapon& weapon, const Character& with_ability_gear, const Target& target,
-                 const Assumptions& assumptions, const std::vector<ChanceBoost>& boosts);
+                 const Assumptions& assumptions, const std::vector<ChanceBoost>& boosts, std::string_view stat);
 
 // The weapon's DPS averaged over a cast cycle of the ability, with its
 // buffs up for their part of each cycle and `no_buffs` for the rest.
-double CycleWeaponDps(const AbilityBreakdown& a, double no_buffs, const Weapon& weapon,
-                      const Character& with_ability_gear, const Target& target, const Assumptions& assumptions,
-                      const std::vector<ChanceBoost>& boosts) {
+Dps CycleWeaponDps(const AbilityBreakdown& a, Dps no_buffs, const Weapon& weapon, const Character& with_ability_gear,
+                   const Target& target, const Assumptions& assumptions, const std::vector<ChanceBoost>& boosts,
+                   std::string_view stat) {
   if (a.buffs.empty() || a.casts_per_second <= 0) {
     return no_buffs;
   }
@@ -123,7 +161,7 @@ double CycleWeaponDps(const AbilityBreakdown& a, double no_buffs, const Weapon& 
   ends.erase(std::unique(ends.begin(), ends.end()), ends.end());
 
   double start = 0;
-  double weighted = 0;
+  Dps weighted;
   for (double end : ends) {
     if (end <= start) {
       continue;
@@ -134,13 +172,16 @@ double CycleWeaponDps(const AbilityBreakdown& a, double no_buffs, const Weapon& 
         active.push_back(&a.buffs[i]);
       }
     }
-    weighted += (end - start) * MixedDps(weapon, with_ability_gear, target, assumptions, active, boosts);
+    const Dps d = MixedDps(weapon, with_ability_gear, target, assumptions, active, boosts, stat);
+    weighted.total += (end - start) * d.total;
+    weighted.stat += (end - start) * d.stat;
     start = end;
   }
   if (start < period) {
-    weighted += (period - start) * no_buffs;
+    weighted.total += (period - start) * no_buffs.total;
+    weighted.stat += (period - start) * no_buffs.stat;
   }
-  return weighted / period;
+  return {weighted.total / period, weighted.stat / period};
 }
 
 }  // namespace
@@ -153,19 +194,20 @@ namespace {
 struct Shooting {
   Character with_ability_gear;
   std::vector<ChanceBoost> boosts;
-  double weapon_dps = 0;
+  Dps weapon;
 };
 
 Shooting ShootingOf(const Weapon& weapon, const Character& with_ability_gear, const Character& character,
-                    const Target& target, const Assumptions& assumptions, const Breakdown& alone) {
-  Shooting out{with_ability_gear, {}, alone.dps};
+                    const Target& target, const Assumptions& assumptions, const Breakdown& alone,
+                    std::string_view stat) {
+  Shooting out{with_ability_gear, {}, {alone.dps, 0}};
   double shots_per_second = 0;
   for (const SubattackResult& s : alone.subattacks) {
     shots_per_second = std::max(shots_per_second, s.volleys_per_second);
   }
   out.boosts = ChanceBoosts(weapon, character.worn, shots_per_second);
-  if (!out.boosts.empty()) {
-    out.weapon_dps = MixedDps(weapon, with_ability_gear, target, assumptions, {}, out.boosts);
+  if (!out.boosts.empty() || !stat.empty()) {
+    out.weapon = MixedDps(weapon, with_ability_gear, target, assumptions, {}, out.boosts, stat);
   }
   return out;
 }
@@ -191,12 +233,15 @@ struct Rhythm {
 Rhythm ChooseRhythm(const Weapon& weapon, const Ability& ability, const Character& caster, const Target& target,
                     const Assumptions& assumptions, const Shooting& shooting, const DpsWeights& weights) {
   const auto at = [&](const AbilityBreakdown& a) {
-    const double cycle = CycleWeaponDps(a, shooting.weapon_dps, weapon, shooting.with_ability_gear, target,
-                                        assumptions, shooting.boosts);
-    return BuildNumbers{cycle + a.dps, cycle, a.dps};
+    const Dps cycle = CycleWeaponDps(a, shooting.weapon, weapon, shooting.with_ability_gear, target, assumptions,
+                                     shooting.boosts, weights.stat);
+    return BuildNumbers{cycle.total + a.dps, cycle.total, a.dps, cycle.stat + AbilityStatDps(a, weights.stat)};
   };
   const bool equal = weights.weapon == weights.ability;
   const auto worth = [&](const BuildNumbers& n) {
+    if (!weights.stat.empty()) {
+      return n.stat_dps + kTieBreak * n.dps;
+    }
     return equal ? n.dps : weights.weapon * n.weapon_dps + weights.ability * n.ability_dps;
   };
   const AbilityBreakdown asap = EvaluateAbility(ability, caster, target, assumptions, 0, false);
@@ -217,7 +262,8 @@ BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const
   BuildBreakdown out;
   const Character with_ability_gear = ability ? character.With(ability->stat_bonuses) : character;
   out.weapon = EvaluateWeapon(weapon, with_ability_gear, target, assumptions);
-  const Shooting shooting = ShootingOf(weapon, with_ability_gear, character, target, assumptions, out.weapon);
+  const Shooting shooting =
+      ShootingOf(weapon, with_ability_gear, character, target, assumptions, out.weapon, weights.stat);
   for (const ChanceBoost& b : shooting.boosts) {
     out.uptimes.push_back({{Buff::On::kPlayer, b.bonus.stat, b.bonus.amount, b.duration_s}, b.share});
   }
@@ -226,7 +272,8 @@ BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const
         "an on-shoot boost's cooldown starts when it goes off, and boosts go off independently of each other, with "
         "ones of the same stat counting once");
   }
-  out.weapon_dps = shooting.weapon_dps;
+  out.weapon_dps = shooting.weapon.total;
+  out.stat_dps = shooting.weapon.stat;
   out.dps = out.weapon_dps;
   if (ability == nullptr) {
     return out;
@@ -235,7 +282,7 @@ BuildBreakdown EvaluateBuild(const Weapon& weapon, const Ability* ability, const
   const Character caster = CasterOf(weapon, character);
   const Rhythm rhythm = ChooseRhythm(weapon, *ability, caster, target, assumptions, shooting, weights);
   out.ability = EvaluateAbility(*ability, caster, target, assumptions, rhythm.rate);
-  WithAbility(out, weapon, with_ability_gear, target, assumptions, shooting.boosts);
+  WithAbility(out, weapon, with_ability_gear, target, assumptions, shooting.boosts, weights.stat);
   return out;
 }
 
@@ -243,9 +290,9 @@ BuildNumbers EvaluateBuildNumbers(const Weapon& weapon, const Ability* ability, 
                                   const Target& target, const Assumptions& assumptions, const DpsWeights& weights) {
   const Character with_ability_gear = ability ? character.With(ability->stat_bonuses) : character;
   const Breakdown alone = EvaluateWeaponNumbers(weapon, with_ability_gear, target, assumptions);
-  const Shooting shooting = ShootingOf(weapon, with_ability_gear, character, target, assumptions, alone);
+  const Shooting shooting = ShootingOf(weapon, with_ability_gear, character, target, assumptions, alone, weights.stat);
   if (ability == nullptr) {
-    return {shooting.weapon_dps, shooting.weapon_dps, 0};
+    return {shooting.weapon.total, shooting.weapon.total, 0, shooting.weapon.stat};
   }
   return ChooseRhythm(weapon, *ability, CasterOf(weapon, character), target, assumptions, shooting, weights).numbers;
 }
@@ -254,9 +301,11 @@ namespace {
 
 // Adds the ability's DPS and its buffs' effect on the weapon to `out`.
 void WithAbility(BuildBreakdown& out, const Weapon& weapon, const Character& with_ability_gear, const Target& target,
-                 const Assumptions& assumptions, const std::vector<ChanceBoost>& boosts) {
+                 const Assumptions& assumptions, const std::vector<ChanceBoost>& boosts, std::string_view stat) {
   const AbilityBreakdown& a = *out.ability;
+  const double ability_stat = AbilityStatDps(a, stat);
   out.dps += a.dps;
+  out.stat_dps += ability_stat;
   if (a.buffs.empty() || a.casts_per_second <= 0) {
     return;
   }
@@ -264,7 +313,10 @@ void WithAbility(BuildBreakdown& out, const Weapon& weapon, const Character& wit
   for (const Buff& b : a.buffs) {
     out.uptimes.push_back({b, std::clamp(b.duration_s, 0.0, period) / period});
   }
-  out.weapon_dps = CycleWeaponDps(a, out.weapon_dps, weapon, with_ability_gear, target, assumptions, boosts);
+  const Dps cycle = CycleWeaponDps(a, {out.weapon_dps, out.stat_dps - ability_stat}, weapon, with_ability_gear,
+                                   target, assumptions, boosts, stat);
+  out.weapon_dps = cycle.total;
+  out.stat_dps = cycle.stat + ability_stat;
   out.dps = out.weapon_dps + a.dps;
   out.assumptions.push_back(
       "every cast's buffs and debuffs start together and run their full duration, and a new cast doesn't extend "
@@ -345,6 +397,8 @@ std::vector<double> TriggerOdds(double chance, double cooldown_s, std::span<cons
 struct Firing {
   std::vector<std::pair<double, double>> volleys;
   std::vector<std::pair<double, double>> procs;
+  // The stat each proc's damage scales with.
+  std::vector<std::string> proc_scaling;
 };
 
 Firing FiringWith(const Weapon& weapon, Character character, Target target, const Assumptions& assumptions,
@@ -357,6 +411,8 @@ Firing FiringWith(const Weapon& weapon, Character character, Target target, cons
     const Breakdown b = EvaluateWeaponNumbers(weapon, c, target, assumptions);
     out.volleys.resize(b.subattacks.size());
     out.procs.resize(b.procs.size());
+    out.proc_scaling.resize(b.procs.size());
+    for (std::size_t i = 0; i < b.procs.size(); ++i) out.proc_scaling[i] = b.procs[i].scaling;
     for (std::size_t i = 0; i < b.subattacks.size(); ++i) {
       out.volleys[i].first += weight * b.subattacks[i].volleys_per_second;
       out.volleys[i].second += weight * b.subattacks[i].dps;
@@ -377,7 +433,8 @@ Firing FiringWith(const Weapon& weapon, Character character, Target target, cons
 }  // namespace
 
 BurstBreakdown EvaluateBurst(const Weapon& weapon, const Ability* ability, const Character& character,
-                             const Target& target, const Assumptions& assumptions, const BurstWindow& window) {
+                             const Target& target, const Assumptions& assumptions, const BurstWindow& window,
+                             std::string_view stat) {
   BurstBreakdown out;
   const double length = std::max(0.0, window.length_s);
 
@@ -467,14 +524,19 @@ BurstBreakdown EvaluateBurst(const Weapon& weapon, const Ability* ability, const
       }
       return mask;
     };
-    std::pair<double, double> sum{0, 0};
+    // The weapon's damage, the ability's, and the part of both that scales
+    // with `stat`.
+    std::array<double, 3> sum{};
     const std::size_t subattacks = firing(0).volleys.size();
     const std::size_t procs = firing(0).procs.size();
     for (std::size_t i = 0; i < subattacks + procs; ++i) {
+      const bool counts = !stat.empty() && (i < subattacks ? ShotsScaleWith(stat)
+                                                           : firing(0).proc_scaling[i - subattacks] == stat);
       for (double t = 0; t <= length + kEpsilon;) {
         const Firing& f = firing(up_at(t));
         const auto& [per_second, damage] = i < subattacks ? f.volleys[i] : f.procs[i - subattacks];
-        sum.first += damage;
+        sum[0] += damage;
+        if (counts) sum[2] += damage;
         if (per_second <= 0) {
           break;
         }
@@ -485,20 +547,23 @@ BurstBreakdown EvaluateBurst(const Weapon& weapon, const Ability* ability, const
       const std::vector<double> odds = TriggerOdds(p.chance, p.cooldown_s, std::span(casts).first(count), window.every_s);
       for (std::size_t k = 0; k < count; ++k) {
         const double landed = p.over_s > 0 ? std::clamp((length - casts[k]) / p.over_s, 0.0, 1.0) : 1.0;
-        sum.second += odds[k] * landed * p.damage / p.share;
+        sum[1] += odds[k] * landed * p.damage / p.share;
+        if (!stat.empty() && p.scaling == stat) sum[2] += odds[k] * landed * p.damage / p.share;
       }
     }
     return sum;
   };
   const auto whole = static_cast<std::size_t>(std::floor(average + kEpsilon));
   const double extra = whole < casts.size() ? average - static_cast<double>(whole) : 0;
-  const auto [weapon_damage, ability_damage] = damage_with(whole);
+  const auto [weapon_damage, ability_damage, stat_damage] = damage_with(whole);
   out.weapon_damage = weapon_damage;
   out.ability_damage = ability_damage;
+  out.stat_damage = stat_damage;
   if (extra > kEpsilon) {
-    const auto [more_weapon, more_ability] = damage_with(whole + 1);
+    const auto [more_weapon, more_ability, more_stat] = damage_with(whole + 1);
     out.weapon_damage += extra * (more_weapon - weapon_damage);
     out.ability_damage += extra * (more_ability - ability_damage);
+    out.stat_damage += extra * (more_stat - stat_damage);
   }
   out.assumptions.push_back(
       "you fire from the moment the window opens, and a volley fired in it counts in full; on-shoot effects are "

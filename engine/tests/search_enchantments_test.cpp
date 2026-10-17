@@ -116,7 +116,7 @@ TEST_CASE("the enchantment search finds the best build every build tried one by 
     const std::array<std::vector<std::int32_t>, kSlots> items = {
         OfType(d.weapons, c.weapon_slot_type), OfType(d.abilities, c.ability_slot_type),
         OfType(d.armors, c.armor_slot_type), OfType(d.rings, c.ring_slot_type)};
-    for (const rotmg::search::Weights weights :
+    for (const rotmg::search::Weights& weights :
          {rotmg::search::Weights{1, 1}, rotmg::search::Weights{1, 0}, rotmg::search::Weights{0, 1}}) {
       for (int trial = 0; trial < 6; ++trial) {
         std::array<std::int32_t, kSlots> pick{};

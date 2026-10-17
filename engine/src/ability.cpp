@@ -125,6 +125,19 @@ double PoisonTotal(const Activate& a, const Character& c) {
   return Param(a, kTotalDamage) + StatModBonus(a, kStatModDamage, c) / 10;
 }
 
+std::string DamageScaling(const Activate& effect) {
+  for (const ParamKey key : {kStatModDamage, kStatModNumShots, kStatModImpactDamage, kStatModTrapDamage,
+                             kStatModBombDamage, kStatModActivationCount}) {
+    if (effect.Number(key).value_or(0) != 0 && !effect.Text(kScalingStat).empty()) {
+      return std::string(effect.Text(kScalingStat));
+    }
+  }
+  if (effect.type == "Lightning" && effect.Number(kWisDamageBase).value_or(0) != 0) {
+    return "WIS";
+  }
+  return "";
+}
+
 double StatModBonus(const Activate& effect, ParamKey per_point_key, const Character& character) {
   const std::string_view stat = effect.Text(kScalingStat);
   const auto per_point = effect.Number(per_point_key);
@@ -288,6 +301,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   double share = 1;
   double chance = 1;
   double cooldown = 0;
+  std::string scaling;
   std::string prefix;
   const auto add_part = [&](AbilityPart p) {
     if (details) {
@@ -297,6 +311,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
     p.share = share;
     p.chance = chance;
     p.cooldown_s = cooldown;
+    p.scaling = scaling;
     out.parts.push_back(std::move(p));
   };
   const auto add_buff = [&](Buff b) {
@@ -307,6 +322,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
     out.buffs.push_back(b);
   };
   const auto apply = [&](const Activate& a) {
+    scaling = DamageScaling(a);
     if (a.type == "Shoot") {
       // Fires the item's own projectiles at the target, like a weapon volley.
       const double bonus = StatModBonus(a, kStatModDamage, c);

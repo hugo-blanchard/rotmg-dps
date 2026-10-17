@@ -93,7 +93,14 @@ struct AbilityPart {
   double chance = 1;
   double cooldown_s = 0;
   double share = 1;
+  /// The stat its damage scales with (DamageScaling), or empty.
+  std::string scaling = {};
 };
+
+/// The stat an effect's damage scales with, or empty: its scalingStat when
+/// one of its statMod amounts adds damage or shots, and WIS for lightning
+/// with a WIS damage base. Brutal Buckler's shots scale with VIT.
+std::string DamageScaling(const Activate& effect);
 
 /// MP an item gives back when the ability is used, like Eden's Embrace's
 /// 60% chance of +60 MP, at most every 8 seconds.

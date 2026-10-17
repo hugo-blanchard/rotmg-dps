@@ -41,7 +41,7 @@ TEST_CASE("the bounded search finds the best build of every armor and ring pair"
     rotmg::search::BoundedSettings settings;
     settings.armors = OrNone(d.armors, c.armor_slot_type);
     settings.rings = OrNone(d.rings, c.ring_slot_type);
-    for (const rotmg::search::Weights weights : {rotmg::search::Weights{1, 1}, rotmg::search::Weights{1, 0}}) {
+    for (const rotmg::search::Weights& weights : {rotmg::search::Weights{1, 1}, rotmg::search::Weights{1, 0}}) {
       for (const int per_item : {1, 2}) {
         settings.enchant.per_item = per_item;
         double truth = -1;

@@ -182,7 +182,7 @@ TEST_CASE("more of any stat never lowers a build's weighted DPS") {
       &rotmg::Character::attack,  &rotmg::Character::dexterity, &rotmg::Character::speed,
       &rotmg::Character::wisdom,  &rotmg::Character::vitality,  &rotmg::Character::defense,
       &rotmg::Character::max_hit_points, &rotmg::Character::max_magic_points};
-  for (const rotmg::DpsWeights weights : {rotmg::DpsWeights{1, 0}, rotmg::DpsWeights{0, 1}}) {
+  for (const rotmg::DpsWeights& weights : {rotmg::DpsWeights{1, 0}, rotmg::DpsWeights{0, 1}}) {
     for (const rotmg::Weapon& w : Data().weapons) {
       for (const rotmg::Ability& a : Data().abilities) {
         for (int rotmg::Character::*stat : kStats) {

@@ -374,7 +374,7 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
     any_shots = true;
     if (!details) {
       out.procs.push_back({"", shots_per_second / shots_between, count * each,
-                           shots_per_second / shots_between * count * each, ""});
+                           shots_per_second / shots_between * count * each, "", DamageScaling(a)});
       continue;
     }
     const std::string name = "Extra shots (" + p.object_id + ")";
@@ -382,7 +382,7 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
       return r.name == name && r.per_second == shots_per_second / shots_between;
     });
     if (row == out.procs.end()) {
-      out.procs.push_back({name, shots_per_second / shots_between, 0, 0, ""});
+      out.procs.push_back({name, shots_per_second / shots_between, 0, 0, "", DamageScaling(a)});
       row = out.procs.end() - 1;
     }
     row->damage += count * each;
