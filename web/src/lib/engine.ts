@@ -346,7 +346,7 @@ export interface OptimizeProgress {
   baseline: number;
   evaluated: number;
   builds: OptimizedBuild[];
-  /** For the exact search: armor and ring pairs searched, and how many there are. */
+  /** For the exact search: armor and ring combinations searched, and how many there are. */
   pairs?: [number, number];
 }
 

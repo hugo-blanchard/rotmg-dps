@@ -355,7 +355,8 @@
         <p class="hint">
           Keeps your weapon and ability and finds the armor, ring and enchantments with the most DPS among the armors
           and rings listed here. It checks every possibility, so the build it returns is the best there is for these
-          choices with this calculator's numbers. It ranks by sustained DPS.
+          choices with this calculator's numbers. It ranks by sustained DPS. It chooses every enchantment itself, so the
+          ones on your items are left out.
         </p>
         {#if !canExact}
           <p role="alert">The exact search needs a weapon and an ability: choose an ability first.</p>
@@ -454,7 +455,7 @@
         <div class="progress">
           <progress max="1" value={progress?.done ?? 0}></progress>
           <span>
-            {#if progress?.pairs}Armor and ring pair {Math.min(progress.pairs[0] + 1, progress.pairs[1])} of
+            {#if progress?.pairs}Armor and ring combination {Math.min(progress.pairs[0] + 1, progress.pairs[1])} of
               {progress.pairs[1]}.
             {/if}
             {secondsLeft === null
@@ -469,9 +470,9 @@
             Find the proven best
           </button>
           <p class="hint">
-            {exactPairs} armor and ring {exactPairs === 1 ? "pair" : "pairs"} to search. Each takes from a fraction of a
-            second to a few seconds; one with an item that moves a stat both ways, like Faded Heart Scarab, can take many
-            minutes.
+            {exactPairs} armor and ring {exactPairs === 1 ? "combination" : "combinations"} to search. Each usually takes a
+            few seconds or less. When the damage depends on a fourth stat besides ATT, DEX and WIS, like Brutal Buckler's
+            VIT, each can take a few minutes.
           </p>
         {:else}
           <button type="button" class="primary" onclick={search} disabled={!engine || (goal === "burst" && !burstValid)}>
