@@ -75,8 +75,7 @@
     }
     for (const s of wornSets) add(s.stats);
     add(addedStats);
-    const shown = advanced ? Object.keys(base) : ["ATT", "DEX", "SPD", "WIS"];
-    return shown.map((stat) => ({ stat, base: base[stat], added: added[stat] ?? 0 }));
+    return Object.keys(base).map((stat) => ({ stat, base: base[stat], added: added[stat] ?? 0 }));
   });
 
   function setSummary(set: WornSet): string {
