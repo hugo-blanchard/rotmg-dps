@@ -11,6 +11,7 @@ interface Api {
   simulateMany(requestJson: string): string;
   optimizeWithProgress(requestJson: string, report: (progress: string) => void): string;
   estimateOptimize(requestJson: string): string;
+  damageStats(requestJson: string): string;
   evaluateChoices(requestJson: string): string;
   explainBuild(requestJson: string): string;
 }
@@ -63,6 +64,9 @@ scope.onmessage = async (e) => {
         break;
       case "estimate":
         scope.postMessage({ id: message.id, result: engine.estimateOptimize(message.request) });
+        break;
+      case "damageStats":
+        scope.postMessage({ id: message.id, result: engine.damageStats(message.request) });
         break;
     }
   } catch (err) {

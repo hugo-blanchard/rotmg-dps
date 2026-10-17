@@ -64,6 +64,8 @@ export interface EvaluateRequest {
 export interface DpsWeights {
   weapon: number;
   ability: number;
+  /** When set, only damage from sources that scale with this stat counts. */
+  stat?: string;
 }
 
 export type Source = "wiki" | "client-data" | "geometric-estimate" | "curated" | "user" | "assumed";
@@ -405,7 +407,8 @@ type Message =
   | { kind: "optimize"; request: string }
   | { kind: "estimate"; request: string }
   | { kind: "choices"; request: string }
-  | { kind: "explain"; request: string };
+  | { kind: "explain"; request: string }
+  | { kind: "damageStats"; request: string };
 
 export type WorkerRequest = Message & { id: number };
 
@@ -493,6 +496,16 @@ export class Engine {
       return { ok: false, error: res.error };
     }
     return JSON.parse(res.result!) as ExplainResponse;
+  }
+
+  /** The stats some damage source the class can use scales with: the ones the optimizer can build around. */
+  async damageStats(classId: string): Promise<string[]> {
+    const res = await this.send({ kind: "damageStats", request: JSON.stringify({ class: classId }) });
+    if (res.error) {
+      return [];
+    }
+    const parsed = JSON.parse(res.result!) as { ok: boolean; stats?: string[] };
+    return parsed.ok ? (parsed.stats ?? []) : [];
   }
 
   /** The build's DPS with one slot filled each way; see Api::EvaluateChoices. */

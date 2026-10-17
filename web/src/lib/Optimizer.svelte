@@ -74,8 +74,9 @@
   // From 0, the weapon only, through 0.5, both in full, to 1, the ability only.
   let balance = $state(0.5);
   let goal = $state<"sustained" | "burst">("sustained");
-  // How the search whose builds are shown ranked them.
-  let rankedBy = $state({ balance: 0.5, burst: false });
+  // How the search whose builds are shown ranked them: around a stat, by the
+  // damage that stat adds.
+  let rankedBy = $state<{ balance: number; burst: boolean; stat?: string }>({ balance: 0.5, burst: false });
   let searching = $state(false);
   let found = $state<OptimizeResponse | null>(null);
   // The running search's last report, and whether the builds shown are
@@ -111,6 +112,20 @@
     ["MAXMP", "Max MP"],
   ];
 
+  // The stats something the class can use deals damage that scales with,
+  // the only ones worth building around.
+  let classStats = $state<string[]>([]);
+  $effect(() => {
+    const id = cls.id;
+    engine?.damageStats(id).then((found) => {
+      if (cls.id !== id) return;
+      classStats = found;
+      if (stats.some(([s]) => s === around) && !found.includes(around)) around = "every stat";
+    });
+  });
+  const statName = (id: string) => stats.find(([s]) => s === id)?.[1] ?? id;
+  const aroundStat = $derived(mode === "wide" && stats.some(([s]) => s === around) ? around : undefined);
+
   const weights = (t: number) => ({ weapon: Math.min(1, 2 * (1 - t)), ability: Math.min(1, 2 * t) });
   const balances = [0, 0.25, 0.5, 0.75, 1];
   const balanceText: Record<number, string> = {
@@ -129,6 +144,7 @@
   // What a gain on the start's score is in, for the search shown.
   const scoreUnit = $derived.by(() => {
     const what = rankedBy.burst ? "damage" : "DPS";
+    if (rankedBy.stat) return ` ${what} from ${rankedBy.stat}`;
     const units: Record<number, string> = { 0: ` weapon ${what}`, 0.5: rankedBy.burst ? " damage" : "", 1: ` ability ${what}` };
     return units[rankedBy.balance] ?? " weighted";
   });
@@ -178,7 +194,7 @@
     progress = null;
     stopped = false;
     searchedMode = mode;
-    rankedBy = { balance, burst: mode === "wide" && goal === "burst" };
+    rankedBy = { balance, burst: mode === "wide" && goal === "burst", stat: aroundStat };
     searched = options();
     opened = null;
     startedAt = now = performance.now();
@@ -260,8 +276,9 @@
 
   // The balance whose weights the page times casts by, when not the total.
   const castBalance = $derived(
-    castWeights &&
-      balances.find((t) => weights(t).weapon === castWeights!.weapon && weights(t).ability === castWeights!.ability),
+    castWeights && !castWeights.stat
+      ? balances.find((t) => weights(t).weapon === castWeights!.weapon && weights(t).ability === castWeights!.ability)
+      : undefined,
   );
 
   function take(b: OptimizedBuild) {
@@ -273,7 +290,13 @@
     // The page shows the build at the casting rhythm the search scored it
     // at. A burst search casts as often as it can in each window, so the
     // sustained numbers keep the total's rhythm.
-    castWeights = rankedBy.burst || rankedBy.balance === 0.5 ? undefined : weights(rankedBy.balance);
+    castWeights = rankedBy.burst
+      ? undefined
+      : rankedBy.stat
+        ? { weapon: 1, ability: 1, stat: rankedBy.stat }
+        : rankedBy.balance === 0.5
+          ? undefined
+          : weights(rankedBy.balance);
     items = { weapon: b.weapon, ability: b.ability, armor: b.armor, ring: b.ring };
     enchants = Object.fromEntries(
       slots.map((s) => [s, [0, 1, 2, 3].map((i) => b.enchantments[s][i] ?? "")]),
@@ -332,8 +355,11 @@
   {/if}
   {#if castWeights}
     <p class="hint">
-      The ability is cast as often as helps {castBalance === undefined ? "the weighted DPS" : castText[castBalance]},
-      which the search ranked this build by.
+      The ability is cast as often as helps {castWeights.stat
+        ? `the damage ${castWeights.stat} adds`
+        : castBalance === undefined
+          ? "the weighted DPS"
+          : castText[castBalance]}, which the search ranked this build by.
       <button type="button" onclick={() => (castWeights = undefined)}>Cast for the total DPS</button>
     </p>
   {/if}
@@ -412,17 +438,26 @@
     {/if}
     {#if mode === "wide"}
       <label class="mode">
-        Build around
+        Optimize for
         <select bind:value={around}>
-          <option value="every stat">Every stat</option>
-          <option value="nothing">Nothing, just improve yours (quicker)</option>
-          {#each stats as [id, name] (id)}
-            <option value={id}>{name}</option>
+          <option value="every stat">All damage</option>
+          <option value="nothing">All damage, just improving yours (quicker)</option>
+          {#each stats.filter(([id]) => classStats.includes(id)) as [id, name] (id)}
+            <option value={id}>Damage that scales with {name}</option>
           {/each}
         </select>
       </label>
+      {#if aroundStat}
+        <p class="hint">
+          Counts only the damage {statName(aroundStat)} adds to what scales with it:{aroundStat === "ATT" ||
+          aroundStat === "DEX"
+            ? " the weapon's shots, and"
+            : ""} abilities, gear and enchantments whose damage grows with {aroundStat}. Everything else counts for
+          nothing, so the weapon may be picked only for its stats; the total damage only breaks ties.
+        </p>
+      {/if}
       <label class="mode">
-        Optimize for
+        Damage
         <select bind:value={goal}>
           <option value="sustained">Sustained DPS</option>
           <option value="burst">Burst damage</option>
@@ -444,11 +479,13 @@
         </p>
       {/if}
     {/if}
-    <label class="mode">
-      Rank by
-      <input type="range" min="0" max="1" step="0.25" bind:value={balance} />
-      <span class="balance">{balanceText[balance]}</span>
-    </label>
+    {#if !aroundStat}
+      <label class="mode">
+        Rank by
+        <input type="range" min="0" max="1" step="0.25" bind:value={balance} />
+        <span class="balance">{balanceText[balance]}</span>
+      </label>
+    {/if}
     {#if searching}
       <div class="progress">
         <progress max="1" value={progress?.done ?? 0}></progress>
@@ -535,7 +572,8 @@
             </div>
             <div class="actions">
               <button type="button" onclick={() => take(b)}>Use</button>
-              {#if searchedMode === "wide" && b.ability && !searching}
+              <!-- The exact search ranks by sustained damage, by weapon and ability. -->
+              {#if searchedMode === "wide" && !rankedBy.burst && !rankedBy.stat && b.ability && !searching}
                 <button type="button" onclick={() => prove(b)}>Prove it</button>
               {/if}
               <button type="button" aria-expanded={opened === i} onclick={() => details(i, b)}>
