@@ -107,8 +107,24 @@ class Ceilings {
       for (std::size_t s = 0; s < kStats; ++s) corner[s] = lower_[s] ? least[s] : most[s];
       return FinalStats(*base_, corner, conversions);
     }
-    // As detail::Converted adds each share up, from the corner each one
-    // needs.
+    return Parts(most, least);
+  }
+
+  // The read stats these flat sums make, exactly as FinalStats has them,
+  // without working out the others.
+  Stats Read(const Tenths& tenths) const { return Parts(tenths, tenths); }
+
+ private:
+  struct Term {
+    std::size_t from;
+    double share;
+    bool of_total;
+    bool lowers;
+  };
+
+  // Each read stat from the corner each share needs, adding the shares up
+  // as detail::Converted does, in the same order.
+  Stats Parts(const Tenths& most, const Tenths& least) const {
     Stats out{};
     for (const std::size_t r : *read_) {
       out[r] = base_->before[r] + PointsOf(most[r]);
@@ -124,14 +140,6 @@ class Ceilings {
     }
     return out;
   }
-
- private:
-  struct Term {
-    std::size_t from;
-    double share;
-    bool of_total;
-    bool lowers;
-  };
 
   const std::vector<std::size_t>* read_;
   const StatBase* base_;
@@ -499,6 +507,14 @@ class ReachedOn : public Reached {
     if (recent_.empty()) return;
     all_.insert(all_.end(), recent_.begin(), recent_.end());
     recent_.clear();
+    // Finals added early can be beaten by later ones; they cover nothing the
+    // others don't, so they go whenever the list has doubled.
+    if (all_.size() >= 2 * pruned_) {
+      std::vector<Point<D>> kept;
+      for (const std::size_t i : Frontier(all_)) kept.push_back(all_[i]);
+      all_ = std::move(kept);
+      pruned_ = std::max<std::size_t>(all_.size(), 64);
+    }
     snapshot_ = std::make_unique<SnapshotIndex<D>>(all_);
   }
 
@@ -510,6 +526,7 @@ class ReachedOn : public Reached {
   }
   std::vector<std::size_t> read_;
   std::vector<Point<D>> all_;
+  std::size_t pruned_ = 64;
   std::vector<Point<D>> recent_;
   std::unique_ptr<SnapshotIndex<D>> snapshot_;
 };
@@ -1356,7 +1373,7 @@ std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, co
     }
   }
   // A stat compared both ways is read from its plain coordinate.
-  const auto final_of = [&](const Point<D>& at) {
+  const auto tenths_of = [&](const Point<D>& at) {
     Tenths tenths = a.fixed;
     Mask taken{};
     for (std::size_t k = 0; k < D; ++k) {
@@ -1370,14 +1387,14 @@ std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, co
       const auto [s, sign] = a.dims[k];
       if (sign < 0 && !taken[s]) tenths[s] -= at[k];
     }
-    return scorer_.FinalStats(layout, tenths, a.conversions);
+    return tenths;
   };
   // A sum whose best completion is matched by a final already reached.
   const auto hopeless = [&](const Point<D>& at, std::size_t slot) {
     if (!a.ceilings->bounded()) return false;
     Point<D> best = at;
     for (std::size_t k = 0; k < D; ++k) best[k] += rest[slot][k];
-    if (!a.mixed) return reached.Covers(final_of(best));
+    if (!a.mixed) return reached.Covers(a.ceilings->Read(tenths_of(best)));
     // A stat compared both ways has its most on one coordinate and its
     // least, negated, on the other.
     Tenths most = a.fixed;
@@ -1478,7 +1495,8 @@ std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, co
     finals.clear();
     rows.clear();
     for (const Sum<D>& x : grown) {
-      finals.push_back(final_of(x.at));
+      // Finals are only ever read on the read stats.
+      finals.push_back(a.ceilings->Read(tenths_of(x.at)));
       for (const std::size_t s : read_list_) rows.push_back(finals.back()[s]);
     }
     FrontierOfRowsInto(rows, read_list_.size(), scratch.frontier, scratch.kept);
