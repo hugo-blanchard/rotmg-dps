@@ -1450,6 +1450,17 @@ std::vector<Final> Search::Merge(const Profile& profile, const Assignment& a, co
       }
     }
     if (slot + 1 < kSlots) {
+      // Before the last item, a long list goes on as it is: comparing its
+      // sums with each other costs more than checking each one's finals
+      // against those already reached, which the last item does anyway.
+      // Past about 20,000 sums the time hardly changes (measured on Knight
+      // with Neo Acidic Slasher and Brutal Buckler); below 5,000 skipping
+      // costs more than it saves.
+      constexpr std::size_t kMostCompared = 50'000;
+      if (slot + 2 == kSlots && grown.size() > kMostCompared) {
+        sums = grown;
+        continue;
+      }
       FrontierInto<D>(grown.size(), [&](std::uint32_t i) -> const Point<D>& { return grown[i].at; }, scratch.frontier,
                       scratch.kept);
       sums.clear();
