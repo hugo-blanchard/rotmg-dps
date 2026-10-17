@@ -237,6 +237,71 @@ struct FrontierScratch {
   std::vector<std::int32_t> block_most;
 };
 
+// Past this many points, FrontierInto sorts kept points into buckets.
+inline constexpr std::size_t kBucketedFrom = 512;
+// Buckets are masks over the dimensions after the first.
+inline constexpr std::size_t kMostBucketed = 11;
+
+// FrontierInto's scan for many points: each kept point goes in a bucket by
+// which dimensions after the first it has at least the pivot's value in,
+// the pivot being the median of each. Only a point with at least the pivot
+// wherever `p` has it can cover `p`, so only buckets whose mask holds p's
+// are scanned.
+template <std::size_t D, typename Get>
+void BucketedScan(const std::vector<std::uint32_t>& order, const Get& point, std::vector<std::uint32_t>& kept) {
+  constexpr std::size_t kTail = D - 1;
+  constexpr std::size_t kBlock = 32;
+  Point<D> pivot{};
+  {
+    std::vector<std::int32_t> values(order.size());
+    for (std::size_t d = 1; d < D; ++d) {
+      for (std::size_t i = 0; i < order.size(); ++i) values[i] = point(order[i])[d];
+      const auto mid = values.begin() + static_cast<std::ptrdiff_t>(values.size() / 2);
+      std::nth_element(values.begin(), mid, values.end());
+      pivot[d] = *mid;
+    }
+  }
+  struct Bucket {
+    std::vector<std::int32_t> tails;
+    std::vector<std::int32_t> most;
+  };
+  std::vector<Bucket> buckets(std::size_t{1} << kTail);
+  std::vector<std::uint32_t> used;
+  for (const std::uint32_t i : order) {
+    const Point<D>& p = point(i);
+    std::uint32_t mask = 0;
+    for (std::size_t d = 0; d < kTail; ++d) mask |= static_cast<std::uint32_t>(p[d + 1] >= pivot[d + 1]) << d;
+    bool covered = false;
+    for (std::size_t u = 0; u < used.size() && !covered; ++u) {
+      if ((used[u] & mask) != mask) continue;
+      const Bucket& bucket = buckets[used[u]];
+      const std::size_t count = bucket.tails.size() / kTail;
+      for (std::size_t b = 0; b * kBlock < count && !covered; ++b) {
+        const std::int32_t* m = bucket.most.data() + b * kTail;
+        bool may = true;
+        for (std::size_t d = 0; d < kTail && may; ++d) may = m[d] >= p[d + 1];
+        if (!may) continue;
+        const std::size_t end = std::min(count, (b + 1) * kBlock);
+        for (std::size_t k = b * kBlock; k < end && !covered; ++k) {
+          const std::int32_t* q = bucket.tails.data() + k * kTail;
+          bool all = true;
+          for (std::size_t d = 0; d < kTail && all; ++d) all = q[d] >= p[d + 1];
+          covered = all;
+        }
+      }
+    }
+    if (covered) continue;
+    Bucket& bucket = buckets[mask];
+    const std::size_t count = bucket.tails.size() / kTail;
+    if (count == 0) used.push_back(mask);
+    if (count % kBlock == 0) bucket.most.insert(bucket.most.end(), p.begin() + 1, p.end());
+    std::int32_t* m = bucket.most.data() + (count / kBlock) * kTail;
+    for (std::size_t d = 0; d < kTail; ++d) m[d] = std::max(m[d], p[d + 1]);
+    bucket.tails.insert(bucket.tails.end(), p.begin() + 1, p.end());
+    kept.push_back(i);
+  }
+}
+
 // The indices of the frontier of `n` points, `point(i)` the i-th, ascending
 // in `kept`: one of each group of equal points, the first. Taken in
 // descending lexicographic order, anything that covers a point comes before
@@ -282,6 +347,8 @@ void FrontierInto(std::size_t n, const Get& point, FrontierScratch& scratch, std
       if (it != steps.end() && it->first == a) it = steps.erase(it);
       steps.insert(it, {a, b});
     }
+  } else if (n > kBucketedFrom && D - 1 <= kMostBucketed) {
+    BucketedScan<D>(order, point, kept);
   } else {
     constexpr std::size_t kTail = D - 1;
     constexpr std::size_t kBlock = 32;
@@ -333,6 +400,18 @@ inline void FrontierOfRowsInto(const std::vector<std::int32_t>& rows, std::size_
   kept.clear();
   const std::size_t n = dims == 0 ? 0 : rows.size() / dims;
   const auto row = [&](std::size_t i) { return rows.data() + i * dims; };
+  // Many rows are worth copying into points for FrontierInto's faster scans.
+  if (n > kBucketedFrom && dims >= 2 && dims <= 12) {
+    const auto as_points = [&]<std::size_t D>(std::integral_constant<std::size_t, D>) {
+      std::vector<Point<D>> points(n);
+      for (std::size_t i = 0; i < n; ++i) std::copy(row(i), row(i) + D, points[i].begin());
+      FrontierInto<D>(n, [&](std::uint32_t i) -> const Point<D>& { return points[i]; }, scratch, kept);
+    };
+    [&]<std::size_t... D>(std::index_sequence<D...>) {
+      ((dims == D + 2 ? as_points(std::integral_constant<std::size_t, D + 2>{}) : void()), ...);
+    }(std::make_index_sequence<11>{});
+    return;
+  }
   std::vector<std::uint32_t>& order = scratch.order;
   order.resize(n);
   std::iota(order.begin(), order.end(), std::uint32_t{0});

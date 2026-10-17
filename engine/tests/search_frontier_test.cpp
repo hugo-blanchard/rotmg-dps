@@ -36,9 +36,9 @@ std::set<Point<D>> SlowFrontier(const std::vector<Point<D>>& points) {
 }
 
 template <std::size_t D>
-void CheckFrontier(std::mt19937& rng) {
-  for (int trial = 0; trial < 300; ++trial) {
-    const auto points = RandomPoints<D>(rng, 1 + rng() % 200, 2 + static_cast<std::int32_t>(rng() % 30));
+void CheckFrontier(std::mt19937& rng, int trials = 300, std::size_t most = 200) {
+  for (int trial = 0; trial < trials; ++trial) {
+    const auto points = RandomPoints<D>(rng, 1 + rng() % most, 2 + static_cast<std::int32_t>(rng() % 30));
     const std::vector<std::size_t> kept = rotmg::search::Frontier(points);
     std::set<Point<D>> values;
     for (const std::size_t i : kept) values.insert(points[i]);
@@ -66,4 +66,12 @@ TEST_CASE("a frontier keeps exactly the points nothing else covers") {
   CheckFrontier<5>(rng);
   CheckFrontier<6>(rng);
   CheckFrontier<8>(rng);
+}
+
+TEST_CASE("a frontier of many points keeps exactly the points nothing else covers") {
+  // Past kBucketedFrom points the scan sorts kept points into buckets.
+  std::mt19937 rng(5);
+  CheckFrontier<4>(rng, 12, 3000);
+  CheckFrontier<5>(rng, 12, 3000);
+  CheckFrontier<8>(rng, 12, 3000);
 }
