@@ -1,6 +1,7 @@
 #include "rotmg/ability.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <optional>
@@ -42,6 +43,32 @@ double Param(const Activate& a, ParamKey key) { return a.Number(key).value_or(0)
 }  // namespace
 
 double MpPerSecond(int wisdom) { return 0.5 + 0.12 * wisdom; }
+
+// RealmEye, Pet Abilities: the MP each heal restores and the delay between
+// heals at the ends of each rarity's levels, from level 1 to 100. Levels in
+// between are taken to move evenly from one end to the next, an assumption;
+// the site only offers the ends.
+double MagicHealMpPerSecond(int level) {
+  struct Heal {
+    int level;
+    double mp;
+    double delay_s;
+  };
+  constexpr std::array<Heal, 6> kHeals = {{{1, 1, 10}, {30, 3, 3.82}, {50, 8, 2.66}, {70, 17, 1.96}, {90, 33, 1.42}, {100, 45, 1}}};
+  if (level < 1) {
+    return 0;
+  }
+  level = std::min(level, kHeals.back().level);
+  for (std::size_t i = 1; i < kHeals.size(); ++i) {
+    if (level <= kHeals[i].level) {
+      const Heal& a = kHeals[i - 1];
+      const Heal& b = kHeals[i];
+      const double t = static_cast<double>(level - a.level) / (b.level - a.level);
+      return (a.mp + t * (b.mp - a.mp)) / (a.delay_s + t * (b.delay_s - a.delay_s));
+    }
+  }
+  return kHeals[0].mp / kHeals[0].delay_s;
+}
 
 double AbilityCooldown(const Ability& ability) {
   return std::max(ability.cooldown.value_or(kMinCooldownS), kMinCooldownS);
@@ -237,7 +264,7 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
 
   out.mp_cost = ability.mp_cost.value_or(0);
   out.cooldown_s = AbilityCooldown(ability);
-  out.mp_per_second = MpPerSecond(c.wisdom);
+  out.mp_per_second = MpPerSecond(c.wisdom) + c.pet_mp_per_second;
   out.casts_per_second = 1 / std::max(out.cooldown_s, 1e-3);
   if (out.mp_cost > 0) {
     out.casts_per_second = std::min(out.casts_per_second, out.mp_per_second / out.mp_cost);
@@ -493,6 +520,9 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
     assume("an ability with no cooldown set can be used every 0.45 seconds, the shortest any ability allows");
   }
   assume("the ability is used as often as MP regeneration and its cooldown allow, not counting the MP you start with");
+  if (c.pet_mp_per_second > 0) {
+    assume("the pet's Magic Heal counts as a steady flow of MP that's always used");
+  }
 
   for (const AbilityPart& p : out.parts) {
     out.damage_per_cast += p.damage;
@@ -502,6 +532,9 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
   if (details) {
     out.terms.push_back({"MP cost", out.mp_cost, Source::kClientData, "ability"});
     out.terms.push_back({"MP per second", out.mp_per_second, Source::kWiki, "RealmEye: Character Stats"});
+    if (c.pet_mp_per_second > 0) {
+      out.terms.push_back({"From the pet's Magic Heal", c.pet_mp_per_second, Source::kWiki, "RealmEye: Pet Abilities"});
+    }
     out.terms.push_back({"Cooldown", out.cooldown_s, ability.cooldown ? Source::kClientData : Source::kAssumed, ""});
     out.terms.push_back({"Casts per second", out.casts_per_second, Source::kWiki, "RealmEye: Character Stats"});
   }

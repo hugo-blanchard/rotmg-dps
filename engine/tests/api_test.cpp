@@ -113,6 +113,13 @@ TEST_CASE("evaluates a build with an ability") {
   CHECK(res["ability"]["castsPerSecond"].get<double>() == Catch::Approx(7.7 / 90));
   CHECK(res["curve"][0]["dps"].get<double>() == Catch::Approx(build));
 
+  // A level 100 Magic Heal pet adds 45 MP a second.
+  const json pet = json::parse(api.Evaluate(R"({
+    "weapon": "Plain Sword", "ability": "War Helm", "attack": 50, "dexterity": 50, "wisdom": 60,
+    "pet": {"magicHeal": 100}
+  })"));
+  CHECK(pet["ability"]["castsPerSecond"].get<double>() == Catch::Approx((7.7 + 45) / 90));
+
   const json none = json::parse(api.Evaluate(R"({"weapon": "Plain Sword"})"));
   CHECK_FALSE(none.contains("ability"));
   CHECK(none["build"]["dps"] == none["breakdown"]["dps"]);

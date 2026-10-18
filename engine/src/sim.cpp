@@ -560,7 +560,9 @@ void Simulation::Step() {
   const bool anyone = !world_.targets.empty() && Alive(world_.aim);
 
   if (ability_) {
-    mp_ = std::min(max_mp_, mp_ + MpPerSecond(Current().wisdom) * kStepMs / 1000);
+    // The pet's heals come as a steady flow, as in the calculated numbers.
+    const Character me = Current();
+    mp_ = std::min(max_mp_, mp_ + (MpPerSecond(me.wisdom) + me.pet_mp_per_second) * kStepMs / 1000);
     if (now >= next_cast_ms_ && mp_ >= mp_cost_ && anyone) {
       mp_ -= mp_cost_;
       next_cast_ms_ = now + cooldown_ms_;

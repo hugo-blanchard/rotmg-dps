@@ -37,6 +37,9 @@ RequestSpec ReadSpec(const json& req) {
   c.speed = req.value("speed", 0);
   c.max_hit_points = req.value("maxHitPoints", 0);
   c.max_magic_points = req.value("maxMagicPoints", 0);
+  if (auto it = req.find("pet"); it != req.end()) {
+    c.pet_mp_per_second = MagicHealMpPerSecond(it->value("magicHeal", 0));
+  }
   if (auto it = req.find("status"); it != req.end()) {
     c.status.weak = it->value("weak", false);
     c.status.damaging = it->value("damaging", false);
@@ -362,6 +365,7 @@ Request Finish(const Prepared& prepared, const Character& base) {
   StatParts parts;
   r.character = WithStats(r.character, FinalStats(stats, enchantments.tenths, enchantments.conversions, &parts));
   r.character.status = base.status;
+  r.character.pet_mp_per_second = base.pet_mp_per_second;
   Stats from_enchantments{};
   for (std::size_t s = 0; s < kStats; ++s) {
     from_enchantments[s] = parts.flat[s] + parts.converted[s];

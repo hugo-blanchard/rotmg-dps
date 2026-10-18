@@ -17,6 +17,10 @@ namespace rotmg {
 /// MP regenerated per second: 0.5 + 0.12 * WIS (RealmEye: Character Stats).
 double MpPerSecond(int wisdom);
 
+/// MP per second a pet's Magic Heal restores at its ability `level`, 0 for
+/// none and at most 100.
+double MagicHealMpPerSecond(int level);
+
 /// StatMod (RealmEye: Character Stats): `per_point` for every point of the
 /// effect's scaling stat over its threshold, nothing below it. Reads the
 /// scalingStat and statModScalingMin parameters.

@@ -44,6 +44,16 @@ TEST_CASE("Character Stats: MP regen is 6.5/s at 50 WIS and 9.5/s at 75") {
   CHECK(rotmg::MpPerSecond(75) == Approx(9.5));
 }
 
+TEST_CASE("Pet Abilities: a level 100 Magic Heal restores 45 MP every second") {
+  CHECK(rotmg::MagicHealMpPerSecond(100) == Approx(45));
+  CHECK(rotmg::MagicHealMpPerSecond(90) == Approx(33 / 1.42));
+  CHECK(rotmg::MagicHealMpPerSecond(30) == Approx(3 / 3.82));
+  CHECK(rotmg::MagicHealMpPerSecond(1) == Approx(0.1));
+  CHECK(rotmg::MagicHealMpPerSecond(0) == 0);
+  // Between the ends of a rarity's levels, halfway along both.
+  CHECK(rotmg::MagicHealMpPerSecond(95) == Approx(39 / 1.21));
+}
+
 TEST_CASE("Character Stats: Burning Retribution gains 2.25 damage per WIS over 42") {
   const auto spell = Effect({{"scalingStat", std::string("WIS")}, {"statModScalingMin", 42.0}, {"statModDamage", 2.25}});
   CHECK(rotmg::StatModBonus(spell, rotmg::ParamKey::kStatModDamage, {.wisdom = 60}) == Approx(40.5));

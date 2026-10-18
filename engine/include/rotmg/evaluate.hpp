@@ -62,6 +62,9 @@ struct Character {
   int max_hit_points = 0;
   int max_magic_points = 0;
   PlayerStatus status{};
+  /// MP a pet restores per second on top of WIS, like a Magic Heal pet's
+  /// (MagicHealMpPerSecond).
+  double pet_mp_per_second = 0;
   /// Items worn besides the one being evaluated, by type: the ability,
   /// armor and ring. Some on-shoot effects need them.
   ItemTypes worn{};

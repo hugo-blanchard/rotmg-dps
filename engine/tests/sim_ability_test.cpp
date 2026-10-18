@@ -345,3 +345,16 @@ TEST_CASE("a rocket on hit explodes on the target and what's around it") {
   CHECK(sim.PerTarget()[1].damage == Approx(499.5 * static_cast<double>(sim.ProcTotals().casts)));
   CHECK(sim.PerTarget()[2].damage == 0);
 }
+
+TEST_CASE("a Magic Heal pet's MP lets the ability be cast more often") {
+  // 7.7 MP a second at 60 WIS, 52.7 with a level 100 Magic Heal: about 6.8
+  // times as many 90 MP casts over a minute, less the full bar both start
+  // with.
+  rotmg::Character healed = kWis60;
+  healed.pet_mp_per_second = rotmg::MagicHealMpPerSecond(100);
+  Simulation plain(Sword(), kWis60, At({{0, 3}}), &Ability("War Helm"));
+  Simulation pet(Sword(), healed, At({{0, 3}}), &Ability("War Helm"));
+  plain.Advance(60'000);
+  pet.Advance(60'000);
+  CHECK(pet.AbilityTotals().casts > 5 * plain.AbilityTotals().casts);
+}
