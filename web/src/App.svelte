@@ -56,7 +56,7 @@
     ring: noEnchants(),
   });
   let status = $state<PlayerStatus>({ weak: false, damaging: false, berserk: false, dazed: false });
-  let target = $state<Target>({ defense: 0, armored: false, armorBroken: false, exposed: false, cursed: false });
+  let target = $state<Target>({ defense: 40, armored: false, armorBroken: false, exposed: false, cursed: false });
   let distance = $state(4);
   let radius = $state(0.5);
   let hitOverrides = $state<(number | null)[]>([]);

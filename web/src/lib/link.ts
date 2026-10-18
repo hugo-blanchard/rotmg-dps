@@ -85,7 +85,7 @@ export function fromQuery(query: string, dataset: Dataset): Build | null {
     enchants: Object.fromEntries(slots.map((s) => [s, known(enchantKeys[s])])) as Record<Slot, string[]>,
     status: Object.fromEntries(statusKeys.map((k) => [k, self.has(k)])) as unknown as PlayerStatus,
     target: {
-      defense: number("def", 0),
+      defense: number("def", 40),
       ...(Object.fromEntries(targetKeys.map((k) => [k, on.has(k)])) as Omit<Target, "defense">),
     },
     distance: number("dist", 4),
