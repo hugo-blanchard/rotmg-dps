@@ -142,4 +142,51 @@ std::vector<std::string> HitModelAssumptions(const Weapon& weapon) {
   return out;
 }
 
+std::vector<double> DistancesWorthScoring(const Weapon& weapon, const Ability* ability,
+                                          const std::vector<double>& distances, double radius) {
+  std::vector<const Weapon*> shooters;
+  if (HitModelFits(weapon)) {
+    shooters.push_back(&weapon);
+  }
+  Weapon ability_shots;
+  if (ability != nullptr && !ability->subattacks.empty()) {
+    ability_shots = ability->AsWeapon();
+    if (HitModelFits(ability_shots)) {
+      shooters.push_back(&ability_shots);
+    }
+  }
+  const auto hits_at = [&](double distance) {
+    std::vector<int> out;
+    for (const Weapon* w : shooters) {
+      for (const Subattack& s : w->subattacks) {
+        out.push_back(HitsPerVolley(*w, s, distance, radius));
+      }
+    }
+    return out;
+  };
+  const auto covers = [](const std::vector<int>& a, const std::vector<int>& b) {
+    for (std::size_t i = 0; i < a.size(); ++i) {
+      if (a[i] < b[i]) return false;
+    }
+    return true;
+  };
+  std::vector<double> sorted = distances;
+  std::ranges::sort(sorted, std::greater<>());
+  // Farthest first, so of two distances that land the same, the farther
+  // stays: standing back costs nothing then.
+  std::vector<std::pair<double, std::vector<int>>> kept;
+  for (const double d : sorted) {
+    std::vector<int> hits = hits_at(d);
+    if (std::ranges::any_of(kept, [&](const auto& k) { return covers(k.second, hits); })) {
+      continue;
+    }
+    std::erase_if(kept, [&](const auto& k) { return covers(hits, k.second); });
+    kept.emplace_back(d, std::move(hits));
+  }
+  std::vector<double> out;
+  for (const auto& [d, hits] : kept) out.push_back(d);
+  std::ranges::sort(out);
+  return out;
+}
+
 }  // namespace rotmg

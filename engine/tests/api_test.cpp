@@ -655,6 +655,43 @@ TEST_CASE("the optimizer finds the build with the most DPS") {
   }
 }
 
+TEST_CASE("with a range of distances, each build stands where it does the most") {
+  rotmg::Api api = LoadedApi();
+  // The Plain Sword reaches 3.5 tiles, so at 5 it lands nothing.
+  const auto optimize = [&](const std::string& optimize) {
+    return json::parse(api.Optimize(R"({"class": "Swordsman", "weapon": "Plain Sword", "ability": "Plain Spell",
+        "armor": "Plain Mail", "ring": "Plain Ring", "attack": 75, "dexterity": 50, "wisdom": 60,
+        "hitModel": {"distance": 5}, "optimize": )" + optimize + "}"));
+  };
+  const auto at_3 = json::parse(api.Optimize(R"({"class": "Swordsman", "weapon": "Plain Sword",
+      "ability": "Plain Spell", "armor": "Plain Mail", "ring": "Plain Ring", "attack": 75, "dexterity": 50,
+      "wisdom": 60, "hitModel": {"distance": 3}, "optimize": {"enchantments": "none"}})"));
+  const json wide = optimize(R"({"enchantments": "none", "distances": {"from": 2, "to": 5}})");
+  REQUIRE(wide["ok"] == true);
+  const json& best = wide["builds"][0];
+  CHECK(best["distance"].get<double>() <= 4);
+  CHECK(best["dps"].get<double>() == Catch::Approx(at_3["builds"][0]["dps"].get<double>()));
+  CHECK(optimize(R"({"enchantments": "none"})")["builds"][0]["dps"].get<double>() < best["dps"].get<double>());
+
+  // The exact search does as well as at its best distance, and no better.
+  // It may stand farther than the sword's reach, with an enchantment that
+  // makes its shots go farther.
+  const json exact = optimize(R"({"slots": 1, "exact": {}, "distances": {"from": 2, "to": 5}})");
+  REQUIRE(exact["ok"] == true);
+  double most = 0;
+  for (const double d : {2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0}) {
+    const json one = json::parse(api.Optimize(json{{"class", "Swordsman"}, {"weapon", "Plain Sword"},
+                                                   {"ability", "Plain Spell"}, {"armor", "Plain Mail"},
+                                                   {"ring", "Plain Ring"}, {"attack", 75}, {"dexterity", 50},
+                                                   {"wisdom", 60}, {"hitModel", {{"distance", d}}},
+                                                   {"optimize", {{"slots", 1}, {"exact", json::object()}}}}
+                                                  .dump()));
+    REQUIRE(one["ok"] == true);
+    most = std::max(most, one["builds"][0]["score"].get<double>());
+  }
+  CHECK(exact["builds"][0]["score"].get<double>() == Catch::Approx(most));
+}
+
 TEST_CASE("the optimizer ranks by the weapon and ability DPS weighted as asked") {
   rotmg::Api api = LoadedApi();
   const auto optimize = [&](const std::string& weights) {

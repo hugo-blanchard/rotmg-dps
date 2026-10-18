@@ -30,4 +30,13 @@ int HitsPerVolley(const Weapon& weapon, const Subattack& subattack, double dista
 /// projectiles. Listed so the UI can show them.
 std::vector<std::string> HitModelAssumptions(const Weapon& weapon);
 
+/// Of `distances` (in tiles), the ones worth scoring a build with this
+/// weapon and ability at: the farthest that lands each different set of
+/// hits per volley over the weapon's and the ability's subattacks, leaving
+/// out sets another one matches or beats on every subattack. Distance only
+/// changes how many shots land and more never deal less, so the best score
+/// over these is the best over all of `distances`. Ascending.
+std::vector<double> DistancesWorthScoring(const Weapon& weapon, const Ability* ability,
+                                          const std::vector<double>& distances, double radius);
+
 }  // namespace rotmg

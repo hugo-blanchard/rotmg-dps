@@ -5,6 +5,8 @@
 #include <chrono>
 #include <cmath>
 #include <exception>
+#include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -738,7 +740,7 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 //                "enchantments": "keep" | "none" | "best", "slots": 2, "artifacts": true,
 //                "around": "every stat" | "nothing" | "ATT" | ...,
 //                "weights": {"weapon": 1, "ability": 1}, "burst": {"window": 1, "every": 10},
-//                "thorough": false, "results": 5}
+//                "distances": {"from": 3, "to": 6}, "thorough": false, "results": 5}
 // "lock" keeps the request's items in those slots. "pools" says which other
 // items may be tried: tiered ones, set pieces, and the rest (untiered).
 // Reskins and unobtainable items are never tried, and a variant only with an
@@ -757,9 +759,12 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 // them: what they deal less what they'd deal with none of the stat. The
 // weights don't apply then. With "burst", they're ranked by the same damage
 // in each burst window instead.
+// "distances" lets each build stand where it scores the most, from "from"
+// to "to" tiles from the target every quarter tile, instead of at the
+// request's distance. Builds then also have the "distance" they're at.
 // "thorough" searches much longer, for checking the normal search. Returns
 //   {"ok": true, "baseline", "evaluated",
-//    "builds": [{"score", "dps", "weaponDps", "abilityDps", "burst",
+//    "builds": [{"score", "dps", "weaponDps", "abilityDps", "burst", "distance",
 //                "weapon", "ability", "armor", "ring",
 //                "enchantments": {"weapon": [...], "ability", "armor", "ring"}}]}
 // with the best build first and the next best, with other items, after it.
@@ -773,11 +778,13 @@ std::string Api::SimulateMany(std::string_view request_json) const {
 // exact bounded search instead: the request's weapon and ability, which it
 // needs, one of the armors and one of the rings listed by name ("" for none;
 // the request's own when a list is missing), and the best enchantments on
-// all four under "slots" and "artifacts". Other options don't apply, and
+// all four under "slots" and "artifacts", at the best of "distances" if
+// set (it runs once at each that can matter). Other options don't apply, and
 // burst isn't supported. It returns the one best build, as above, with
-//   {"ok": true, "proven": true, "pairs", "baseline", "evaluated", "builds"}
-// ("evaluated" counts pairs) and reports progress as
-//   {"done", "pairs": [searched, of], "baseline", "evaluated", "builds"}
+//   {"ok": true, "proven": true, "pairs", "distances", "baseline", "evaluated", "builds"}
+// ("distances" counts its runs, "evaluated" pairs over all of them) and
+// reports progress as
+//   {"done", "pairs": [searched, of], "distances": [searched, of], "baseline", "evaluated", "builds"}
 // with the best build so far.
 //
 // ExplainBuild takes the same request and returns, for the request's own
@@ -859,8 +866,78 @@ json Estimate(const Dataset& d, const OptimizerProblem& problem) {
 // request's own when missing), and the best enchantments on all four, under
 // the problem's per-item and artifact settings. Answers like a search, with
 // "proven" when it finished.
+// The distances "distances": {"from", "to"} spans, every quarter tile, or
+// none without it.
+std::vector<double> ReadDistances(const json& opt) {
+  const auto it = opt.find("distances");
+  if (it == opt.end()) {
+    return {};
+  }
+  constexpr double kStep = 0.25;
+  constexpr double kFarthest = 20;
+  const double from = std::clamp(it->value("from", 0.0), 0.0, kFarthest);
+  const double to = std::clamp(it->value("to", from), from, kFarthest);
+  std::vector<double> out;
+  for (int i = 0; from + i * kStep <= to + 1e-9; ++i) {
+    out.push_back(from + i * kStep);
+  }
+  return out;
+}
+
+// The distances the exact search runs at. Weapon enchantments that change
+// its projectiles' speed, lifetime or subattacks change where its shots
+// land, so these are the ones worth scoring with any set of them that can
+// share the weapon: whichever the search picks, its best distance is here.
+std::vector<double> ExactDistances(const Dataset& d, const Weapon& weapon, const Ability& ability, int per_item,
+                                   bool artifacts, const std::vector<double>& distances, double radius) {
+  std::vector<const Enchantment*> shaping;
+  for (const Enchantment& e : d.enchantments) {
+    const Obtained how = HowObtained(e, weapon, d);
+    const bool reshapes = std::ranges::any_of(e.mutators, [](const Mutator& m) {
+      return m.tag == "MultiplySpeed" || m.tag == "MultiplyLifetimeMS" || m.tag == "SetSubAttack" ||
+             m.tag == "AddSubAttack";
+    });
+    if (reshapes && (how == Obtained::kRolls || (artifacts && how == Obtained::kArtifact))) {
+      shaping.push_back(&e);
+    }
+  }
+  std::set<double> out;
+  // Past this many sets, every distance is kept rather than checked.
+  constexpr std::size_t kMostSets = 4096;
+  std::size_t sets = 0;
+  std::vector<const Enchantment*> set;
+  const std::function<bool(std::size_t)> visit = [&](std::size_t from) {
+    if (++sets > kMostSets) {
+      return false;
+    }
+    for (const double at : DistancesWorthScoring(Enchant(weapon, set).weapon, &ability, distances, radius)) {
+      out.insert(at);
+    }
+    if (std::cmp_greater_equal(set.size(), per_item)) {
+      return true;
+    }
+    for (std::size_t k = from; k < shaping.size(); ++k) {
+      if (std::ranges::any_of(set, [&](const Enchantment* o) { return Conflict(*o, *shaping[k]); })) {
+        continue;
+      }
+      set.push_back(shaping[k]);
+      const bool done = visit(k + 1);
+      set.pop_back();
+      if (!done) {
+        return false;
+      }
+    }
+    return true;
+  };
+  if (!visit(0)) {
+    return distances;
+  }
+  return {out.begin(), out.end()};
+}
+
 std::string RunExact(const Dataset& d, const json& base, const json& exact, const OptimizerProblem& problem,
-                     bool burst, search::Weights weights, const std::function<void(const std::string&)>& progress,
+                     bool burst, search::Weights weights, const std::vector<double>& distances,
+                     const std::function<void(const std::string&)>& progress,
                      const std::function<json(const OptimizerResult&)>& builds) {
   if (burst) {
     return Error("the exact search ranks builds by sustained DPS, not burst damage").dump();
@@ -893,7 +970,6 @@ std::string RunExact(const Dataset& d, const json& base, const json& exact, cons
       }
     }
   }
-  const search::Model model(d, ReadSpec(base));
   // The request's own build's score, enchantments and all, when it
   // evaluates.
   OptimizerBuild own = problem.start;
@@ -903,6 +979,19 @@ std::string RunExact(const Dataset& d, const json& base, const json& exact, cons
     own.enchants[static_cast<std::size_t>(slot)] = gear.value(key, std::vector<std::string>{});
   }
   const double baseline = problem.score(own, {}).value_or(0);
+  // With a range of distances, the search runs once at each that can
+  // matter and the best of those runs wins.
+  const RequestSpec spec = ReadSpec(base);
+  std::vector<std::optional<double>> runs = {spec.assumptions.distance};
+  if (!distances.empty()) {
+    runs.clear();
+    for (const double at : ExactDistances(d, d.weapons[static_cast<std::size_t>(weapon)],
+                                          d.abilities[static_cast<std::size_t>(ability)], problem.per_item,
+                                          problem.artifacts, distances, spec.assumptions.target_radius)) {
+      runs.emplace_back(at);
+    }
+  }
+  const search::Model first(d, spec);
   const auto result = [&](const std::optional<search::EnchantResult>& best, std::size_t pairs) {
     OptimizerResult out;
     out.baseline = baseline;
@@ -911,44 +1000,59 @@ std::string RunExact(const Dataset& d, const json& base, const json& exact, cons
       OptimizerBuild b;
       for (std::size_t s = 0; s < search::kSlots; ++s) {
         if (best->build.items[s] >= 0) {
-          b.items[s] = model.ItemName(s, best->build.items[s]);
+          b.items[s] = first.ItemName(s, best->build.items[s]);
         }
         for (const std::int32_t e : best->build.enchants[s]) {
-          b.enchants[s].push_back(model.enchantment(e).id);
+          b.enchants[s].push_back(first.enchantment(e).id);
         }
       }
       out.builds.emplace_back(best->score, std::move(b));
     }
     return out;
   };
+  const std::size_t pairs = settings.armors.size() * settings.rings.size();
+  const std::size_t all_pairs = pairs * runs.size();
+  std::optional<search::EnchantResult> best;
+  const auto better = [](const std::optional<search::EnchantResult>& a, const std::optional<search::EnchantResult>& b) {
+    return a && (!b || a->score > b->score);
+  };
   using Clock = std::chrono::steady_clock;
   auto last = Clock::now();
-  if (progress) {
-    settings.progress = [&](const search::BoundedProgress& p) {
-      if (Clock::now() - last < std::chrono::duration<double>(problem.progress_every_s)) {
-        return;
-      }
-      last = Clock::now();
-      const double done = (static_cast<double>(p.done) + p.within) / static_cast<double>(std::max<std::size_t>(1, p.pairs));
-      progress(json{{"done", done},
-                    {"pairs", {p.done, p.pairs}},
-                    {"baseline", baseline},
-                    {"evaluated", p.done},
-                    {"builds", builds(result(p.best, p.done))}}
-                   .dump());
-    };
+  for (std::size_t run = 0; run < runs.size(); ++run) {
+    if (progress) {
+      settings.progress = [&](const search::BoundedProgress& p) {
+        if (Clock::now() - last < std::chrono::duration<double>(problem.progress_every_s)) {
+          return;
+        }
+        last = Clock::now();
+        const std::size_t done_pairs = run * pairs + p.done;
+        const double done = (static_cast<double>(done_pairs) + p.within) / static_cast<double>(std::max<std::size_t>(1, all_pairs));
+        progress(json{{"done", done},
+                      {"pairs", {p.done, pairs}},
+                      {"distances", {run, runs.size()}},
+                      {"baseline", baseline},
+                      {"evaluated", done_pairs},
+                      {"builds", builds(result(better(p.best, best) ? p.best : best, done_pairs))}}
+                     .dump());
+      };
+    }
+    RequestSpec at = spec;
+    at.assumptions.distance = runs[run];
+    const search::Model model(d, at);
+    if (const auto found = search::BestBoundedBuild(model, weights, weapon, ability, settings); better(found, best)) {
+      best = found;
+    }
   }
-  const std::size_t pairs = settings.armors.size() * settings.rings.size();
-  const std::optional<search::EnchantResult> best = search::BestBoundedBuild(model, weights, weapon, ability, settings);
   if (!best) {
     return Error("no build with these items evaluates").dump();
   }
   return json{{"ok", true},
               {"proven", true},
               {"pairs", pairs},
+              {"distances", runs.size()},
               {"baseline", baseline},
-              {"evaluated", pairs},
-              {"builds", builds(result(best, pairs))}}
+              {"evaluated", all_pairs},
+              {"builds", builds(result(best, all_pairs))}}
       .dump();
 }
 
@@ -1074,6 +1178,7 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
     // rejects. It starts from the request's own spec, read once, rather
     // than writing and reading JSON for every build.
     const RequestSpec base_spec = ReadSpec(base);
+    const std::vector<double> distances = base_spec.assumptions.distance ? ReadDistances(opt) : std::vector<double>{};
     constexpr std::array<int Character::*, 8> kStatFields = {
         &Character::attack,   &Character::dexterity, &Character::speed,          &Character::wisdom,
         &Character::vitality, &Character::defense,   &Character::max_hit_points, &Character::max_magic_points};
@@ -1173,15 +1278,34 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
       if (!counted_stat.empty()) return e.stat_dps - evaluate(without_stat(p)).stat_dps + kTieBreak * e.dps;
       return weapon_weight * e.weapon_dps + ability_weight * ability_dps(e) + kTieBreak * e.dps;
     };
+    // With a range of distances, a build stands where it scores the most.
+    // Only a few distances can differ, and those depend on the weapon and
+    // ability alone, not the stats.
+    const auto worth_scoring = [&](const Request& p) {
+      return DistancesWorthScoring(*p.weapon, p.ability, distances, p.assumptions.target_radius);
+    };
+    // The score and the distance it's at.
+    const auto best_of = [&](Request p, const std::vector<double>& at) {
+      if (at.empty()) {
+        return std::pair{score_of(p), p.assumptions.distance.value_or(0)};
+      }
+      std::pair<double, double> best{-std::numeric_limits<double>::infinity(), at.front()};
+      for (const double d : at) {
+        p.assumptions.distance = d;
+        if (const double s = score_of(p); s > best.first) best = {s, d};
+      }
+      return best;
+    };
     problem.score = [&](const OptimizerBuild& b, const std::array<int, 8>& extra) -> std::optional<double> {
       const std::optional<Request> p = read(b, extra);
-      return p ? std::optional<double>(score_of(*p)) : std::nullopt;
+      return p ? std::optional<double>(best_of(*p, worth_scoring(*p)).first) : std::nullopt;
     };
     problem.score_points = [&](const OptimizerBuild& b, const std::vector<std::array<int, 8>>& extras) {
       std::vector<std::optional<double>> out(extras.size());
       if (const std::optional<Prepared> p = prepare(b)) {
+        const std::vector<double> at = worth_scoring(p->request);
         for (std::size_t i = 0; i < extras.size(); ++i) {
-          out[i] = score_of(finish(*p, extras[i]));
+          out[i] = best_of(finish(*p, extras[i]), at).first;
         }
       }
       return out;
@@ -1192,7 +1316,11 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
       for (const auto& [score, b] : result.builds) {
         json enchants = json::object();
         json entry = {{"score", score}};
-        if (const std::optional<Request> p = read(b, {})) {
+        if (std::optional<Request> p = read(b, {})) {
+          if (!distances.empty()) {
+            p->assumptions.distance = best_of(*p, worth_scoring(*p)).second;
+            entry["distance"] = *p->assumptions.distance;
+          }
           const BuildBreakdown e = evaluate(*p);
           entry["dps"] = e.dps;
           entry["weaponDps"] = e.weapon_dps;
@@ -1211,7 +1339,7 @@ std::string RunOptimize(const Dataset& d, std::string_view request_json,
       return out;
     };
     if (const auto exact = opt.find("exact"); exact != opt.end() && run == Run::kSearch) {
-      return RunExact(d, base, *exact, problem, burst.has_value(), {weapon_weight, ability_weight}, progress,
+      return RunExact(d, base, *exact, problem, burst.has_value(), {weapon_weight, ability_weight}, distances, progress,
                       [&](const OptimizerResult& r) { return builds(r); });
     }
     if (run == Run::kEstimate) {

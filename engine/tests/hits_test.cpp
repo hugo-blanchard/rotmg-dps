@@ -161,6 +161,31 @@ TEST_CASE("paired sine-wave shots meet in the middle of the Lumiaire's range") {
   CHECK(Hits(lumiaire, 7.5) == 0);
 }
 
+TEST_CASE("only distances that land a different set of hits are worth scoring") {
+  const Weapon sword = Single(100, 350);  // 3.5 tiles
+  // 1 to 3 tiles all land the one shot, so the farthest of them stands for
+  // them; 5 and 6 land nothing, which they beat.
+  CHECK(rotmg::DistancesWorthScoring(sword, nullptr, {1, 2, 3, 5, 6}, 0.5) == std::vector<double>{3});
+
+  // The Lumiaire's two shots land at 1 and 4.5 tiles but not at 1.5 or 7.5.
+  Weapon lumiaire = Single(50, 1800, 2);
+  lumiaire.subattacks[0].arc_gap = 6;
+  lumiaire.projectiles[0].amplitude = 0.5;
+  lumiaire.projectiles[0].frequency = 1.5;
+  CHECK(rotmg::DistancesWorthScoring(lumiaire, nullptr, {1, 1.5, 4.5, 7.5}, 0.5) == std::vector<double>{4.5});
+
+  // An ability's shots count too: past the sword's reach, a farther spot
+  // its shots still reach is no worse, and a nearer one the sword reaches
+  // is better.
+  rotmg::Ability quiver;
+  Projectile arrow;
+  arrow.speed = 150;
+  arrow.lifetime_ms = 1000;  // 15 tiles
+  quiver.projectiles.push_back(arrow);
+  quiver.subattacks.push_back(Subattack{});
+  CHECK(rotmg::DistancesWorthScoring(sword, &quiver, {3, 5, 20}, 0.5) == std::vector<double>{3});
+}
+
 TEST_CASE("a stationary projectile only hits a target on top of the player") {
   const Weapon w = Single(0, 1000);
   CHECK(Hits(w, 0.3) == 1);
