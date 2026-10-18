@@ -15,6 +15,7 @@
     items = $bindable(),
     enchants = $bindable(),
     status = $bindable(),
+    pet = $bindable(),
     target = $bindable(),
     distance = $bindable(),
     radius = $bindable(),
@@ -34,6 +35,8 @@
     items: Record<Slot, string>;
     enchants: Record<Slot, string[]>;
     status: PlayerStatus;
+    /** The pet's Magic Heal level, 0 for none. */
+    pet: number;
     target: Target;
     distance: number;
     radius: number;
@@ -96,6 +99,17 @@
     }
   }
 
+  // The highest Magic Heal level of each rarity, the levels RealmEye gives
+  // exact numbers for.
+  const petLevels: { level: number; label: string }[] = [
+    { level: 100, label: "Level 100 (Divine)" },
+    { level: 90, label: "Level 90 (Legendary)" },
+    { level: 70, label: "Level 70 (Rare)" },
+    { level: 50, label: "Level 50 (Uncommon)" },
+    { level: 30, label: "Level 30 (Common)" },
+    { level: 0, label: "None" },
+  ];
+
   const playerEffects: { key: keyof PlayerStatus; label: string }[] = [
     { key: "weak", label: "Weak" },
     { key: "damaging", label: "Damaging" },
@@ -134,6 +148,20 @@
       <p class="hint">{setSummary(s)}</p>
     {/each}
     <p class="hint">At the {cls.id} max, with what your gear adds.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Pet</legend>
+    <label>
+      Magic Heal
+      <select bind:value={pet}>
+        {#if !petLevels.some((p) => p.level === pet)}<option value={pet}>Level {pet}</option>{/if}
+        {#each petLevels as p (p.level)}
+          <option value={p.level}>{p.label}</option>
+        {/each}
+      </select>
+    </label>
+    <p class="hint">Restores MP on top of WIS, so the ability is cast more often: 45 MP every second at level 100.</p>
   </fieldset>
 
   <fieldset>

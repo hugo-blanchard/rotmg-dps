@@ -56,6 +56,8 @@
     ring: noEnchants(),
   });
   let status = $state<PlayerStatus>({ weak: false, damaging: false, berserk: false, dazed: false });
+  // The pet's Magic Heal level: most players fighting bosses have a maxed one.
+  let pet = $state(100);
   let target = $state<Target>({ defense: 40, armored: false, armorBroken: false, exposed: false, cursed: false });
   let distance = $state(4);
   let radius = $state(0.5);
@@ -130,6 +132,7 @@
     ring: items.ring || undefined,
     ...(cls ? maxStats(cls) : { attack: 0, dexterity: 0 }),
     status: { ...status },
+    pet: { magicHeal: pet },
     target: { ...target, defense },
     enchantments: enchants.weapon.filter(Boolean),
     gearEnchantments: {
@@ -228,14 +231,14 @@
     simOptions = simFromQuery(search);
     const linked = fromQuery(search, d);
     if (linked) {
-      ({ classId, items, enchants, status, target, distance, radius } = linked);
+      ({ classId, items, enchants, status, pet, target, distance, radius } = linked);
     }
     return !!linked;
   }
 
   // The build, scene and burst window as a link's query.
   const buildLink = $derived.by(() => {
-    const q = new URLSearchParams(toQuery({ classId, items, enchants, status, target, distance, radius }));
+    const q = new URLSearchParams(toQuery({ classId, items, enchants, status, pet, target, distance, radius }));
     simToQuery(simOptions, q);
     if (burst.window !== defaultBurst.window || burst.every !== defaultBurst.every) {
       q.set("burst", `${burst.window},${burst.every}`);
@@ -310,6 +313,7 @@
       bind:items
       bind:enchants
       bind:status
+      bind:pet
       bind:target
       bind:distance
       bind:radius

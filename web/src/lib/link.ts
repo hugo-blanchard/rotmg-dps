@@ -11,6 +11,8 @@ export interface Build {
   /** Enchantment ids by slot, 4 each, "" for an empty one. */
   enchants: Record<Slot, string[]>;
   status: PlayerStatus;
+  /** The pet's Magic Heal level, 0 for none. */
+  pet: number;
   target: Target;
   distance: number;
   radius: number;
@@ -33,6 +35,7 @@ export function toQuery(b: Build): string {
       q.set(slot, b.items[slot]);
     }
   }
+  q.set("pet", String(b.pet));
   q.set("def", String(b.target.defense));
   q.set("dist", String(b.distance));
   q.set("size", String(b.radius));
@@ -84,6 +87,7 @@ export function fromQuery(query: string, dataset: Dataset): Build | null {
     items: { weapon: item("weapon"), ability: item("ability"), armor: item("armor"), ring: item("ring") },
     enchants: Object.fromEntries(slots.map((s) => [s, known(enchantKeys[s])])) as Record<Slot, string[]>,
     status: Object.fromEntries(statusKeys.map((k) => [k, self.has(k)])) as unknown as PlayerStatus,
+    pet: Math.min(100, Math.round(number("pet", 100))),
     target: {
       defense: number("def", 40),
       ...(Object.fromEntries(targetKeys.map((k) => [k, on.has(k)])) as Omit<Target, "defense">),

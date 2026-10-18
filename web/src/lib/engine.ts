@@ -36,6 +36,8 @@ export interface EvaluateRequest {
   maxHitPoints?: number;
   maxMagicPoints?: number;
   status: PlayerStatus;
+  /** The pet's Magic Heal level, 0 for none, which adds to MP regeneration. */
+  pet?: { magicHeal: number };
   target: Target;
   /** The armor and ring worn, by name. */
   armor?: string;
