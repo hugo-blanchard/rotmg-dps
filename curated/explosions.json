@@ -1,0 +1,18 @@
+{
+  "explosions": [
+    {
+      "object": "Laser Rifle Homing Rocket",
+      "minDamage": 400,
+      "maxDamage": 500,
+      "radius": 3,
+      "source": "https://www.realmeye.com/wiki/laser-rifle"
+    },
+    {
+      "object": "Neo Laser Rifle Homing Rocket",
+      "minDamage": 450,
+      "maxDamage": 550,
+      "radius": 3,
+      "source": "https://www.realmeye.com/wiki/neo-laser-rifle"
+    }
+  ]
+}
