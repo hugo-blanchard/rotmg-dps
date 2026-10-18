@@ -1,0 +1,211 @@
+{
+  "undead": [
+    {
+      "object": "Necrotic Undead",
+      "shots": 1,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/necrotic-skull"
+    },
+    {
+      "object": "Breathtaker Undead",
+      "shots": 1,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/breathtaker-skull"
+    },
+    {
+      "object": "Heartstealer Undead",
+      "shots": 1,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/heartstealer-skull"
+    },
+    {
+      "object": "Soul Siphoner Undead",
+      "shots": 1,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/soul-siphon-skull"
+    },
+    {
+      "object": "Essence Tap Undead",
+      "shots": 1,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/essence-tap-skull"
+    },
+    {
+      "object": "Lifedrinker Undead",
+      "shots": 1,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/lifedrinker-skull"
+    },
+    {
+      "object": "Bloodsucker Undead",
+      "shots": 1,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/bloodsucker-skull"
+    },
+    {
+      "object": "Cracked Crystal Undead",
+      "shots": 1,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/cracked-crystal-skull"
+    },
+    {
+      "object": "Mindwaster Undead",
+      "shots": 1,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/mindwaster-skull"
+    },
+    {
+      "object": "Krampus Undead",
+      "shots": 1,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/skull-of-krampus"
+    },
+    {
+      "object": "Legion Undead",
+      "shots": 1,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/legion-elite-skull"
+    },
+    {
+      "object": "Hydro Undead",
+      "shots": 1,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/hydroflow-skull"
+    },
+    {
+      "object": "Corrupted Souls Undead",
+      "shots": 5,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/skull-of-corrupted-souls"
+    },
+    {
+      "object": "Esben Undead",
+      "shots": 3,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/skullish-remains-of-esben"
+    },
+    {
+      "object": "Endless Torment Undead",
+      "shots": 2,
+      "attacksPerSecond": 5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/skull-of-endless-torment"
+    },
+    {
+      "object": "Mori Undead",
+      "shots": 2,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/memento-mori"
+    },
+    {
+      "object": "Sealed Crystal Undead",
+      "shots": 3,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/sealed-crystal-skull"
+    },
+    {
+      "object": "Cubic Undead",
+      "shots": 1,
+      "attacksPerSecond": 4,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/cubic-frame"
+    },
+    {
+      "object": "Restless Souls Undead",
+      "shots": 3,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/skull-of-restless-souls"
+    },
+    {
+      "object": "Reaper Undead",
+      "shots": 2,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/memento-mori"
+    },
+    {
+      "object": "Blood Undead",
+      "shots": 1,
+      "attacksPerSecond": 4,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/cubic-frame"
+    },
+    {
+      "object": "Crossbones Undead",
+      "shots": 1,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/bloodsucker-skull"
+    },
+    {
+      "object": "Demon Lord's Undead",
+      "shots": 3,
+      "attacksPerSecond": 1,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/demon-lord-s-skull"
+    },
+    {
+      "object": "Baby Kaiju",
+      "shots": 1,
+      "attacksPerSecond": 1.5,
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/fossilized-skull"
+    },
+    {
+      "object": "Perenial Undead",
+      "bursts": 7,
+      "burstRadii": [
+        5
+      ],
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/perennial-cranium"
+    },
+    {
+      "object": "Malignance Undead",
+      "bursts": 7,
+      "burstRadii": [
+        5
+      ],
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/perennial-cranium"
+    },
+    {
+      "object": "Rose Undead",
+      "bursts": 7,
+      "burstRadii": [
+        5
+      ],
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/perennial-cranium"
+    },
+    {
+      "object": "Brain Undead",
+      "bursts": 4,
+      "burstRadii": [
+        2.25,
+        3.25,
+        4.25,
+        5.25
+      ],
+      "lifetimeS": 5,
+      "source": "https://www.realmeye.com/wiki/brain-cube"
+    }
+  ]
+}
