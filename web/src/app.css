@@ -15,6 +15,7 @@
   --poison: #3f9a2e;
   --trap: #c26a12;
   --blast: #d4a106;
+  --undead: #8a4fd1;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   line-height: 1.5;
 }
@@ -37,6 +38,7 @@
     --poison: #67c24f;
     --trap: #e88a2e;
     --blast: #f0c419;
+    --undead: #b08cf0;
   }
 }
 

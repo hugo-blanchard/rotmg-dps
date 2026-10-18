@@ -218,7 +218,7 @@ export interface SimTarget {
 }
 
 export interface SimEffect {
-  kind: "poison" | "trap" | "blast" | "bolt";
+  kind: "poison" | "trap" | "blast" | "bolt" | "undead";
   x: number;
   y: number;
   radius: number;

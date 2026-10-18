@@ -348,6 +348,16 @@
         ctx.fillStyle = color("--trap");
         circle(e.x, e.y, 0.15);
         ctx.fill();
+      } else if (e.kind === "undead") {
+        // A raised undead, fighting on the target it was raised on.
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = color("--undead");
+        circle(e.x, e.y, e.radius);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = color("--undead");
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
       }
     }
 
