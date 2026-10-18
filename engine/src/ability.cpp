@@ -466,6 +466,58 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
         assume("a trap's sticky bomb sticks to the target the trap hits and goes off on it");
         add_part({"Sticky bomb", times * bomb, "RealmEye: Giantcatcher Trap"});
       }
+    } else if (a.type == "RaiseDead") {
+      // Each undead attacks or bursts over its lifetime (Undead::Attacks),
+      // its damage with the skull's StatMod bonus. At 1.5 attacks a second
+      // that's 7 in 5 seconds, as RealmEye has Skull of Restless Souls'
+      // skeletons shooting "up to 7 times".
+      const auto it = ability.undead.find(a.Text(kUndeadId));
+      if (it == ability.undead.end() || it->second.projectiles.empty()) {
+        unsupported(a.type);
+        return;
+      }
+      const Undead& u = it->second;
+      const int raised = std::max(1, static_cast<int>(Param(a, kNumDead)));
+      const int attacks = u.Attacks();
+      const double bonus = StatModBonus(a, kStatModDamage, c);
+      // Its statuses land again with every attack, so they're up from the
+      // first until their duration after the last, and every attack after
+      // the first lands on a target they're on, like Corrupted Souls' Curse.
+      Target marked = target;
+      for (const Projectile& p : u.projectiles) {
+        for (const ConditionEffect& e : p.condition_effects) {
+          if (kTargetStatuses.contains(e.effect)) {
+            add_buff({Buff::On::kTarget, NormalizeStatus(e.effect), 0, u.lifetime_s + e.duration});
+            const std::string status = NormalizeStatus(e.effect);
+            marked.cursed |= status == "Curse";
+            marked.exposed |= status == "Exposed";
+            marked.armor_broken |= status == "Armor Broken";
+          }
+        }
+      }
+      const auto hit = [&](const Projectile& p, const Target& on) {
+        return ExpectedAbilityDamage(p.min_damage, p.max_damage - 1, bonus, on, p.armor_piercing);
+      };
+      double per_undead = 0;
+      for (int k = 0; k < attacks; ++k) {
+        const Target& on = k == 0 ? target : marked;
+        if (u.bursts > 0) {
+          per_undead += hit(u.projectiles[static_cast<std::size_t>(k) % u.projectiles.size()], on);
+        } else {
+          for (const Projectile& p : u.projectiles) {
+            per_undead += u.shots * hit(p, on);
+          }
+        }
+      }
+      if (u.bursts > 0) {
+        assume("an undead that bursts is raised on the target, which stays inside its bursts");
+      } else {
+        assume("raised undead are raised on the target and stay on it, so every shot they fire hits");
+      }
+      add_part({details ? (u.bursts > 0 ? "Undead, " + std::to_string(attacks) + " bursts"
+                                        : "Undead, " + std::to_string(attacks) + " attacks")
+                        : "",
+                raised * per_undead, "RealmEye: " + ability.name, u.lifetime_s});
     } else if (a.type == "ConditionEffectSelf" || a.type == "ConditionEffectAura" || a.type == "StatBoostSelf" ||
                a.type == "StatBoostAura" || a.type == "EffectBlast") {
       if (const auto buff = BuffOf(a, c)) {

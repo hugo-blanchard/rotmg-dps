@@ -100,12 +100,12 @@ enum class ParamKey : std::uint8_t {
   kBombDelay, kBombRadius, kBombTriggerCount, kBombTriggerPeriod, kChannel, kCondDuration, kCondEffect, kCooldown,
   kDamageBoost, kDecrDamage, kDuration, kEffect, kGapAngle, kGapTiles, kHpMinThresholdRelative, kHpRequiredRelative,
   kIdMeter, kImpactDamage, kMaxDamage, kMaxDistance, kMaxTargets, kMeterCost, kMinDamage, kMinDistance,
-  kMinimumMeter, kMultiplier, kMustNotWear, kMustNotWearOR, kMustWear, kMustWearOR, kNumShots, kObjectId,
+  kMinimumMeter, kMultiplier, kMustNotWear, kMustNotWearOR, kMustWear, kMustWearOR, kNumDead, kNumShots, kObjectId,
   kOffsetAngle, kProc, kRadius, kRange, kRequiredConditions, kRequiredConditionsNOR, kScalingStat, kSensitivity, kStat, kStatModActivationCount,
   kStatModBombCondDuration, kStatModBombCount, kStatModBombDamage, kStatModBombRadius, kStatModDamage,
   kStatModDamageBoost, kStatModDuration, kStatModImpactDamage, kStatModNumShots, kStatModPerTarget, kStatModRadius,
   kStatModScalingMin, kStatModTrapCondDuration, kStatModTrapDamage, kStatModTrapRadius, kStatRelativeTo,
-  kSubAttackIndex, kSubAttackObject, kTargetMouse, kThrowTime, kTime, kTotalDamage, kType, kWisDamageBase, kWisMin,
+  kSubAttackIndex, kSubAttackObject, kTargetMouse, kThrowTime, kTime, kTotalDamage, kType, kUndeadId, kWisDamageBase, kWisMin,
   kWisPerDuration, kWisPerTarget,
   kOther,
 };
@@ -117,12 +117,12 @@ inline constexpr std::array<std::string_view, static_cast<std::size_t>(ParamKey:
     "condDuration", "condEffect", "cooldown", "damageBoost", "decrDamage", "duration", "effect", "gapAngle",
     "gapTiles", "hpMinThresholdRelative", "hpRequiredRelative", "idMeter", "impactDamage", "maxDamage",
     "maxDistance", "maxTargets", "meterCost", "minDamage", "minDistance", "minimumMeter", "multiplier",
-    "mustNotWear", "mustNotWearOR", "mustWear", "mustWearOR", "numShots", "objectId", "offsetAngle", "proc",
+    "mustNotWear", "mustNotWearOR", "mustWear", "mustWearOR", "numDead", "numShots", "objectId", "offsetAngle", "proc",
     "radius", "range", "requiredConditions", "requiredConditionsNOR", "scalingStat", "sensitivity", "stat", "statModActivationCount", "statModBombCondDuration",
     "statModBombCount", "statModBombDamage", "statModBombRadius", "statModDamage", "statModDamageBoost",
     "statModDuration", "statModImpactDamage", "statModNumShots", "statModPerTarget", "statModRadius",
     "statModScalingMin", "statModTrapCondDuration", "statModTrapDamage", "statModTrapRadius", "statRelativeTo",
-    "subAttackIndex", "subAttackObject", "targetMouse", "throwTime", "time", "totalDamage", "type", "wisDamageBase",
+    "subAttackIndex", "subAttackObject", "targetMouse", "throwTime", "time", "totalDamage", "type", "undeadId", "wisDamageBase",
     "wisMin", "wisPerDuration", "wisPerTarget"};
 
 /// The key for a parameter name, or kOther for one the engine doesn't read.
@@ -297,6 +297,23 @@ struct Meter {
   double start_value = 0;
 };
 
+/// An object a RaiseDead effect raises, and how it fights for its lifetime:
+/// `attacks_per_second` attacks of `shots` of each projectile, or, with
+/// `bursts`, that many bursts where it was raised, the k-th from the k-th
+/// projectile and reaching the k-th radius in tiles (both cycling).
+struct Undead {
+  std::vector<Projectile> projectiles;
+  int shots = 1;
+  double attacks_per_second = 0;
+  int bursts = 0;
+  std::vector<double> burst_radii;
+  double lifetime_s = 0;
+
+  /// Attacks or bursts over its lifetime. An attack comes one attack's time
+  /// after the last, the first after it's raised, so only whole ones count.
+  int Attacks() const;
+};
+
 struct Ability {
   int type = 0;
   std::string id;
@@ -319,6 +336,8 @@ struct Ability {
   /// Projectiles of other items, by type, that activates and other effects
   /// name in their `type` parameter.
   std::map<int, Projectile> created_projectiles;
+  /// The objects RaiseDead effects raise, by id.
+  std::map<std::string, Undead, std::less<>> undead;
   /// The ways of using the ability the player switches between, if it has
   /// several. Until switching is modelled, it's used in its first: the
   /// fields above hold that mode's effects and costs, and `subattacks` only

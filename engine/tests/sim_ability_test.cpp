@@ -358,3 +358,52 @@ TEST_CASE("a Magic Heal pet's MP lets the ability be cast more often") {
   pet.Advance(60'000);
   CHECK(pet.AbilityTotals().casts > 5 * plain.AbilityTotals().casts);
 }
+
+TEST_CASE("a raised undead fights on the target for its lifetime") {
+  // Twice a second for 5 s, 3 shots an attack, all on the target it's
+  // raised on: 30 hits from one cast.
+  rotmg::Ability skull;
+  skull.name = "Test Skull";
+  skull.mp_cost = 1000;
+  skull.activates.push_back({"RaiseDead", {{"numDead", 1.0}, {"undeadId", std::string("Test Undead")}}});
+  rotmg::Projectile p;
+  p.speed = 135;
+  p.lifetime_ms = 300;
+  p.min_damage = 100;
+  p.max_damage = 101;
+  p.armor_piercing = true;
+  p.multi_hit = true;
+  rotmg::Undead u;
+  u.projectiles = {p};
+  u.shots = 3;
+  u.attacks_per_second = 2;
+  u.lifetime_s = 5;
+  skull.undead.emplace("Test Undead", u);
+  Scenario s = At({{0, 3}});
+  s.full_mp = true;
+  rotmg::Character necro = kWis60;
+  necro.max_magic_points = 1000;
+  Simulation sim(Sword(), necro, s, &skull);
+  sim.Advance(8000);
+  CHECK(sim.AbilityTotals().casts == 1);
+  CHECK(sim.AbilityTotals().hits == 30);
+  CHECK(AbilityDamage(sim, 0) == Approx(3000));
+
+  // At 1.5 a second, 7 attacks, the numbers' count.
+  skull.undead.at("Test Undead").attacks_per_second = 1.5;
+  Simulation slower(Sword(), necro, s, &skull);
+  slower.Advance(8000);
+  CHECK(slower.AbilityTotals().hits == 21);
+
+  // One that bursts 7 times where it's raised hits the target and what's
+  // within the radius around it, and nothing past that.
+  rotmg::Undead& plant = skull.undead.at("Test Undead");
+  plant.bursts = 7;
+  plant.burst_radii = {2};
+  Simulation bursting(Sword(), necro, At({{0, 3}, {2, 3}, {0, 8}}), &skull);
+  bursting.Advance(8000);
+  CHECK(bursting.AbilityTotals().casts == 1);
+  CHECK(AbilityDamage(bursting, 0) == Approx(700));
+  CHECK(AbilityDamage(bursting, 1) == Approx(700));
+  CHECK(AbilityDamage(bursting, 2) == 0);
+}

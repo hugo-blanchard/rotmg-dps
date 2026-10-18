@@ -555,6 +555,7 @@ void Simulation::Step() {
   TickPoisons();
   RunPending();
   CheckTraps();
+  RunUndead();
   // Only now, so nothing is cast or fired at a target that just died.
   Retarget();
   const bool anyone = !world_.targets.empty() && Alive(world_.aim);
@@ -705,6 +706,40 @@ void Simulation::CastEffect(const Activate& act, int group, const std::string& c
     }
   } else if (act.type == "BulletCreate" && group >= 0) {
     CreateShots(static_cast<std::size_t>(group), act);
+  } else if (act.type == "RaiseDead") {
+    // Raised on the cursor, on the aimed target. Its first attack comes one
+    // attack's time later, so over its lifetime it attacks as many times as
+    // the numbers count.
+    const auto it = ability_->undead.find(act.Text(kUndeadId));
+    if (it == ability_->undead.end() || it->second.projectiles.empty() || it->second.Attacks() <= 0) {
+      return;
+    }
+    const Undead& u = it->second;
+    std::size_t first = 0;
+    if (u.bursts == 0) {
+      // An attack spreads each projectile's shots evenly around the undead.
+      const auto known = undead_groups_.find(&u);
+      first = known != undead_groups_.end() ? known->second : groups_.size();
+      if (known == undead_groups_.end()) {
+        undead_groups_.emplace(&u, first);
+        for (const Projectile& p : u.projectiles) {
+          Subattack s;
+          s.num_projectiles = std::max(1, u.shots);
+          s.arc_gap = 360.0 / s.num_projectiles;
+          Group g{&p, {}, -1, 0, From::kAbility};
+          for (int k = 0; k < s.num_projectiles; ++k) {
+            g.paths.emplace_back(p, s, k);
+          }
+          groups_.push_back(std::move(g));
+        }
+      }
+    }
+    const double interval = u.lifetime_s * 1000 / u.Attacks();
+    const int count = std::max(1, static_cast<int>(act.Number(kNumDead).value_or(1)));
+    for (int k = 0; k < count; ++k) {
+      raised_.push_back(
+          {&u, first, StatModBonus(act, kStatModDamage, base_), world_.aim, cursor, 0, now + interval, interval});
+    }
   } else if (act.type == "DamageNova") {
     // RealmEye, Tomes: an "on-cursor nova" that "explodes 2 times for 0.8
     // seconds". Blasts are spread evenly over `time`, the first at once.
@@ -1046,6 +1081,49 @@ void Simulation::TickPoisons() {
     }
   }
   std::erase_if(poisons_, [](const Poison& p) { return p.left <= 1e-9; });
+}
+
+void Simulation::RunUndead() {
+  const double now = TimeMs();
+  std::erase_if(effects_, [](const Effect& e) { return e.kind == Effect::Kind::kUndead; });
+  for (Raised& r : raised_) {
+    const Undead& u = *r.undead;
+    while (r.done < u.Attacks() && r.next_ms <= now) {
+      const auto k = static_cast<std::size_t>(r.done);
+      ++r.done;
+      r.next_ms += r.interval_ms;
+      if (u.bursts > 0) {
+        // A burst reaches everything within its radius of where it stands.
+        const Projectile& p = u.projectiles[k % u.projectiles.size()];
+        const double radius = u.burst_radii.empty() ? 0 : u.burst_radii[k % u.burst_radii.size()];
+        for (std::size_t t = 0; t < world_.targets.size(); ++t) {
+          if (!Alive(t) || Distance(world_.targets[t].position, r.at) > radius + world_.targets[t].radius) {
+            continue;
+          }
+          ++ability_totals_.hits;
+          Damage(t, AbilityHit(p.min_damage, p.max_damage - 1, r.bonus, t, p.armor_piercing), From::kAbility);
+          for (const ConditionEffect& e : p.condition_effects) {
+            Debuff(t, e.effect, e.duration, kStepMs);
+          }
+        }
+        effects_.push_back({Effect::Kind::kBlast, r.at, radius, now + 200, {}, false});
+      } else if (r.target < world_.targets.size() && Alive(r.target)) {
+        const Point at = world_.targets[r.target].position;
+        for (std::size_t g = r.group; g < r.group + u.projectiles.size(); ++g) {
+          groups_[g].bonus = r.bonus;
+          for (int k2 = 0; k2 < static_cast<int>(groups_[g].paths.size()); ++k2) {
+            Spawn(g, k2, at, 0, -1);
+          }
+        }
+      }
+    }
+  }
+  std::erase_if(raised_, [](const Raised& r) { return r.done >= r.undead->Attacks(); });
+  for (const Raised& r : raised_) {
+    const bool on_target = r.undead->bursts == 0 && r.target < world_.targets.size();
+    effects_.push_back({Effect::Kind::kUndead, on_target ? world_.targets[r.target].position : r.at, 0.4,
+                        r.next_ms, {}, false});
+  }
 }
 
 void Simulation::CheckTraps() {

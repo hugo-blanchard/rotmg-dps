@@ -310,7 +310,7 @@ json StateOf(const Simulation& sim, std::size_t& history_sent) {
   history_sent = damage_history.size();
   json effects = json::array();
   for (const Simulation::Effect& e : sim.Effects()) {
-    static constexpr const char* kKinds[] = {"poison", "trap", "blast", "bolt"};
+    static constexpr const char* kKinds[] = {"poison", "trap", "blast", "bolt", "undead"};
     json chain = json::array();
     for (const Point& p : e.chain) {
       chain.push_back(ToJson(p));

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <deque>
+#include <map>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -156,7 +157,7 @@ class Simulation {
 
   /// Something an ability left in the world, for drawing.
   struct Effect {
-    enum class Kind { kPoison, kTrap, kBlast, kBolt };
+    enum class Kind { kPoison, kTrap, kBlast, kBolt, kUndead };
     Kind kind = Kind::kBlast;
     Point position;
     double radius = 0;
@@ -316,6 +317,20 @@ class Simulation {
     // The chance gathered over casts since the cooldown.
     double chance = 0;
   };
+  // An undead a RaiseDead raised. One that shoots fights on the target it
+  // was raised on; one that bursts stays where it was raised.
+  struct Raised {
+    const Undead* undead = nullptr;
+    // Shots: the first of its groups, one per projectile.
+    std::size_t group = 0;
+    double bonus = 0;
+    std::size_t target = 0;
+    Point at;
+    // Attacks or bursts done, and when the next comes.
+    int done = 0;
+    double next_ms = 0;
+    double interval_ms = 0;
+  };
   struct Trap {
     Point at;
     double lands_ms = 0;
@@ -353,6 +368,8 @@ class Simulation {
   void RunPending();
   void TickPoisons();
   void CheckTraps();
+  // Raised undead attack when their time comes.
+  void RunUndead();
   void Explode(const Trap& trap);
   void Debuff(std::size_t target, const std::string& effect, double duration_s, double delay_ms = 0,
               double factor = 1);
@@ -431,6 +448,9 @@ class Simulation {
   std::vector<Pending> pending_;
   std::vector<Poison> poisons_;
   std::vector<Trap> traps_;
+  std::vector<Raised> raised_;
+  // Each shooting undead's groups, the first of one per projectile.
+  std::map<const Undead*, std::size_t> undead_groups_;
   std::vector<Effect> effects_;
   std::map<std::tuple<const Projectile*, int, int, int, int, double>, double> damage_cache_;
 };

@@ -284,3 +284,77 @@ TEST_CASE("more WIS never means fewer casts with MP given back on casting") {
     }
   }
 }
+
+namespace {
+
+// A skull that raises one undead firing `shots` of 100 armor-piercing damage
+// twice a second for 5 seconds, with an optional status on its shots.
+rotmg::Ability Skull(int shots, const char* status = nullptr) {
+  rotmg::Ability skull;
+  skull.name = "Test Skull";
+  skull.mp_cost = 100;
+  skull.activates.push_back({"RaiseDead", {{"numDead", 1.0}, {"undeadId", std::string("Test Undead")}}});
+  rotmg::Projectile p;
+  p.min_damage = 100;
+  p.max_damage = 101;
+  p.armor_piercing = true;
+  if (status != nullptr) {
+    p.condition_effects.push_back({status, 2});
+  }
+  rotmg::Undead u;
+  u.projectiles = {p};
+  u.shots = shots;
+  u.attacks_per_second = 2;
+  u.lifetime_s = 5;
+  skull.undead.emplace("Test Undead", u);
+  return skull;
+}
+
+}  // namespace
+
+TEST_CASE("a raised undead attacks at its rate for its lifetime") {
+  // 2 attacks a second for 5 s, 2 shots each: 20 shots of 100, through DEF.
+  const auto skull = EvaluateAbility(Skull(2), kWis60, {.defense = 50}, {});
+  REQUIRE(skull.parts.size() == 1);
+  CHECK(skull.parts[0].damage == Approx(2000));
+  CHECK(skull.parts[0].over_s == 5);
+  CHECK(skull.unsupported.empty());
+
+  // One that curses: every attack after the first lands on a cursed target.
+  const auto cursing = EvaluateAbility(Skull(2, "Curse"), kWis60, {}, {});
+  CHECK(cursing.parts[0].damage == Approx(2 * 100 + 9 * 2 * 125));
+  REQUIRE(cursing.buffs.size() == 1);
+  CHECK(cursing.buffs[0].effect == "Curse");
+  CHECK(cursing.buffs[0].duration_s == Approx(7));
+
+  // Only whole attacks count: at 1.5 a second, 7 in 5 seconds.
+  rotmg::Ability slower = Skull(1);
+  slower.undead.at("Test Undead").attacks_per_second = 1.5;
+  CHECK(EvaluateAbility(slower, kWis60, {}, {}).parts[0].damage == Approx(700));
+
+  // Like the Baby Kaiju: each attack fires its shots of every projectile.
+  rotmg::Ability two = Skull(1);
+  rotmg::Projectile blast = two.undead.at("Test Undead").projectiles[0];
+  blast.min_damage = 300;
+  blast.max_damage = 301;
+  two.undead.at("Test Undead").projectiles.push_back(blast);
+  CHECK(EvaluateAbility(two, kWis60, {}, {}).parts[0].damage == Approx(10 * (100 + 300)));
+
+  // Like the Brain Cube: bursts over its lifetime, the k-th from the k-th
+  // projectile. Through DEF unless they pierce armor.
+  rotmg::Ability cube = two;
+  rotmg::Undead& bursting = cube.undead.at("Test Undead");
+  bursting.bursts = 4;
+  bursting.burst_radii = {2.25, 3.25};
+  bursting.projectiles[1].armor_piercing = false;
+  const auto bursts = EvaluateAbility(cube, kWis60, {.defense = 50}, {});
+  CHECK(bursts.parts[0].damage == Approx(2 * 100 + 2 * 250));
+  CHECK(bursts.parts[0].over_s == 5);
+
+  // An undead the dataset doesn't describe isn't guessed at.
+  rotmg::Ability unknown = Skull(1);
+  unknown.undead.clear();
+  const auto none = EvaluateAbility(unknown, kWis60, {}, {});
+  CHECK(none.dps == 0);
+  CHECK(Has(none.unsupported, "RaiseDead"));
+}

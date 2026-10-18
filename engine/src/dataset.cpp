@@ -301,6 +301,20 @@ Ability ReadAbility(const json& j) {
   a.on_ability = ReadActivates(j, "onAbility");
   a.on_equip = ReadActivates(j, "onEquip");
   a.created_projectiles = ReadCreatedProjectiles(j);
+  if (auto it = j.find("undead"); it != j.end()) {
+    for (const json& u : *it) {
+      Undead undead;
+      for (const json& p : u.at("projectiles")) {
+        undead.projectiles.push_back(ReadProjectile(p));
+      }
+      undead.shots = u.value("shots", 1);
+      undead.attacks_per_second = u.value("attacksPerSecond", 0.0);
+      undead.bursts = u.value("bursts", 0);
+      ReadDefault(u, "burstRadii", undead.burst_radii);
+      undead.lifetime_s = u.value("lifetimeS", 0.0);
+      a.undead.emplace(u.at("id").get<std::string>(), std::move(undead));
+    }
+  }
   if (auto it = j.find("modes"); it != j.end()) {
     for (const json& m : *it) {
       a.modes.push_back(ReadAbilityMode(m));
@@ -515,6 +529,13 @@ std::string_view Activate::Text(ParamKey key) const { return TextOf(params.Find(
 std::string_view Activate::Text(std::string_view key) const { return TextOf(Lookup(params, key)); }
 bool Activate::Flag(ParamKey key) const { return FlagOf(params.Find(key)); }
 bool Activate::Flag(std::string_view key) const { return FlagOf(Lookup(params, key)); }
+
+int Undead::Attacks() const {
+  if (bursts > 0) {
+    return bursts;
+  }
+  return static_cast<int>(std::floor(attacks_per_second * lifetime_s + 1e-9));
+}
 
 Weapon Ability::AsWeapon() const {
   Weapon w;

@@ -201,3 +201,31 @@ TEST_CASE("a weapon's on-hit effects are read") {
   CHECK(data.weapons[0].on_enemy_hit[0].Number(rotmg::ParamKey::kMinDamage) == 450);
   CHECK(data.weapons[0].on_enemy_hit[0].Text(rotmg::ParamKey::kObjectId) == "Rocket");
 }
+
+TEST_CASE("an ability's undead are read with their projectile and how they fight") {
+  nlohmann::json d = nlohmann::json::parse(ReadSmallDatasetText());
+  d["abilities"][0]["undead"] = {{{"id", "Test Undead"},
+                                  {"projectiles", {{{"id", 0}, {"objectId", "Bolt"}, {"speed", 135}, {"minDamage", 70},
+                                                    {"maxDamage", 95}, {"lifetimeMs", 300}, {"armorPiercing", true}}}},
+                                  {"shots", 2},
+                                  {"attacksPerSecond", 5},
+                                  {"lifetimeS", 5}},
+                                 {{"id", "Burst Undead"},
+                                  {"projectiles", {{{"id", 0}, {"objectId", "Burst"}, {"speed", 0}, {"minDamage", 255},
+                                                    {"maxDamage", 255}, {"lifetimeMs", 200}}}},
+                                  {"bursts", 7},
+                                  {"burstRadii", {5}},
+                                  {"lifetimeS", 5}}};
+  const rotmg::Dataset data = rotmg::ParseDataset(d.dump());
+  const auto& undead = data.abilities[0].undead;
+  REQUIRE(undead.contains("Test Undead"));
+  CHECK(undead.at("Test Undead").projectiles.at(0).min_damage == 70);
+  CHECK(undead.at("Test Undead").projectiles.at(0).armor_piercing);
+  CHECK(undead.at("Test Undead").shots == 2);
+  CHECK(undead.at("Test Undead").attacks_per_second == 5);
+  CHECK(undead.at("Test Undead").lifetime_s == 5);
+  CHECK(undead.at("Test Undead").Attacks() == 25);
+  CHECK(undead.at("Burst Undead").bursts == 7);
+  CHECK(undead.at("Burst Undead").burst_radii == std::vector<double>{5});
+  CHECK(undead.at("Burst Undead").Attacks() == 7);
+}
