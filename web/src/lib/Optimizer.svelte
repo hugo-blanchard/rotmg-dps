@@ -5,6 +5,7 @@
   // your weapon and ability among armors and rings you list; the wide search
   // tries every item but can miss a build.
   import { tick } from "svelte";
+  import DistanceRange from "./DistanceRange.svelte";
   import Picker from "./Picker.svelte";
   import Sprite from "./Sprite.svelte";
   import { itemEffects, itemsFor, slots, statSummary, type Dataset, type DatasetClass, type Slot } from "./dataset";
@@ -35,6 +36,7 @@
     enchants = $bindable(),
     burst = $bindable(),
     castWeights = $bindable(),
+    distance = $bindable(),
   }: {
     /** Whether its tab is showing: it only estimates then. */
     active: boolean;
@@ -50,6 +52,8 @@
     burst: BurstWindow;
     /** How the page times casts, set to the search's weights when one of its builds is taken. */
     castWeights: DpsWeights | undefined;
+    /** How far from the target the page's numbers stand, set to a build's own when one is taken. */
+    distance: number;
   } = $props();
 
   const slotNames: Record<Slot, string> = { weapon: "Weapon", ability: "Ability", armor: "Armor", ring: "Ring" };
@@ -70,6 +74,10 @@
   let enchantMode = $state<OptimizeOptions["enchantments"]>("best");
   let artifacts = $state(true);
   let perItem = $state(2);
+  // The closest and farthest the search may stand from the target, in
+  // tiles. Each build is scored where it does the most between them.
+  let closest = $state(3);
+  let farthest = $state(6);
   let around = $state("every stat");
   // From 0, the weapon only, through 0.5, both in full, to 1, the ability only.
   let balance = $state(0.5);
@@ -97,6 +105,7 @@
     items: Record<Slot, string>;
     enchants: Record<Slot, string[]>;
     castWeights: DpsWeights | undefined;
+    distance: number;
   } | null>(null);
 
   const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
@@ -168,6 +177,7 @@
         artifacts,
         slots: perItem,
         weights: weights(balance),
+        distances: { from: closest, to: farthest },
         exact: {
           armors: hasSlot("armor") ? [...armorList] : [""],
           rings: hasSlot("ring") ? [...ringList] : [""],
@@ -183,6 +193,7 @@
       around,
       weights: weights(balance),
       burst: goal === "burst" ? { ...burst } : undefined,
+      distances: { from: closest, to: farthest },
       results: 5,
     };
   }
@@ -286,6 +297,7 @@
       items: { ...items },
       enchants: structuredClone($state.snapshot(enchants)),
       castWeights: $state.snapshot(castWeights),
+      distance,
     };
     // The page shows the build at the casting rhythm the search scored it
     // at. A burst search casts as often as it can in each window, so the
@@ -298,6 +310,7 @@
           ? undefined
           : weights(rankedBy.balance);
     items = { weapon: b.weapon, ability: b.ability, armor: b.armor, ring: b.ring };
+    if (b.distance !== undefined) distance = b.distance;
     enchants = Object.fromEntries(
       slots.map((s) => [s, [0, 1, 2, 3].map((i) => b.enchantments[s][i] ?? "")]),
     ) as Record<Slot, string[]>;
@@ -336,6 +349,7 @@
     items = previous.items;
     enchants = previous.enchants;
     castWeights = previous.castWeights;
+    distance = previous.distance;
     previous = null;
   }
 
@@ -378,9 +392,9 @@
     {#if mode === "exact"}
       <p class="hint">
         Keeps your weapon and ability and finds the armor, ring and enchantments with the most DPS among the armors
-        and rings listed here. It checks every possibility, so the build it returns is the best there is for these
-        choices with this calculator's numbers. It ranks by sustained DPS. It chooses every enchantment itself, so the
-        ones on your items are left out.
+        and rings listed here, standing at the best distance in the range below. It checks every possibility, so the
+        build it returns is the best there is for these choices with this calculator's numbers. It ranks by sustained
+        DPS. It chooses every enchantment itself, so the ones on your items are left out.
       </p>
       {#if !canExact}
         <p role="alert">The exact search needs a weapon and an ability: choose an ability first.</p>
@@ -479,6 +493,10 @@
         </p>
       {/if}
     {/if}
+    <div class="mode">
+      Stand between
+      <DistanceRange bind:from={closest} bind:to={farthest} disabled={searching} />
+    </div>
     {#if !aroundStat}
       <label class="mode">
         Rank by
@@ -491,7 +509,8 @@
         <progress max="1" value={progress?.done ?? 0}></progress>
         <span>
           {#if progress?.pairs}Armor and ring combination {Math.min(progress.pairs[0] + 1, progress.pairs[1])} of
-            {progress.pairs[1]}.
+            {progress.pairs[1]}{#if progress.distances && progress.distances[1] > 1}, distance
+              {Math.min(progress.distances[0] + 1, progress.distances[1])} of {progress.distances[1]}{/if}.
           {/if}
           {secondsLeft === null
             ? "Working out how long this takes…"
@@ -507,7 +526,8 @@
         <p class="hint">
           {exactPairs} armor and ring {exactPairs === 1 ? "combination" : "combinations"} to search. Each usually takes a
           few seconds or less. When the damage depends on a fourth stat besides ATT, DEX and WIS, like Brutal Buckler's
-          VIT, each can take a few minutes.
+          VIT, each can take a few minutes. It searches once more for each distance in the range where a different set
+          of shots lands, which is usually once or twice in all.
         </p>
       {:else}
         <button type="button" class="primary" onclick={search} disabled={!engine || (goal === "burst" && !burstValid)}>
@@ -518,7 +538,8 @@
     {/if}
     {#if mode === "wide"}
       <p class="hint">
-        Against the target and distance below, using the calculated numbers. It first measures how each item's damage
+        Against the target below, standing at each build's best distance in the range, using the calculated numbers.
+        It first measures how each item's damage
         grows with each stat and keeps the items that are best somewhere, like a spell that wins at low WIS next to
         one that wins at high WIS. It tries the most promising sets of those with whole enchantment plans, like
         stacking ATT and turning it into DEX, then improves the best one or two slots at a time.
@@ -567,7 +588,8 @@
               {/if}
               <span>
                 {signed(b.score - shown.baseline)}{scoreUnit} on yours{#if enchantCount(b)},
-                  {enchantCount(b)} enchantments{/if}
+                  {enchantCount(b)} enchantments{/if}{#if b.distance !== undefined}, at {tenths.format(b.distance)}
+                  tiles{/if}
               </span>
             </div>
             <div class="actions">

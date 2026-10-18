@@ -286,6 +286,8 @@ export interface OptimizeOptions {
   weights?: { weapon: number; ability: number };
   /** Rank by damage in a window this many seconds long (0 for a moment) every so many seconds. */
   burst?: BurstWindow;
+  /** Score each build where it does the most, from `from` to `to` tiles from the target, every quarter tile. */
+  distances?: { from: number; to: number };
   results?: number;
   /**
    * The exact bounded search instead: the request's weapon and ability, one
@@ -335,6 +337,8 @@ export interface OptimizedBuild {
   abilityDps: number;
   /** With a burst window. */
   burst?: Burst;
+  /** With a range of distances: where it stands, in tiles. */
+  distance?: number;
   weapon: string;
   ability: string;
   armor: string;
@@ -350,6 +354,8 @@ export interface OptimizeProgress {
   builds: OptimizedBuild[];
   /** For the exact search: armor and ring combinations searched, and how many there are. */
   pairs?: [number, number];
+  /** For the exact search: distances searched at, and how many it runs at. */
+  distances?: [number, number];
 }
 
 /** One way to fill a slot: an item ("" for none) and the enchantments on it. */

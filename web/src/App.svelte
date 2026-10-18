@@ -359,6 +359,7 @@
               bind:enchants
               bind:burst
               bind:castWeights
+              bind:distance
             />
           </div>
         {/if}
