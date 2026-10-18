@@ -298,12 +298,13 @@ struct Meter {
 };
 
 /// An object a RaiseDead effect raises, and how it fights for its lifetime:
-/// `attacks_per_second` attacks of `shots` of each projectile, or, with
-/// `bursts`, that many bursts where it was raised, the k-th from the k-th
-/// projectile and reaching the k-th radius in tiles (both cycling).
+/// `attacks_per_second` attacks of `shots` of each projectile, `arc_gap`
+/// degrees apart and centred on the enemy it aims at, or, with `bursts`, that many bursts where it was raised, the k-th from
+/// the k-th projectile and reaching the k-th radius in tiles (both cycling).
 struct Undead {
   std::vector<Projectile> projectiles;
   int shots = 1;
+  double arc_gap = 0;
   double attacks_per_second = 0;
   int bursts = 0;
   std::vector<double> burst_radii;

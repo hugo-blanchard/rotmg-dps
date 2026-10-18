@@ -717,7 +717,6 @@ void Simulation::CastEffect(const Activate& act, int group, const std::string& c
     const Undead& u = it->second;
     std::size_t first = 0;
     if (u.bursts == 0) {
-      // An attack spreads each projectile's shots evenly around the undead.
       const auto known = undead_groups_.find(&u);
       first = known != undead_groups_.end() ? known->second : groups_.size();
       if (known == undead_groups_.end()) {
@@ -725,7 +724,7 @@ void Simulation::CastEffect(const Activate& act, int group, const std::string& c
         for (const Projectile& p : u.projectiles) {
           Subattack s;
           s.num_projectiles = std::max(1, u.shots);
-          s.arc_gap = 360.0 / s.num_projectiles;
+          s.arc_gap = u.arc_gap;
           Group g{&p, {}, -1, 0, From::kAbility};
           for (int k = 0; k < s.num_projectiles; ++k) {
             g.paths.emplace_back(p, s, k);
@@ -736,9 +735,14 @@ void Simulation::CastEffect(const Activate& act, int group, const std::string& c
     }
     const double interval = u.lifetime_s * 1000 / u.Attacks();
     const int count = std::max(1, static_cast<int>(act.Number(kNumDead).value_or(1)));
+    // Each next one stands a golden angle further round the target from the
+    // side facing the player, so they spread out.
+    const double facing = std::atan2(world_.player.x - cursor.x, world_.player.y - cursor.y);
     for (int k = 0; k < count; ++k) {
-      raised_.push_back(
-          {&u, first, StatModBonus(act, kStatModDamage, base_), world_.aim, cursor, 0, now + interval, interval});
+      const double angle = facing + static_cast<double>(raised_count_++) * 137.5 * degrees;
+      const Point offset{std::sin(angle) * kUndeadDistance, std::cos(angle) * kUndeadDistance};
+      raised_.push_back({&u, std::string(act.Text(kUndeadId)), first, StatModBonus(act, kStatModDamage, base_), world_.aim,
+                         offset, {cursor.x + offset.x, cursor.y + offset.y}, 0, now + interval, interval});
     }
   } else if (act.type == "DamageNova") {
     // RealmEye, Tomes: an "on-cursor nova" that "explodes 2 times for 0.8
@@ -1108,11 +1112,14 @@ void Simulation::RunUndead() {
         }
         effects_.push_back({Effect::Kind::kBlast, r.at, radius, now + 200, {}, false});
       } else if (r.target < world_.targets.size() && Alive(r.target)) {
-        const Point at = world_.targets[r.target].position;
+        // It aims at the target from its place beside it.
+        const Point target = world_.targets[r.target].position;
+        const Point at{target.x + r.offset.x, target.y + r.offset.y};
+        const double aim = std::atan2(target.x - at.x, target.y - at.y);
         for (std::size_t g = r.group; g < r.group + u.projectiles.size(); ++g) {
           groups_[g].bonus = r.bonus;
           for (int k2 = 0; k2 < static_cast<int>(groups_[g].paths.size()); ++k2) {
-            Spawn(g, k2, at, 0, -1);
+            Spawn(g, k2, at, aim, -1);
           }
         }
       }
@@ -1120,9 +1127,11 @@ void Simulation::RunUndead() {
   }
   std::erase_if(raised_, [](const Raised& r) { return r.done >= r.undead->Attacks(); });
   for (const Raised& r : raised_) {
-    const bool on_target = r.undead->bursts == 0 && r.target < world_.targets.size();
-    effects_.push_back({Effect::Kind::kUndead, on_target ? world_.targets[r.target].position : r.at, 0.4,
-                        r.next_ms, {}, false});
+    Point at = r.at;
+    if (r.undead->bursts == 0 && r.target < world_.targets.size()) {
+      at = {world_.targets[r.target].position.x + r.offset.x, world_.targets[r.target].position.y + r.offset.y};
+    }
+    effects_.push_back({Effect::Kind::kUndead, at, 0.4, r.next_ms, {}, false, r.id});
   }
 }
 

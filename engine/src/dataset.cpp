@@ -308,6 +308,7 @@ Ability ReadAbility(const json& j) {
         undead.projectiles.push_back(ReadProjectile(p));
       }
       undead.shots = u.value("shots", 1);
+      undead.arc_gap = u.value("arcGap", 0.0);
       undead.attacks_per_second = u.value("attacksPerSecond", 0.0);
       undead.bursts = u.value("bursts", 0);
       ReadDefault(u, "burstRadii", undead.burst_radii);

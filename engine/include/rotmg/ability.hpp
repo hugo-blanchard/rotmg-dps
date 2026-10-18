@@ -17,6 +17,13 @@ namespace rotmg {
 /// MP regenerated per second: 0.5 + 0.12 * WIS (RealmEye: Character Stats).
 double MpPerSecond(int wisdom);
 
+/// How far from the enemy a raised undead stands, in tiles.
+inline constexpr double kUndeadDistance = 1;
+
+/// Of an undead's attack, how many shots of each projectile hit an enemy
+/// of `radius` tiles it stands kUndeadDistance from, in order.
+std::vector<int> UndeadHits(const Undead& undead, double radius);
+
 /// MP per second a pet's Magic Heal restores at its ability `level`, 0 for
 /// none and at most 100.
 double MagicHealMpPerSecond(int level);

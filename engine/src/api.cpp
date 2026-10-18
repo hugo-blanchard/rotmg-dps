@@ -320,7 +320,8 @@ json StateOf(const Simulation& sim, std::size_t& history_sent) {
                        {"y", e.position.y},
                        {"radius", e.radius},
                        {"armed", e.armed},
-                       {"chain", chain}});
+                       {"chain", chain},
+                       {"object", e.object}});
   }
   const Simulation::AbilityCounters& ability = sim.AbilityTotals();
   const Simulation::AbilityCounters& procs = sim.ProcTotals();

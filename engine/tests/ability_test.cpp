@@ -288,13 +288,16 @@ TEST_CASE("more WIS never means fewer casts with MP given back on casting") {
 namespace {
 
 // A skull that raises one undead firing `shots` of 100 armor-piercing damage
-// twice a second for 5 seconds, with an optional status on its shots.
+// straight at the enemy twice a second for 5 seconds, with an optional status
+// on its shots. They reach 4.05 tiles, like every undead's.
 rotmg::Ability Skull(int shots, const char* status = nullptr) {
   rotmg::Ability skull;
   skull.name = "Test Skull";
   skull.mp_cost = 100;
   skull.activates.push_back({"RaiseDead", {{"numDead", 1.0}, {"undeadId", std::string("Test Undead")}}});
   rotmg::Projectile p;
+  p.speed = 135;
+  p.lifetime_ms = 300;
   p.min_damage = 100;
   p.max_damage = 101;
   p.armor_piercing = true;
@@ -350,6 +353,17 @@ TEST_CASE("a raised undead attacks at its rate for its lifetime") {
   const auto bursts = EvaluateAbility(cube, kWis60, {.defense = 50}, {});
   CHECK(bursts.parts[0].damage == Approx(2 * 100 + 2 * 250));
   CHECK(bursts.parts[0].over_s == 5);
+
+  // From 1 tile away, only shots that pass through the enemy land: one of
+  // Corrupted Souls' ring of five, none of Memento Mori's pair fired to
+  // either side.
+  rotmg::Ability ring = Skull(5);
+  ring.undead.at("Test Undead").arc_gap = 72;
+  CHECK(rotmg::UndeadHits(ring.undead.at("Test Undead"), 0.5) == std::vector<int>{1});
+  CHECK(EvaluateAbility(ring, kWis60, {}, {}).parts[0].damage == Approx(1000));
+  rotmg::Ability sideways = Skull(2);
+  sideways.undead.at("Test Undead").arc_gap = 180;
+  CHECK(rotmg::UndeadHits(sideways.undead.at("Test Undead"), 0.5) == std::vector<int>{0});
 
   // An undead the dataset doesn't describe isn't guessed at.
   rotmg::Ability unknown = Skull(1);

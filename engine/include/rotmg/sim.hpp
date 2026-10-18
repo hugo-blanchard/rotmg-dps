@@ -166,6 +166,8 @@ class Simulation {
     std::vector<Point> chain;
     /// Traps: whether it's waiting for a target.
     bool armed = false;
+    /// Undead: its object id, for its sprite.
+    std::string object = {};
   };
 
   /// `ability` is cast as often as it can be; null for none.
@@ -317,14 +319,17 @@ class Simulation {
     // The chance gathered over casts since the cooldown.
     double chance = 0;
   };
-  // An undead a RaiseDead raised. One that shoots fights on the target it
-  // was raised on; one that bursts stays where it was raised.
+  // An undead a RaiseDead raised, kUndeadDistance from the target. One that
+  // shoots keeps that place next to the target; one that bursts stays where
+  // it was raised.
   struct Raised {
     const Undead* undead = nullptr;
+    std::string id;
     // Shots: the first of its groups, one per projectile.
     std::size_t group = 0;
     double bonus = 0;
     std::size_t target = 0;
+    Point offset;
     Point at;
     // Attacks or bursts done, and when the next comes.
     int done = 0;
@@ -451,6 +456,8 @@ class Simulation {
   std::vector<Raised> raised_;
   // Each shooting undead's groups, the first of one per projectile.
   std::map<const Undead*, std::size_t> undead_groups_;
+  // Undead raised so far, which spreads them around their targets.
+  long raised_count_ = 0;
   std::vector<Effect> effects_;
   std::map<std::tuple<const Projectile*, int, int, int, int, double>, double> damage_cache_;
 };

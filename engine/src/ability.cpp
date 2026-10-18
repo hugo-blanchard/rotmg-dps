@@ -44,6 +44,28 @@ double Param(const Activate& a, ParamKey key) { return a.Number(key).value_or(0)
 
 double MpPerSecond(int wisdom) { return 0.5 + 0.12 * wisdom; }
 
+// Undead are raised near the enemy rather than on it (Hugo, 2026-10-18),
+// and aim at it, so shots spread wide, like Corrupted Souls' ring of five,
+// can miss.
+std::vector<int> UndeadHits(const Undead& undead, double radius) {
+  std::vector<int> out;
+  for (const Projectile& p : undead.projectiles) {
+    if (undead.bursts > 0) {
+      out.push_back(1);
+      continue;
+    }
+    Weapon w;
+    w.projectiles = {p};
+    w.projectiles[0].id = 0;
+    Subattack s;
+    s.projectile_id = 0;
+    s.num_projectiles = std::max(1, undead.shots);
+    s.arc_gap = undead.arc_gap;
+    out.push_back(HitModelFits(w) ? HitsPerVolley(w, s, kUndeadDistance, radius) : s.num_projectiles);
+  }
+  return out;
+}
+
 // RealmEye, Pet Abilities: the MP each heal restores and the delay between
 // heals at the ends of each rarity's levels, from level 1 to 100. Levels in
 // between are taken to move evenly from one end to the next, an assumption;
@@ -498,22 +520,25 @@ AbilityBreakdown EvaluateAbility(const Ability& ability, const Character& charac
       const auto hit = [&](const Projectile& p, const Target& on) {
         return ExpectedAbilityDamage(p.min_damage, p.max_damage - 1, bonus, on, p.armor_piercing);
       };
+      // A burst reaches the enemy if its radius does; RealmEye's are all
+      // 2.25 tiles or more.
+      const std::vector<int> landing = UndeadHits(u, assumptions.target_radius);
       double per_undead = 0;
       for (int k = 0; k < attacks; ++k) {
         const Target& on = k == 0 ? target : marked;
         if (u.bursts > 0) {
-          per_undead += hit(u.projectiles[static_cast<std::size_t>(k) % u.projectiles.size()], on);
+          const auto i = static_cast<std::size_t>(k);
+          const double reach = u.burst_radii.empty() ? 0 : u.burst_radii[i % u.burst_radii.size()];
+          if (kUndeadDistance <= reach + assumptions.target_radius) {
+            per_undead += hit(u.projectiles[i % u.projectiles.size()], on);
+          }
         } else {
-          for (const Projectile& p : u.projectiles) {
-            per_undead += u.shots * hit(p, on);
+          for (std::size_t i = 0; i < u.projectiles.size(); ++i) {
+            per_undead += landing[i] * hit(u.projectiles[i], on);
           }
         }
       }
-      if (u.bursts > 0) {
-        assume("an undead that bursts is raised on the target, which stays inside its bursts");
-      } else {
-        assume("raised undead are raised on the target and stay on it, so every shot they fire hits");
-      }
+      assume("raised undead stand 1 tile from the target and aim at it, so only shots that pass through it hit");
       add_part({details ? (u.bursts > 0 ? "Undead, " + std::to_string(attacks) + " bursts"
                                         : "Undead, " + std::to_string(attacks) + " attacks")
                         : "",
