@@ -100,8 +100,8 @@ enum class ParamKey : std::uint8_t {
   kBombDelay, kBombRadius, kBombTriggerCount, kBombTriggerPeriod, kChannel, kCondDuration, kCondEffect, kCooldown,
   kDamageBoost, kDecrDamage, kDuration, kEffect, kGapAngle, kGapTiles, kHpMinThresholdRelative, kHpRequiredRelative,
   kIdMeter, kImpactDamage, kMaxDamage, kMaxDistance, kMaxTargets, kMeterCost, kMinDamage, kMinDistance,
-  kMinimumMeter, kMultiplier, kMustNotWear, kMustNotWearOR, kMustWear, kMustWearOR, kNumShots, kOffsetAngle, kProc,
-  kRadius, kRange, kRequiredConditions, kScalingStat, kSensitivity, kStat, kStatModActivationCount,
+  kMinimumMeter, kMultiplier, kMustNotWear, kMustNotWearOR, kMustWear, kMustWearOR, kNumShots, kObjectId,
+  kOffsetAngle, kProc, kRadius, kRange, kRequiredConditions, kRequiredConditionsNOR, kScalingStat, kSensitivity, kStat, kStatModActivationCount,
   kStatModBombCondDuration, kStatModBombCount, kStatModBombDamage, kStatModBombRadius, kStatModDamage,
   kStatModDamageBoost, kStatModDuration, kStatModImpactDamage, kStatModNumShots, kStatModPerTarget, kStatModRadius,
   kStatModScalingMin, kStatModTrapCondDuration, kStatModTrapDamage, kStatModTrapRadius, kStatRelativeTo,
@@ -117,8 +117,8 @@ inline constexpr std::array<std::string_view, static_cast<std::size_t>(ParamKey:
     "condDuration", "condEffect", "cooldown", "damageBoost", "decrDamage", "duration", "effect", "gapAngle",
     "gapTiles", "hpMinThresholdRelative", "hpRequiredRelative", "idMeter", "impactDamage", "maxDamage",
     "maxDistance", "maxTargets", "meterCost", "minDamage", "minDistance", "minimumMeter", "multiplier",
-    "mustNotWear", "mustNotWearOR", "mustWear", "mustWearOR", "numShots", "offsetAngle", "proc", "radius", "range",
-    "requiredConditions", "scalingStat", "sensitivity", "stat", "statModActivationCount", "statModBombCondDuration",
+    "mustNotWear", "mustNotWearOR", "mustWear", "mustWearOR", "numShots", "objectId", "offsetAngle", "proc",
+    "radius", "range", "requiredConditions", "requiredConditionsNOR", "scalingStat", "sensitivity", "stat", "statModActivationCount", "statModBombCondDuration",
     "statModBombCount", "statModBombDamage", "statModBombRadius", "statModDamage", "statModDamageBoost",
     "statModDuration", "statModImpactDamage", "statModNumShots", "statModPerTarget", "statModRadius",
     "statModScalingMin", "statModTrapCondDuration", "statModTrapDamage", "statModTrapRadius", "statRelativeTo",
@@ -236,11 +236,15 @@ struct Weapon {
   std::vector<Subattack> subattacks;
   /// OnPlayerShootActivate effects, with the client's parameters.
   std::vector<Activate> on_shoot;
+  /// OnEnemyHitActivate effects: a chance on each enemy a shot hits. A
+  /// SpawnCreep that explodes has minDamage, maxDamage and radius too.
+  std::vector<Activate> on_enemy_hit;
   /// OnPlayerAbilityActivate effects, which go off when the ability is used.
   std::vector<Activate> on_ability;
   /// On-equip effects other than flat stats, like IncrementStatRelative.
   std::vector<Activate> on_equip;
-  /// Projectiles of other items, by type, that on-shoot effects create.
+  /// Projectiles of other items, by type, that on-shoot and on-hit effects
+  /// create.
   std::map<int, Projectile> created_projectiles;
   /// The item's labels, which enchantments match against.
   std::vector<std::string> labels;

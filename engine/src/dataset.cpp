@@ -354,6 +354,7 @@ Weapon ReadWeapon(const json& j) {
     w.subattacks.push_back(ReadSubattack(s));
   }
   w.on_shoot = ReadActivates(j, "onShoot");
+  w.on_enemy_hit = ReadActivates(j, "onEnemyHit");
   w.on_ability = ReadActivates(j, "onAbility");
   w.on_equip = ReadActivates(j, "onEquip");
   w.created_projectiles = ReadCreatedProjectiles(j);

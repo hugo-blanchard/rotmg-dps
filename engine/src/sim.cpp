@@ -243,6 +243,20 @@ Simulation::Simulation(const Weapon& weapon, const Character& character, const S
       procs_.push_back(proc);
     }
   }
+  for (const Activate& act : weapon_.on_enemy_hit) {
+    HitProc proc{&act, HitModelOf(weapon_, act, worn, base_.status), 0, 0, 0};
+    if (proc.model == OnHitModel::kNone) {
+      continue;
+    }
+    if (proc.model == OnHitModel::kExtraShots) {
+      const std::string_view type = act.Text(kType);
+      const Projectile& p =
+          type.empty() ? weapon_.projectiles[0]
+                       : weapon_.created_projectiles.at(static_cast<int>(std::strtol(std::string(type).c_str(), nullptr, 0)));
+      proc.group = AddGroup(p, act, From::kProc);
+    }
+    hit_procs_.push_back(proc);
+  }
 
   if (!ability_) {
     return;
@@ -534,6 +548,8 @@ void Simulation::Step() {
     ++l.step;
     Land(l);
   }
+  // Only after the loop: what they make joins live_.
+  RollHitProcs();
   // Poison ticks before new poison lands, so each ticks once per step after
   // it lands, and a 4.5 second poison ticks for exactly 4.5 seconds.
   TickPoisons();
@@ -577,6 +593,7 @@ void Simulation::Step() {
     }
   }
 
+  RollHitProcs();
   std::erase_if(live_, [this](const Live& l) {
     const ProjectilePath& path = groups_[l.group].paths[static_cast<std::size_t>(l.index)];
     if (l.stopped || l.step >= path.Steps()) {
@@ -854,6 +871,69 @@ void Simulation::OnShoot() {
     ++proc_totals_.casts;
     proc.ready_ms = now + act.Number(kCooldown).value_or(0) * 1000;
   }
+}
+
+void Simulation::RollHitProcs() {
+  const double now = TimeMs();
+  for (const std::size_t target : weapon_hits_) {
+    for (HitProc& proc : hit_procs_) {
+      const Activate& act = *proc.effect;
+      if (now < proc.ready_ms) {
+        continue;
+      }
+      // As with on-shoot boosts: chances add up over hits, or each hit rolls.
+      const double chance = act.Number(kProc).value_or(1);
+      if (start_.random_rolls) {
+        if (NextRandom(rolls_) >= chance) {
+          continue;
+        }
+      } else {
+        proc.chance += chance;
+        if (proc.chance < 1 - 1e-9) {
+          continue;
+        }
+        proc.chance = 0;
+      }
+      if (proc.model == OnHitModel::kExtraShots) {
+        CreateShots(proc.group, act);
+      } else {
+        Explode(act, world_.targets[target].position);
+      }
+      ++proc_totals_.casts;
+      proc.ready_ms = now + act.Number(kCooldown).value_or(0) * 1000;
+    }
+  }
+  weapon_hits_.clear();
+}
+
+void Simulation::Explode(const Activate& act, Point at) {
+  // RealmEye, Laser Rifle: the rocket's damage scales with ATT and statuses
+  // like a weapon shot's, and goes through DEF. It homes in, so it's taken
+  // to explode on the target that was hit, right away.
+  const Character me = Current();
+  const Multiplier multiplier = DamageMultiplier(me.attack, me.status);
+  Projectile blast;
+  blast.min_damage = static_cast<int>(act.Number(kMinDamage).value_or(0));
+  blast.max_damage = static_cast<int>(act.Number(kMaxDamage).value_or(0));
+  const double radius = act.Number(kRadius).value_or(0);
+  for (std::size_t t = 0; t < world_.targets.size(); ++t) {
+    if (!Alive(t) || Distance(world_.targets[t].position, at) > radius + world_.targets[t].radius) {
+      continue;
+    }
+    Target now = TargetNow(t);
+    const double boost = now.damage_taken;
+    now.damage_taken = 1;
+    double damage = 0;
+    if (start_.random_rolls) {
+      const int roll = Roll(blast.min_damage, blast.max_damage - 1);
+      damage = DamageAfterDefense(rotmg::HitDamage(roll, multiplier), EffectiveDefense(now, false), now.cursed);
+    } else {
+      damage = ExpectedHitDamage(blast, multiplier, now);
+    }
+    ++proc_totals_.hits;
+    Damage(t, boost * damage, From::kProc);
+  }
+  effects_.push_back({Effect::Kind::kBlast, at, radius, TimeMs() + 200, {}, false});
 }
 
 void Simulation::RunPending() {
@@ -1149,6 +1229,7 @@ void Simulation::Land(Live& shot) {
     if (g.subattack < 0) {
       ++(g.from == From::kProc ? proc_totals_ : ability_totals_).hits;
     } else {
+      weapon_hits_.push_back(i);
       Counters& counters = per_subattack_[static_cast<std::size_t>(g.subattack)];
       ++totals_.hits;
       ++counters.hits;

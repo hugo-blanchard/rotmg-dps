@@ -191,3 +191,13 @@ TEST_CASE("an ability with modes is used in its first, with that mode's subattac
   CHECK(a->subattacks[0].num_projectiles == 1);
   CHECK(a->mode_subattacks.size() == 2);
 }
+
+TEST_CASE("a weapon's on-hit effects are read") {
+  nlohmann::json d = nlohmann::json::parse(ReadSmallDatasetText());
+  d["weapons"][0]["onEnemyHit"] = {{{"type", "SpawnCreep"},
+                                    {"params", {{"proc", 0.25}, {"objectId", "Rocket"}, {"minDamage", 450}}}}};
+  const rotmg::Dataset data = rotmg::ParseDataset(d.dump());
+  REQUIRE(data.weapons[0].on_enemy_hit.size() == 1);
+  CHECK(data.weapons[0].on_enemy_hit[0].Number(rotmg::ParamKey::kMinDamage) == 450);
+  CHECK(data.weapons[0].on_enemy_hit[0].Text(rotmg::ParamKey::kObjectId) == "Rocket");
+}

@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <deque>
-#include <map>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -299,6 +298,16 @@ class Simulation {
     // Chance boosts: the chance gathered over shots since the cooldown.
     double chance = 0;
   };
+  // One of the weapon's on-hit effects.
+  struct HitProc {
+    const Activate* effect = nullptr;
+    OnHitModel model = OnHitModel::kNone;
+    // Extra shots: their group.
+    std::size_t group = 0;
+    double ready_ms = 0;
+    // The chance gathered over hits since the cooldown.
+    double chance = 0;
+  };
   // An on-use effect of the ability or the other gear.
   struct OnCast {
     const Activate* effect = nullptr;
@@ -327,6 +336,10 @@ class Simulation {
   // A new group for an effect's shots, or -1 for an effect without any.
   int ShotGroup(const Activate& effect);
   void OnShoot();
+  // Rolls the on-hit effects for the weapon hits since the last roll.
+  void RollHitProcs();
+  // An on-hit explosion centred on `at`, hurting every target in its radius.
+  void Explode(const Activate& effect, Point at);
   // Adds the shots a BulletNova or BulletCreate makes, with this projectile,
   // and returns the group.
   std::size_t AddGroup(const Projectile& projectile, const Activate& effect, From from);
@@ -401,6 +414,10 @@ class Simulation {
   std::vector<double> mp_history_;
   double bucket_damage_ = 0;
   std::vector<Proc> procs_;
+  std::vector<HitProc> hit_procs_;
+  // Targets the weapon's shots hit since on-hit effects last rolled, once
+  // per projectile.
+  std::vector<std::size_t> weapon_hits_;
   std::vector<OnCast> on_cast_;
   // The subattack whose shots set off procs.
   std::size_t proc_subattack_ = 0;

@@ -206,3 +206,75 @@ TEST_CASE("on-shoot effects that aren't modelled are flagged, harmless ones aren
   const auto b = EvaluateWeapon(Weapon("Venom Katana"), {.attack = 50, .dexterity = 50}, {});
   CHECK(b.unsupported == std::vector<std::string>{"OnPlayerShootActivate"});
 }
+
+namespace {
+
+// The Plain Sword with one effect on each hit.
+rotmg::Weapon SwordWithHitEffect(rotmg::Activate effect) {
+  rotmg::Weapon w = Weapon("Plain Sword");
+  w.on_enemy_hit.push_back(std::move(effect));
+  return w;
+}
+
+rotmg::Activate Rocket() {
+  return {"SpawnCreep",
+          {{"proc", 0.25}, {"cooldown", 0.4}, {"objectId", std::string("Rocket")}, {"minDamage", 450.0},
+           {"maxDamage", 550.0}, {"radius", 3.0}}};
+}
+
+}  // namespace
+
+TEST_CASE("an on-hit effect has its chance on every hit, past its cooldown") {
+  // No cooldown: every hit rolls, 0.1 x 3 hits x 2 volleys a second.
+  CHECK(rotmg::HitProcsPerSecond(0.1, 0, 2, 3) == Approx(0.6));
+  // A sure one with a 1 s cooldown at 2 volleys a second goes off every
+  // 2.5 volleys, the next after the cooldown coming half a volley later.
+  CHECK(rotmg::HitProcsPerSecond(1, 1, 2, 3) == Approx(0.8));
+  // 25% with one hit a volley: a further 3 volleys on average.
+  CHECK(rotmg::HitProcsPerSecond(0.25, 1, 2, 1) == Approx(2 / 5.5));
+  CHECK(rotmg::HitProcsPerSecond(0.25, 1, 0, 1) == 0);
+}
+
+TEST_CASE("a rocket on hit explodes through ATT, statuses and DEF") {
+  // At 50 DEX, the sword's +4 included, it fires 5.83 volleys a second, so
+  // with the 0.4 s cooldown and 25% a hit the rocket comes once a second; at
+  // 25 ATT each does the average of 450 to 549.
+  const rotmg::Weapon rifle = SwordWithHitEffect(Rocket());
+  const auto b = EvaluateWeapon(rifle, {.attack = 25, .dexterity = 46}, {});
+  const auto plain = EvaluateWeapon(Weapon("Plain Sword"), {.attack = 25, .dexterity = 46}, {});
+  REQUIRE(b.procs.size() == 1);
+  CHECK(b.procs[0].per_second == Approx(1));
+  CHECK(b.procs[0].damage == Approx(499.5));
+  CHECK(b.dps == Approx(plain.dps + 499.5));
+  CHECK(b.procs[0].scaling == rotmg::kScalesLikeShots);
+  CHECK(HasAssumption(b, "a homing rocket always reaches the target and explodes on it"));
+
+  const auto weak = EvaluateWeapon(rifle, {.attack = 25, .dexterity = 46, .status = {.weak = true}}, {});
+  CHECK(weak.procs[0].damage == Approx(499.5 / 2).margin(0.5));
+  const auto armored = EvaluateWeapon(rifle, {.attack = 25, .dexterity = 46}, {.defense = 50});
+  CHECK(armored.procs[0].damage == Approx(449.5));
+}
+
+TEST_CASE("on-hit shots that need a status only go off with it") {
+  // Like General's Arsenal's: a shot of the sword's own projectile, only
+  // while Damaging.
+  const rotmg::Weapon w = SwordWithHitEffect(
+      {"BulletCreate", {{"proc", 1.0}, {"cooldown", 1.0}, {"requiredConditions", std::string("Damaging")}}});
+  CHECK(EvaluateWeapon(w, {.attack = 25, .dexterity = 50}, {}).procs.empty());
+  const auto damaging = EvaluateWeapon(w, {.attack = 25, .dexterity = 50, .status = {.damaging = true}}, {});
+  REQUIRE(damaging.procs.size() == 1);
+  CHECK(damaging.procs[0].damage == Approx(64.5));
+  CHECK(std::ranges::find(damaging.unsupported, "OnEnemyHitActivate") == damaging.unsupported.end());
+}
+
+TEST_CASE("on-hit effects the engine doesn't model are listed, unless they're off") {
+  // Like Cold Front's stacking DEX.
+  rotmg::Activate dex{"StatBoostSelf", {{"proc", 0.05}, {"stat", std::string("DEX")}, {"amount", 2.0}}};
+  const auto b = EvaluateWeapon(SwordWithHitEffect(dex), {.attack = 25, .dexterity = 50}, {});
+  CHECK(b.procs.empty());
+  CHECK(std::ranges::find(b.unsupported, "OnEnemyHitActivate") != b.unsupported.end());
+
+  dex.params.insert_or_assign("mustWear", std::string("0x9999"));
+  const auto off = EvaluateWeapon(SwordWithHitEffect(dex), {.attack = 25, .dexterity = 50}, {});
+  CHECK(std::ranges::find(off.unsupported, "OnEnemyHitActivate") == off.unsupported.end());
+}

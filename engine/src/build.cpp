@@ -48,6 +48,10 @@ struct Dps {
 // DEX their rate.
 bool ShotsScaleWith(std::string_view stat) { return stat == "ATT" || stat == "DEX"; }
 
+bool ProcScalesWith(std::string_view scaling, std::string_view stat) {
+  return scaling == stat || (scaling == kScalesLikeShots && ShotsScaleWith(stat));
+}
+
 // The weapon's DPS with a set of buffs and debuffs up.
 Dps WeaponDps(const Weapon& weapon, Character character, Target target, const Assumptions& assumptions,
               const std::vector<const Buff*>& active, std::string_view stat) {
@@ -61,7 +65,7 @@ Dps WeaponDps(const Weapon& weapon, Character character, Target target, const As
     if (ShotsScaleWith(stat)) out.stat += s.dps;
   }
   for (const ProcResult& p : b.procs) {
-    if (p.scaling == stat) out.stat += p.dps;
+    if (ProcScalesWith(p.scaling, stat)) out.stat += p.dps;
   }
   return out;
 }
@@ -531,7 +535,7 @@ BurstBreakdown EvaluateBurst(const Weapon& weapon, const Ability* ability, const
     const std::size_t procs = firing(0).procs.size();
     for (std::size_t i = 0; i < subattacks + procs; ++i) {
       const bool counts = !stat.empty() && (i < subattacks ? ShotsScaleWith(stat)
-                                                           : firing(0).proc_scaling[i - subattacks] == stat);
+                                                           : ProcScalesWith(firing(0).proc_scaling[i - subattacks], stat));
       for (double t = 0; t <= length + kEpsilon;) {
         const Firing& f = firing(up_at(t));
         const auto& [per_second, damage] = i < subattacks ? f.volleys[i] : f.procs[i - subattacks];

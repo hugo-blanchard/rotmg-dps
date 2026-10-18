@@ -327,3 +327,21 @@ TEST_CASE("a poison makes the weapon do more to what it poisons") {
   CHECK(poisoned.Totals().damage - before == Approx(1.1175 * (plain.Totals().damage - plain_before)));
   CHECK(poisoned.TargetStatuses(0) == std::vector<std::string>{rotmg::kPoisonBoost});
 }
+
+TEST_CASE("a rocket on hit explodes on the target and what's around it") {
+  // 25% a hit past a 0.4 s cooldown: with the chances adding up, every
+  // fourth hit after the cooldown, about once a second at 50 DEX with the
+  // sword's. The
+  // second target is in the blast but off the sword's line; the third is
+  // past both.
+  rotmg::Weapon rifle = Sword();
+  rifle.on_enemy_hit.push_back({"SpawnCreep",
+                                {{"proc", 0.25}, {"cooldown", 0.4}, {"objectId", std::string("Rocket")},
+                                 {"minDamage", 450.0}, {"maxDamage", 550.0}, {"radius", 3.0}}});
+  Simulation sim(rifle, {.attack = 25, .dexterity = 46}, At({{0, 3}, {2, 3}, {0, 10}}));
+  sim.Advance(10'000);
+  CHECK(sim.ProcTotals().casts >= 9);
+  CHECK(sim.ProcTotals().casts <= 11);
+  CHECK(sim.PerTarget()[1].damage == Approx(499.5 * static_cast<double>(sim.ProcTotals().casts)));
+  CHECK(sim.PerTarget()[2].damage == 0);
+}

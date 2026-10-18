@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <optional>
 #include <set>
 #include <string>
 #include <tuple>
@@ -145,6 +146,84 @@ OnShootModel ModelOf(const Weapon& weapon, const Activate& a, std::span<const in
   return IsChanceBoost(a) ? OnShootModel::kChanceBoost : OnShootModel::kNone;
 }
 
+namespace {
+
+// Whether the player's statuses meet an effect's requiredConditions (all of
+// them) and requiredConditionsNOR (none of them), as General's Arsenal's
+// shots ask for Weak or Damaging; nullopt when one is a status the engine
+// doesn't track. You're in combat while shooting.
+std::optional<bool> StatusesMet(const Activate& a, const PlayerStatus& status) {
+  const auto has = [&](std::string_view name) -> std::optional<bool> {
+    if (name == "Weak") return status.weak;
+    if (name == "Damaging") return status.damaging;
+    if (name == "Berserk") return status.berserk;
+    if (name == "Dazed") return status.dazed;
+    if (name == "In Combat") return true;
+    return std::nullopt;
+  };
+  bool met = true;
+  for (const auto& [key, wanted] : {std::pair{kRequiredConditions, true}, std::pair{kRequiredConditionsNOR, false}}) {
+    const std::string_view list = a.Text(key);
+    std::size_t start = 0;
+    while (start < list.size()) {
+      const std::size_t end = std::min(list.find(';', start), list.size());
+      const std::optional<bool> on = has(list.substr(start, end - start));
+      if (!on) return std::nullopt;
+      met = met && *on == wanted;
+      start = end + 1;
+    }
+  }
+  return met;
+}
+
+// The projectile an on-hit BulletCreate makes, or null for none.
+const Projectile* HitShot(const Weapon& w, const Activate& a) {
+  if (a.type != "BulletCreate" || a.Number(kIdMeter) || a.Number(kMeterCost)) {
+    return nullptr;
+  }
+  const std::string_view type = a.Text(kType);
+  if (type.empty()) {
+    return w.projectiles.empty() ? nullptr : &w.projectiles[0];
+  }
+  const auto it = w.created_projectiles.find(ParseType(type));
+  return it == w.created_projectiles.end() ? nullptr : &it->second;
+}
+
+// Whether an on-hit effect is off, so it can't be missing: its gear isn't
+// worn or the player's statuses rule it out.
+bool HitEffectOff(const Activate& a, std::span<const int> worn, const PlayerStatus& status) {
+  return !GearWorn(a, worn) || StatusesMet(a, status) == false;
+}
+
+}  // namespace
+
+OnHitModel HitModelOf(const Weapon& weapon, const Activate& a, std::span<const int> worn, const PlayerStatus& status) {
+  if (HitEffectOff(a, worn, status) || !StatusesMet(a, status) || a.Number(kProc).value_or(1) <= 0) {
+    return OnHitModel::kNone;
+  }
+  if (HitShot(weapon, a) != nullptr) {
+    return OnHitModel::kExtraShots;
+  }
+  if (a.type == "SpawnCreep" && a.Number(kMinDamage) && a.Number(kMaxDamage)) {
+    return OnHitModel::kExplosion;
+  }
+  return OnHitModel::kNone;
+}
+
+// With a cooldown, the first volley after it ends is ShotsPerCycle volleys
+// on, as for on-shoot procs; from there each volley goes off with the chance
+// that one of its hits does, so the wait is geometric.
+double HitProcsPerSecond(double chance, double cooldown_s, double volleys_per_second, double hits_per_volley) {
+  if (chance <= 0 || volleys_per_second <= 0 || hits_per_volley <= 0) {
+    return 0;
+  }
+  if (cooldown_s <= 0) {
+    return chance * hits_per_volley * volleys_per_second;
+  }
+  const double per_volley = 1 - std::pow(1 - std::min(chance, 1.0), hits_per_volley);
+  return volleys_per_second / (ShotsPerCycle(cooldown_s, volleys_per_second) - 1 + 1 / per_volley);
+}
+
 bool CountsAsChanceBoost(const Weapon& weapon, const Activate& boost, std::span<const int> worn) {
   const auto no_stack = [](const Activate& a) { return a.Text(kChannel).starts_with("noStack"); };
   if (!no_stack(boost)) {
@@ -259,6 +338,12 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
   if (details && unmodelled_on_shoot &&
       std::ranges::find(out.unsupported, "OnPlayerShootActivate") == out.unsupported.end()) {
     out.unsupported.push_back("OnPlayerShootActivate");
+  }
+  if (details && std::ranges::any_of(weapon.on_enemy_hit, [&](const Activate& a) {
+        return !HitEffectOff(a, worn, character.status) &&
+               HitModelOf(weapon, a, worn, character.status) == OnHitModel::kNone;
+      }) && std::ranges::find(out.unsupported, "OnEnemyHitActivate") == out.unsupported.end()) {
+    out.unsupported.push_back("OnEnemyHitActivate");
   }
 
   const Character geared = character.With(weapon.stat_bonuses).With(while_shooting);
@@ -388,8 +473,60 @@ Breakdown Evaluate(const Weapon& weapon, const Character& character, const Targe
     row->damage += count * each;
     row->dps = row->per_second * row->damage;
   }
+
+  // Effects with a chance on each projectile that hits, past a cooldown.
+  double hits_per_second = 0;
+  for (const SubattackResult& r : out.subattacks) {
+    hits_per_second += r.volleys_per_second * r.hits_per_volley;
+  }
+  const double hits_per_volley = shots_per_second > 0 ? hits_per_second / shots_per_second : 0;
+  bool any_hit_shots = false;
+  bool any_explosions = false;
+  for (const Activate& a : weapon.on_enemy_hit) {
+    const OnHitModel model = HitModelOf(weapon, a, worn, character.status);
+    if (model == OnHitModel::kNone) {
+      continue;
+    }
+    ProcResult p;
+    p.per_second = HitProcsPerSecond(a.Number(kProc).value_or(1), a.Number(kCooldown).value_or(0), shots_per_second,
+                                     hits_per_volley);
+    if (model == OnHitModel::kExtraShots) {
+      const Projectile& shot = *HitShot(weapon, a);
+      const int count = static_cast<int>(a.Number(kNumShots).value_or(1)) + StatModCount(a, kStatModNumShots, geared);
+      p.damage = count * ExpectedAbilityDamage(shot.min_damage, shot.max_damage - 1,
+                                               StatModBonus(a, kStatModDamage, geared), target, shot.armor_piercing);
+      p.scaling = DamageScaling(a);
+      p.name = "Extra shots on hit (" + shot.object_id + ")";
+      any_hit_shots = true;
+    } else {
+      // RealmEye, Laser Rifle: the rocket's damage scales "with your Attack
+      // and Status Effects", so it goes through ATT, Weak and Damaging like
+      // a weapon shot, and through DEF like any hit.
+      Projectile blast;
+      blast.min_damage = static_cast<int>(*a.Number(kMinDamage));
+      blast.max_damage = static_cast<int>(*a.Number(kMaxDamage));
+      p.damage = ExpectedHitDamage(blast, DamageMultiplier(attack, character.status), target);
+      p.scaling = std::string(kScalesLikeShots);
+      p.name = "Explosion on hit (" + std::string(a.Text(kObjectId)) + ")";
+      p.reference = "RealmEye: " + weapon.name;
+      any_explosions = true;
+    }
+    p.dps = p.per_second * p.damage;
+    out.dps += p.dps;
+    out.procs.push_back(std::move(p));
+  }
   if (!details) {
     return out;
+  }
+  if (any_hit_shots || any_explosions) {
+    out.assumptions.push_back(
+        "an effect on hit has its chance on each projectile that hits, and its cooldown starts when it goes off");
+  }
+  if (any_hit_shots) {
+    out.assumptions.push_back("extra shots made on hit pass through the target, so every one hits");
+  }
+  if (any_explosions) {
+    out.assumptions.push_back("a homing rocket always reaches the target and explodes on it");
   }
   if (any_shots) {
     out.assumptions.push_back("extra shots made at the cursor pass through the target, so every one hits");

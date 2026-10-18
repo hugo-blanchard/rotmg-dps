@@ -155,6 +155,23 @@ std::vector<StatBonus> WhileShooting(const Weapon& weapon);
 enum class OnShootModel { kNone, kWhileShooting, kPoisonBurst, kExtraShots, kChanceBoost };
 OnShootModel ModelOf(const Weapon& weapon, const Activate& effect, std::span<const int> worn);
 
+/// How the engine models one of a weapon's on-hit effects: extra shots, like
+/// General's Arsenal's, or an explosion, like the Laser Rifle's rocket.
+/// kNone for one it doesn't model, or that's off: its gear isn't in `worn`
+/// or the player's statuses don't meet its requiredConditions.
+enum class OnHitModel { kNone, kExtraShots, kExplosion };
+OnHitModel HitModelOf(const Weapon& weapon, const Activate& effect, std::span<const int> worn,
+                      const PlayerStatus& status);
+
+/// How often an on-hit effect goes off, per second, when volleys land
+/// `hits_per_volley` projectiles: each has the chance, and once it goes off
+/// its cooldown runs.
+double HitProcsPerSecond(double chance, double cooldown_s, double volleys_per_second, double hits_per_volley);
+
+/// What a proc that scales the way the weapon's shots do (ATT and DEX) has
+/// as its ProcResult::scaling.
+inline constexpr std::string_view kScalesLikeShots = "ATT and DEX";
+
 /// An on-shoot stat boost that goes off by chance, like the OnShoot Attack
 /// Boost enchantment's 3% for +5 ATT, and the share of the time it's up.
 struct ChanceBoost {
