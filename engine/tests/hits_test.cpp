@@ -149,6 +149,18 @@ TEST_CASE("sine-wave shots cross the aim line where the wave does") {
   CHECK(Hits(staff, 1.06875, 0.5) == 2);
 }
 
+TEST_CASE("paired sine-wave shots meet in the middle of the Lumiaire's range") {
+  // RealmEye, Lumiaire: the normal pattern converges in the middle of its
+  // 9 tiles, the other one at about 3.5 and 9.
+  Weapon lumiaire = Single(50, 1800, 2);
+  lumiaire.subattacks[0].arc_gap = 6;
+  lumiaire.projectiles[0].amplitude = 0.5;
+  lumiaire.projectiles[0].frequency = 1.5;
+  CHECK(Hits(lumiaire, 4.5) == 2);
+  CHECK(Hits(lumiaire, 5.5) == 2);
+  CHECK(Hits(lumiaire, 7.5) == 0);
+}
+
 TEST_CASE("a stationary projectile only hits a target on top of the player") {
   const Weapon w = Single(0, 1000);
   CHECK(Hits(w, 0.3) == 1);

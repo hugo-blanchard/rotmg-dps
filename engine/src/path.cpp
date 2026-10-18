@@ -76,7 +76,12 @@ ProjectilePath::ProjectilePath(const Projectile& projectile, const Subattack& su
   side_ = {std::cos(angle), -std::sin(angle)};
   const auto [x, y] = subattack.pos_offset.value_or(std::array<double, 2>{0, 0});
   offset_ = {x, y};
-  polarity_ = index % 2 == 0 ? 1 : -1;
+  // The first shot of a pair waves away from its neighbour first. That's
+  // the pattern RealmEye gives as the normal one: the Lumiaire's shots meet
+  // in the middle of its range and Superior's true range is about 5 tiles.
+  // The other pattern, after an odd number of shots from another item, is
+  // left out.
+  polarity_ = index % 2 == 0 ? -1 : 1;
 
   // CircleTurn: after the delay the shot turns by the angle and then keeps
   // that angle to the line from its spawn point. At 90 degrees it circles
