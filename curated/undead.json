@@ -87,6 +87,7 @@
     {
       "object": "Corrupted Souls Undead",
       "shots": 5,
+      "arcGap": 72,
       "attacksPerSecond": 1.5,
       "lifetimeS": 5,
       "source": "https://www.realmeye.com/wiki/skull-of-corrupted-souls"
@@ -108,6 +109,7 @@
     {
       "object": "Mori Undead",
       "shots": 2,
+      "arcGap": 180,
       "attacksPerSecond": 1.5,
       "lifetimeS": 5,
       "source": "https://www.realmeye.com/wiki/memento-mori"
@@ -136,6 +138,7 @@
     {
       "object": "Reaper Undead",
       "shots": 2,
+      "arcGap": 180,
       "attacksPerSecond": 1.5,
       "lifetimeS": 5,
       "source": "https://www.realmeye.com/wiki/memento-mori"
