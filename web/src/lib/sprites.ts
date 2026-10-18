@@ -13,6 +13,8 @@ export interface SpriteIndex {
   // Missing from sheets made before abilities, armor and rings had icons.
   items?: Record<string, Rect>;
   enchantments?: Record<string, Rect>;
+  // Undead by object id; missing from sheets made before they were drawn.
+  undead?: Record<string, Rect>;
   classes: Record<string, { stand: Rect; attack: Rect[] }>;
   target: Rect;
 }

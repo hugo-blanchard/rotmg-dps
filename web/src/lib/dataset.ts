@@ -68,6 +68,8 @@ export interface DatasetAbility extends ItemRules {
   statBonuses?: { stat: string; amount: number }[];
   projectiles?: { id: number; objectId: string; size?: number }[];
   createdProjectiles?: { type: number; projectile: { objectId: string; size?: number } }[];
+  /** What RaiseDead raises, with the projectiles it fires. */
+  undead?: { id: string; projectiles: { objectId: string; size?: number }[] }[];
   // Missing from older datasets, where an ability's enchantments match on
   // the slot.
   labels?: string[];

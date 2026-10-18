@@ -226,6 +226,8 @@ export interface SimEffect {
   armed: boolean;
   /** Lightning: from the player through every target it struck. */
   chain: { x: number; y: number }[];
+  /** An undead's object id, for its sprite. */
+  object?: string;
 }
 
 /** One simulation's state; see AdvanceSimulation in engine/src/api.cpp. */

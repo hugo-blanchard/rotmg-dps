@@ -244,6 +244,7 @@
         ...(weapon.projectiles ?? []),
         ...(ability?.projectiles ?? []),
         ...(ability?.createdProjectiles ?? []).map((c) => c.projectile),
+        ...(ability?.undead ?? []).flatMap((u) => u.projectiles),
       ].map((p) => [p.objectId, p.size ?? 100]),
     ),
   );
@@ -348,8 +349,8 @@
         ctx.fillStyle = color("--trap");
         circle(e.x, e.y, 0.15);
         ctx.fill();
-      } else if (e.kind === "undead") {
-        // A raised undead, fighting on the target it was raised on.
+      } else if (e.kind === "undead" && !(e.object && sprites?.index.undead?.[e.object])) {
+        // A raised undead without a sprite to draw.
         ctx.globalAlpha = 0.35;
         ctx.fillStyle = color("--undead");
         circle(e.x, e.y, e.radius);
@@ -370,6 +371,12 @@
       ctx.drawImage(sprites!.image, x0, y0, w, h, (-w * scale) / 2, (-h * scale) / 2, w * scale, h * scale);
       ctx.restore();
     };
+
+    // Raised undead, each with its own sprite.
+    for (const e of sim.effects) {
+      const rect = e.kind === "undead" && e.object ? sprites?.index.undead?.[e.object] : undefined;
+      if (rect) blit(rect, sx(e.x), sy(e.y), tile * 0.9);
+    }
 
     // Targets, sized by their hitbox; the one aimed at gets a marker. They
     // fade while invulnerable.
